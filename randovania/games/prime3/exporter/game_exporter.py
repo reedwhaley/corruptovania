@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import randovania
 from randovania.exporter.game_exporter import GameExporter, GameExportParams
+from randovania.games.prime3.exporter.dol_patcher import patch_prime3_corruption_dol_file_atomic
 from randovania.games.prime3.exporter.toolchain import (
     Prime3Toolchain,
     extract_prime3_disc_image,
@@ -36,6 +39,9 @@ class CorruptionOutputFormats(Enum):
 
 class CorruptionGameExporter(GameExporter):
     _busy: bool = False
+
+    def __init__(self) -> None:
+        self.logger = logging.getLogger(type(self).__name__)
 
     @property
     def can_start_new_export(self) -> bool:
@@ -88,6 +94,22 @@ class CorruptionGameExporter(GameExporter):
                         extract_path.joinpath("DATA", "sys", "main.dol"),
                         patcher_path.joinpath("MP3Update", "main.hdiff"),
                     ),
+                )
+
+            if patch_data["enable_prime3_wii_networking"]:
+                progress_update("Embedding Prime 3 Wii identity...", 0.35)
+                main_dol_path = extract_path.joinpath("DATA", "sys", "main.dol")
+                patch_result = patch_prime3_corruption_dol_file_atomic(
+                    main_dol_path,
+                    uuid.UUID(patch_data["layout_uuid"]),
+                )
+                self.logger.info(
+                    "Embedded Prime 3 Wii layout UUID %s into %s at virtual 0x%08x (file offset 0x%08x, changed=%s)",
+                    patch_result.layout_uuid,
+                    patch_result.version_description,
+                    patch_result.build_string_address + 6,
+                    patch_result.build_string_offset,
+                    patch_result.changed,
                 )
 
             if patch_data["mp3_update"]:

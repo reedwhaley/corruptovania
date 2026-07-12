@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from randovania.game.game_enum import RandovaniaGame
 
-_CURRENT_SCHEMA_VERSION = 13
+_CURRENT_SCHEMA_VERSION = 14
 _PERMALINK_MAX_VERSION = 256
 
 

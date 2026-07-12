@@ -285,15 +285,41 @@ So a Corruptovania-generated ISO can legitimately keep the retail `main.dol` unc
 - It does not overlap the known Corruption runtime metadata addresses already used by `open_prime_rando`.
 - The actual CDV export offers nothing in `main.dol` that is not already present in retail, and therefore nothing beyond the already-known `main.hdiff` artifact.
 
+## Follow-On Identity Patch Result
+
+That recon conclusion led directly to a new source-backed DOL patch path in the exporter.
+
+The new path does not change the prior findings about `main.hdiff`. Instead, it adds a separate guarded patcher that:
+
+- parses DOL section mappings from source
+- resolves `version.build_string_address` through those mappings
+- validates the full expected Corruption build string from installed `open_prime_rando` metadata
+- embeds the layout UUID into build-string bytes `6..21`
+- preserves file size and section layout
+- atomically rewrites only the exporter working-copy DOL
+
+Local validation against the user-provided retail NTSC `main.dol` on a temporary copy confirmed:
+
+- original SHA-256 unchanged: `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
+- patched temporary SHA-256 changed
+- exactly `16` bytes differ
+- the changed bytes form one `data` range at virtual address `0x805822B6`
+- the corresponding file offset is `0x57E096`
+- no text-section changes occurred
+- no DOL header or section-layout changes occurred
+- no branch changes were detected by the analyzer
+
+This milestone therefore proves a narrow, deterministic identity seam for physical-Wii networking without proving any executable runtime hook.
+
 ## Recommended Next Step
 
-Do not build a new runtime payload on top of this `main.hdiff`, and do not assume the current Corruptovania export path gives you a patched Prime 3 DOL to build on.
+Do not build a new runtime payload on top of `main.hdiff`, and do not confuse the new UUID identity patch with runtime-hook infrastructure.
 
 The next engineering step should be one of:
 
-1. obtain the original source or design notes that produced this DOL patch, if they exist
-2. design a new, source-backed DOL patch path specifically for the Wii networking payload
-3. choose and verify a deliberate export-time trigger for that patch path instead of relying on the current retail-identical CDV DOL
-4. separately verify a real hook site and a real executable payload allocation strategy before adding any runtime metadata seam to the repository
+1. define and verify a real Corruption hook site for executable runtime code
+2. define and verify a real executable payload allocation strategy
+3. choose the Wii-native payload toolchain and binary format
+4. only then extend the new source-backed DOL patch path from identity tagging into executable payload injection
 
-Until one of those paths is completed, there is no evidence-backed reason to treat the current Prime 3 Wii DOL patch as reusable runtime-hook infrastructure.
+Until one of those paths is completed, there is still no evidence-backed reason to treat the current Prime 3 Wii DOL patch surface as reusable runtime-hook infrastructure.

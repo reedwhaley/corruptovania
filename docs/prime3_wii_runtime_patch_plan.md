@@ -5,13 +5,16 @@
 The current Prime 3 export path is split between Python orchestration and Gollop's bundled patcher assets:
 
 - [`randovania/games/prime3/exporter/game_exporter.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/game_exporter.py:60) extracts the Wii disc image, optionally applies `main.hdiff` to `DATA/sys/main.dol` for the deflicker toggle, copies selected `.pak` files and `Standard.ntwk` into a temp workspace, runs `MP3Randomizer`, then repacks with `wit`.
+- [`randovania/games/prime3/exporter/dol_patcher.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/dol_patcher.py:1) now provides the first source-backed Prime 3 DOL patch seam. It parses DOL section mappings, resolves virtual addresses to file offsets, validates the selected Corruption build string from `open_prime_rando`, and atomically embeds a layout UUID into the build string for physical-Wii identity only.
 - [`randovania/games/prime3/exporter/toolchain.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/toolchain.py:58) resolves only four helper families: `MP3Randomizer`, `hpatchz`, `wit`, and `nodtool`/Python `nod`.
 - [`tools/prime3_patcher/MP3Randomizer/MP3Randomizer/MP3Randomizer.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/MP3Randomizer.cs:48) builds `Patches`, modifies `.pak` files through `PAK.modify_pak`, and tweaks `Standard.ntwk` through [`NTWK.modify_ntwk`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/NTWK.cs:8).
 - [`tools/prime3_patcher/MP3Randomizer/MP3Randomizer/Patches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/Patches.cs:268), [`GeneralPatches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/GeneralPatches.cs:5), and [`StartPatches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/StartPatches.cs:7) are all script-layer/object/property patch builders. They do not patch PowerPC instructions or `main.dol`.
 
 ## Proven findings
 
-1. `main.dol` is currently modified only by `hpatchz` in the export pipeline, and only via the bundled binary diff file `MP3Update/main.hdiff`.
+1. `main.dol` is now modified by two guarded export-time paths:
+   - the optional bundled binary diff `MP3Update/main.hdiff` when `disable_deflicker` is enabled
+   - the new source-backed UUID identity patch when `enable_prime3_wii_networking` is enabled
 2. The C# Prime 3 patcher does not participate in `main.dol` patching. It only edits `.pak` resources and `Standard.ntwk`.
 3. `open_prime_rando` participates only on the host/live-connection side for Corruption. [`randovania/game_connection/connector/corruption_remote_connector.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/game_connection/connector/corruption_remote_connector.py:44) imports `open_prime_rando.dol_patching`, but its Corruption write-path methods are still hard-disabled.
 4. Version-specific Corruption DOL metadata is represented as `CorruptionDolVersion` dataclasses in the installed dependency [`open_prime_rando.dol_patching.corruption.dol_versions`](/C:/Users/Reed%20Whaley/AppData/Local/Programs/Python/Python312/Lib/site-packages/open_prime_rando/dol_patching/corruption/dol_versions.py:10). The repo currently knows about three builds: Wii NTSC, Wii PAL, and Wii NTSC-J.
@@ -23,7 +26,56 @@ The current Prime 3 export path is split between Python orchestration and Gollop
 10. The hook that would service networking often enough without blocking gameplay is not proven. `open_prime_rando` expects a version-defined `string_display.update_hint_state` hook for live remote execution, but all Corruption versions currently set `string_display = None`.
 11. No Wii IOS socket, thread, or cache-management imports are present in the repo. Searches for `OSCreateThread`, `socket`, `net_*`, `IOS_*`, `libogc`, `devkitPPC`, and related symbols did not find a supported Wii runtime implementation.
 12. The repository does not contain an established PowerPC C, C++, Rust, or assembly payload build chain for Prime 3 Wii. The only PPC-capable tooling present is Python-side `ppc_asm`, which can assemble instruction bytes and edit DOLs, not compile a standalone Wii runtime.
-13. Shipping a compiled Wii payload through the current pipeline is therefore still a design task. The only proven insertion mechanisms today are `hpatchz` binary diffs and Python-side `DolEditor`/`ppc_asm` patching used by other Prime-family code.
+13. Shipping a compiled Wii payload through the current pipeline is therefore still a design task. The only proven insertion mechanisms today are `hpatchz` binary diffs and Python-side DOL patching primitives.
+
+## New UUID identity milestone
+
+Physical-Wii networking now has an explicit Prime 3 configuration flag:
+
+- `enable_prime3_wii_networking: bool = False`
+- default remains `False`
+- the flag is Prime-3-only
+- old JSON presets load with `False`
+- preset migration now backfills the field
+- Prime 3 permalink/schema data changed because the configuration bit-pack layout gained a new field, so permalink schema version moved from `13` to `14`
+
+When the flag is enabled during export:
+
+1. the exporter applies `main.hdiff` first if deflicker is enabled
+2. it then reads the working-copy `DATA/sys/main.dol`
+3. it identifies the supported Corruption DOL version from `open_prime_rando.dol_patching.corruption.dol_versions`
+4. it verifies the complete expected build string for that version
+5. it embeds the layout UUID into build-string bytes `6..21`
+6. it atomically replaces the working-copy DOL
+
+The UUID storage contract intentionally matches [`PrimeRemoteConnector.check_for_world_uid()`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/game_connection/connector/prime_remote_connector.py:82) and the fake Corruption memory helper:
+
+- read the full version-specific build string
+- treat bytes `6..21` as the 16 raw UUID bytes
+- preserve the build-string prefix and suffix exactly
+- treat the untouched retail build string as `INVALID_UUID`
+
+Failure behavior is guarded and explicit:
+
+- unsupported or unknown Corruption DOL versions are rejected
+- truncated or malformed DOLs are rejected
+- unmapped virtual addresses are rejected
+- unexpected build-string bytes are rejected
+- conflicting already-patched UUIDs are rejected
+- atomic replacement failures are surfaced
+
+## Real NTSC validation
+
+Validation against the user-provided retail NTSC DOL at `E:\ROMS\Corruption Extract\DATA\sys\main.dol` succeeded with a temporary copy:
+
+- the original file hash remained unchanged
+- the patched temporary copy changed
+- file size remained unchanged
+- section layout remained unchanged
+- the analyzer found exactly one changed range
+- that range is a 16-byte `data` change at `build_string_address + 6`
+- no text-section changes were detected
+- no decoded branch changes were detected
 
 ## Selected protocol source of truth
 
@@ -129,8 +181,9 @@ No external Wii networking code was copied in this milestone. Any future adoptio
 
 ## Remaining blockers before IOS UDP runtime work
 
-1. Corruption-specific verified hook metadata is missing.
-2. Corruption-specific verified executable/free payload region metadata is missing.
+1. Corruption-specific verified hook metadata is still missing.
+2. Corruption-specific verified executable/free payload region metadata is still missing.
 3. No established Wii runtime compiler/linker toolchain exists in the repo.
 4. No proven Corruption symbol/import map exists for IOS sockets, threading, memory barriers, or cache helpers.
-5. Corruption HUD string-display hook metadata is missing, which blocks reuse of the existing remote execution model.
+5. Corruption HUD string-display hook metadata is still missing, which blocks reuse of the existing remote execution model.
+6. No executable payload, mailbox, item delivery, or location delivery path exists yet; this milestone only establishes export-time identity tagging.

@@ -1130,6 +1130,13 @@ def _migrate_v2c(preset: dict, game: RandovaniaGame) -> dict:
             config["disable_deflicker"] = False
 
 
+def _migrate_v3c(preset: dict, game: RandovaniaGame) -> dict:
+    if game == RandovaniaGame.METROID_PRIME_CORRUPTION:
+        config = preset["configuration"]
+        if "enable_prime3_wii_networking" not in config:
+            config["enable_prime3_wii_networking"] = False
+
+
 _MIGRATIONS = [
     _migrate_v1,  # v1.1.1-247-gaf9e4a69
     _migrate_v2,  # v1.2.2-71-g0fbabe91
@@ -1229,6 +1236,7 @@ _MIGRATIONS = [
     _migrate_v96,  # dread disable lights per region
     _migrate_v1c,  # add Phaaze skip
     _migrate_v2c,  # add MP3Update and deflicker
+    _migrate_v3c,  # add Prime 3 Wii networking identity flag
 ]
 CURRENT_VERSION = migration_lib.get_version(_MIGRATIONS)
 

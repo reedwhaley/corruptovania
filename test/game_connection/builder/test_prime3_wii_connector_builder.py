@@ -22,8 +22,11 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     encode_hello_payload,
     encode_response,
 )
+from randovania.games.prime3.exporter.dol_patcher import patch_prime3_corruption_dol
+from randovania.interface_common.players_configuration import INVALID_UUID
 from test.game_connection.executor.prime3_wii_fake_corruption_memory import Prime3WiiFakeCorruptionMemory
 from test.game_connection.executor.prime3_wii_fake_server import Prime3WiiFakeServer
+from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
 
 
 @pytest.fixture(name="server")
@@ -150,6 +153,70 @@ async def test_invalid_build_string_returns_none(
 
         assert connector is None
         assert builder.get_status_message() == "Could not identify which game it is"
+
+
+async def test_builder_round_trips_uuid_from_patched_synthetic_dol(
+    builder: Prime3WiiConnectorBuilder,
+    server: Prime3WiiFakeServer,
+) -> None:
+    version = corruption_dol_versions.ALL_VERSIONS[0]
+    layout_uuid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    synthetic_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
+    patched_dol, _result = patch_prime3_corruption_dol(synthetic_dol, layout_uuid, version=version)
+
+    build_string_offset = version.build_string_address - (version.build_string_address - 0x20) + 0x100
+    patched_build_string = patched_dol[build_string_offset : build_string_offset + len(version.build_string)]
+
+    memory = Prime3WiiFakeCorruptionMemory.create(version, uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+    memory.load_into(server)
+    server.load_bytes(version.build_string_address, patched_build_string)
+
+    with patch("randovania.game_connection.connector.prime_remote_connector.PrimeRemoteConnector.start_updates"):
+        connector = await builder.build_connector()
+
+    assert isinstance(connector, CorruptionRemoteConnector)
+    assert connector.layout_uuid == layout_uuid
+
+
+async def test_builder_retail_build_string_returns_invalid_uuid(
+    builder: Prime3WiiConnectorBuilder,
+    server: Prime3WiiFakeServer,
+) -> None:
+    version = corruption_dol_versions.ALL_VERSIONS[0]
+    memory = Prime3WiiFakeCorruptionMemory.create(version, uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+    memory.load_into(server)
+    server.load_bytes(version.build_string_address, version.build_string)
+
+    with patch("randovania.game_connection.connector.prime_remote_connector.PrimeRemoteConnector.start_updates"):
+        connector = await builder.build_connector()
+
+    assert isinstance(connector, CorruptionRemoteConnector)
+    assert connector.layout_uuid == INVALID_UUID
+
+
+async def test_builder_rejects_malformed_patched_identity(
+    builder: Prime3WiiConnectorBuilder,
+    server: Prime3WiiFakeServer,
+) -> None:
+    version = corruption_dol_versions.ALL_VERSIONS[0]
+    layout_uuid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    synthetic_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
+    patched_dol, _result = patch_prime3_corruption_dol(synthetic_dol, layout_uuid, version=version)
+
+    build_string_offset = version.build_string_address - (version.build_string_address - 0x20) + 0x100
+    malformed_build_string = bytearray(
+        patched_dol[build_string_offset : build_string_offset + len(version.build_string)]
+    )
+    malformed_build_string[-1] ^= 0x01
+
+    memory = Prime3WiiFakeCorruptionMemory.create(version, layout_uuid)
+    memory.load_into(server)
+    server.load_bytes(version.build_string_address, bytes(malformed_build_string))
+
+    with patch("randovania.game_connection.connector.prime_remote_connector.PrimeRemoteConnector.start_updates"):
+        connector = await builder.build_connector()
+
+    assert connector is None
 
 
 async def test_unsupported_protocol_returns_useful_status(

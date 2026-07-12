@@ -16,6 +16,7 @@ class CorruptionConfiguration(BaseConfiguration):
     start_with_corrupted_hypermode: bool = False
     MP3Update: bool = False
     disable_deflicker: bool = False
+    enable_prime3_wii_networking: bool = False
 
     @classmethod
     def game_enum(cls) -> RandovaniaGame:

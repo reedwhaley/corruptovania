@@ -29,7 +29,7 @@ def test_encode(fake_generator_parameters):
     encoded = link.as_base64_str
 
     # Assert
-    assert encoded == "DX4wMTIzAx6sOvRw"
+    assert encoded == "Dn4wMTIzAx6sOvRw"
 
 
 @pytest.mark.parametrize("invalid", [False, True])
@@ -45,7 +45,7 @@ def test_decode(mocker, invalid):
 
     # This test should break whenever we change how permalinks are created
     # When this happens, we must bump the permalink version and change the tests
-    encoded = "DSkwMTIzAm3yAINX"
+    encoded = "DikwMTIzAm3yAINX"
 
     expected = Permalink(
         parameters=parameters,

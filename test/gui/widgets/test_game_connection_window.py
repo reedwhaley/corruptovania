@@ -13,6 +13,7 @@ from randovania.game_connection.builder.debug_connector_builder import DebugConn
 from randovania.game_connection.builder.dolphin_connector_builder import DolphinConnectorBuilder
 from randovania.game_connection.builder.dread_connector_builder import DreadConnectorBuilder
 from randovania.game_connection.builder.nintendont_connector_builder import NintendontConnectorBuilder
+from randovania.game_connection.builder.prime3_wii_connector_builder import Prime3WiiConnectorBuilder
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
 from randovania.gui.lib.qt_network_client import QtNetworkClient
 from randovania.gui.lib.window_manager import WindowManager
@@ -103,6 +104,21 @@ async def test_add_connector_builder_nintendont(window: GameConnectionWindow, ab
 
 
 @pytest.mark.parametrize("abort", [False, True])
+async def test_add_connector_builder_prime3_wii(window: GameConnectionWindow, abort):
+    window.game_connection.add_connection_builder = MagicMock()
+    window._prompt_for_text = AsyncMock(return_value=None if abort else "10.0.0.5")
+
+    await window._add_connector_builder(ConnectorBuilderChoice.PRIME3_WII)
+
+    if abort:
+        window.game_connection.add_connection_builder.assert_not_called()
+    else:
+        window.game_connection.add_connection_builder.assert_called_once_with(ANY)
+        assert isinstance(window.game_connection.add_connection_builder.call_args[0][0], Prime3WiiConnectorBuilder)
+        assert window.game_connection.add_connection_builder.call_args[0][0].ip == "10.0.0.5"
+
+
+@pytest.mark.parametrize("abort", [False, True])
 async def test_add_connector_builder_debug(window: GameConnectionWindow, abort):
     # Setup
     window.game_connection.add_connection_builder = MagicMock()
@@ -151,6 +167,7 @@ def test_setup_builder_ui_all_builders(skip_qtbot, system, mocker: MockerFixture
     game_connection.connection_builders = [
         DolphinConnectorBuilder(),
         NintendontConnectorBuilder("the_ip"),
+        Prime3WiiConnectorBuilder("10.0.0.5"),
         DebugConnectorBuilder(RandovaniaGame.BLANK.value),
     ]
     window_manager = MagicMock(spec=WindowManager)
@@ -165,10 +182,10 @@ def test_setup_builder_ui_all_builders(skip_qtbot, system, mocker: MockerFixture
     has_debug = ConnectorBuilderChoice.DEBUG.is_usable()
     if system == "darwin":
         print(list(window.ui_for_builder.keys()))
-        assert len(window.ui_for_builder) == 1 + has_debug
+        assert len(window.ui_for_builder) == 2 + has_debug
     else:
         assert not window._builder_actions[ConnectorBuilderChoice.DOLPHIN].isEnabled()
-        assert len(window.ui_for_builder) == 2 + has_debug
+        assert len(window.ui_for_builder) == 3 + has_debug
 
     ui = window.ui_for_builder[game_connection.connection_builders[1]]
     if is_frozen:
@@ -179,6 +196,28 @@ def test_setup_builder_ui_all_builders(skip_qtbot, system, mocker: MockerFixture
         assert ui.important_message_menu.isEnabled()
         assert ui.send_arbitrary_message_action is not None
         assert ui.send_arbitrary_message_action.isEnabled()
+
+
+def test_read_only_connection_message_actions_disabled(skip_qtbot):
+    game_connection = MagicMock()
+    builder = Prime3WiiConnectorBuilder("10.0.0.5")
+    game_connection.connection_builders = [builder]
+    connector = MagicMock()
+    connector.description.return_value = "Prime 3 Wii"
+    connector.layout_uuid = INVALID_UUID
+    connector.supports_writes = False
+    connector.can_display_arbitrary_messages.return_value = True
+    game_connection.get_connector_for_builder.return_value = connector
+    window_manager = MagicMock(spec=WindowManager)
+    network_client = MagicMock(spec=QtNetworkClient)
+    window = GameConnectionWindow(window_manager, network_client, MagicMock(), game_connection)
+    skip_qtbot.addWidget(window)
+
+    ui = window.ui_for_builder[builder]
+    assert ui.important_message_menu is not None
+    assert not ui.important_message_menu.isEnabled()
+    assert ui.send_arbitrary_message_action is not None
+    assert not ui.send_arbitrary_message_action.isEnabled()
 
 
 def test_update_builder_ui(skip_qtbot, mocker: MockerFixture):
@@ -239,13 +278,10 @@ def test_update_builder_ui(skip_qtbot, mocker: MockerFixture):
             connector_c.layout_uuid: data_c,
         }[uid]
     )
-    window_manager.multiworld_client.get_world_sync_error = MagicMock(
-        side_effect=lambda uid: (
-            {
-                connector_c.layout_uuid: error.ServerError(),
-            }
-        ).get(uid)
-    )
+    sync_errors = {
+        connector_c.layout_uuid: error.ServerError(),
+    }
+    window_manager.multiworld_client.get_world_sync_error = MagicMock(side_effect=sync_errors.get)
 
     window.update_builder_ui()
 

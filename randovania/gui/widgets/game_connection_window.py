@@ -4,7 +4,7 @@ import collections
 import functools
 from typing import TYPE_CHECKING
 
-import wiiload  # type: ignore[import-untyped]
+import wiiload  # type: ignore[import-not-found]
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 from qasync import asyncSlot
@@ -14,6 +14,7 @@ from randovania.game.game_enum import RandovaniaGame
 from randovania.game_connection.builder.connector_builder_option import ConnectorBuilderOption
 from randovania.game_connection.builder.debug_connector_builder import DebugConnectorBuilder
 from randovania.game_connection.builder.nintendont_connector_builder import NintendontConnectorBuilder
+from randovania.game_connection.builder.prime3_wii_connector_builder import Prime3WiiConnectorBuilder
 from randovania.game_connection.connector.debug_remote_connector import DebugRemoteConnector
 from randovania.game_connection.connector.remote_connector import ImportantStatusMessage, RemoteConnector
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
@@ -24,7 +25,7 @@ from randovania.games.dread.gui.dialog.dread_connector_prompt_dialog import (
 from randovania.games.samus_returns.gui.dialog.msr_connector_prompt_dialog import MSRConnectorPromptDialog
 from randovania.gui.debug_backend_window import DebugConnectorWindow
 from randovania.gui.dialog.text_prompt_dialog import TextPromptDialog
-from randovania.gui.generated.game_connection_window_ui import Ui_GameConnectionWindow
+from randovania.gui.generated.game_connection_window_ui import Ui_GameConnectionWindow  # type: ignore[import-not-found]
 from randovania.gui.lib import async_dialog, common_qt_lib
 from randovania.gui.lib.qt_network_client import QtNetworkClient, handle_network_errors
 from randovania.interface_common.players_configuration import INVALID_UUID
@@ -78,6 +79,7 @@ class BuilderUi:
         self.layout.addWidget(self.status, 1, 0, 1, 2)
 
     def update_for_disconnected_builder(self, builder: ConnectorBuilder) -> None:
+        self.connector = None
         message = "Not Connected."
         if (status := builder.get_status_message()) is not None:
             message += f" {status}"
@@ -152,8 +154,10 @@ class BuilderUi:
         if self.important_message_menu is None:
             return
 
-        self.important_message_menu.setEnabled(self.connector is not None)
-        can_arbitrary_send = self.connector is not None and self.connector.can_display_arbitrary_messages()
+        connector = self.connector
+        can_write = connector is not None and connector.supports_writes
+        self.important_message_menu.setEnabled(can_write)
+        can_arbitrary_send = can_write and connector is not None and connector.can_display_arbitrary_messages()
         if self.send_arbitrary_message_action:
             self.send_arbitrary_message_action.setEnabled(can_arbitrary_send)
 
@@ -233,6 +237,15 @@ class GameConnectionWindow(QtWidgets.QMainWindow, Ui_GameConnectionWindow):
                 "Enter Wii's IP",
                 "Enter the IP address of your Wii. "
                 "You can check the IP address on the pause screen of Homebrew Channel.",
+            )
+            if new_ip is None:
+                return
+            args["ip"] = new_ip
+
+        if choice == ConnectorBuilderChoice.PRIME3_WII:
+            new_ip = await self._prompt_for_text(
+                "Enter Prime 3 Wii IP",
+                "Enter the IPv4 address shown by the future Prime 3 Wii patch on the game screen.",
             )
             if new_ip is None:
                 return
@@ -360,6 +373,13 @@ class GameConnectionWindow(QtWidgets.QMainWindow, Ui_GameConnectionWindow):
             action = QtGui.QAction(ui.menu)
             action.setText("Upload Nintendont to Homebrew Channel")
             action.triggered.connect(functools.partial(self.on_upload_nintendont_action, builder))
+            ui.menu.addAction(action)
+
+        if isinstance(builder, Prime3WiiConnectorBuilder):
+            ui.menu.addSeparator()
+            action = QtGui.QAction(ui.menu)
+            action.setText("Read-only Prime 3 Wii connection")
+            action.setEnabled(False)
             ui.menu.addAction(action)
 
         if isinstance(builder, DebugConnectorBuilder):

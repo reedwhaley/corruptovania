@@ -13,6 +13,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiRequest,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
+    ReadMemoryPayload,
     decode_read_memory_payload,
     decode_request,
     encode_error_response,
@@ -56,6 +57,7 @@ class Prime3WiiFakeServer:
         self.transport: asyncio.DatagramTransport | None = None
         self.port: int | None = None
         self.requests_seen: dict[Prime3WiiCommand, int] = defaultdict(int)
+        self.read_requests: list[ReadMemoryPayload] = []
         self._memory: dict[int, int] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._behaviors: dict[Prime3WiiCommand, PendingBehavior] = defaultdict(PendingBehavior)
@@ -174,6 +176,7 @@ class Prime3WiiFakeServer:
 
         if request.command is Prime3WiiCommand.READ_MEMORY:
             payload = decode_read_memory_payload(request.payload)
+            self.read_requests.append(payload)
             if payload.size > self.max_read_size:
                 return encode_error_response(
                     request.command,

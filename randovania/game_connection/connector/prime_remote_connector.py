@@ -28,7 +28,7 @@ from randovania.interface_common.players_configuration import INVALID_UUID
 from randovania.lib.infinite_timer import InfiniteTimer
 
 if TYPE_CHECKING:
-    from ppc_asm import assembler  # type: ignore[import-untyped]
+    from ppc_asm import assembler
 
     from randovania.game_description.db.region import Region
     from randovania.game_description.game_description import GameDescription
@@ -80,8 +80,16 @@ class PrimeRemoteConnector(RemoteConnector):
     def game_enum(self) -> RandovaniaGame:
         return self.game.game
 
+    @property
+    def supports_writes(self) -> bool:
+        return bool(getattr(self.executor, "supports_writes", True))
+
     def description(self) -> str:
         return f"{self.game_enum.long_name}: {self.version.description}"
+
+    def _ensure_writable(self, action: str) -> None:
+        if not self.supports_writes:
+            raise RuntimeError(f"{type(self).__name__} does not support {action} with a read-only executor.")
 
     async def check_for_world_uid(self) -> bool:
         """Returns True if the accessible memory matches the version of this connector."""
@@ -145,11 +153,12 @@ class PrimeRemoteConnector(RemoteConnector):
         raise NotImplementedError
 
     @property
-    def multiworld_magic_item(self) -> ItemResourceInfo:
+    def multiworld_magic_item(self) -> ItemResourceInfo | None:
         raise NotImplementedError
 
     async def get_inventory(self) -> Inventory:
         """Fetches the inventory represented by the given game memory."""
+        multiworld_magic_item = self.multiworld_magic_item
 
         memory_ops = await self._memory_op_for_items(
             [item for item in self.game.resource_database.item if item.extra["item_id"] < 1000]
@@ -159,7 +168,9 @@ class PrimeRemoteConnector(RemoteConnector):
         inventory = {}
         for item, memory_op in zip(self.game.resource_database.item, memory_ops):
             inv = InventoryItem(*struct.unpack(">II", ops_result[memory_op]))
-            if (inv.amount > inv.capacity or inv.capacity > item.max_capacity) and (item != self.multiworld_magic_item):
+            if (
+                inv.amount > inv.capacity or inv.capacity > item.max_capacity
+            ) and (multiworld_magic_item is None or item != multiworld_magic_item):
                 raise MemoryOperationException(f"Received {inv} for {item.long_name}, which is an invalid state.")
             inventory[item] = inv
 
@@ -170,6 +181,7 @@ class PrimeRemoteConnector(RemoteConnector):
         The list may return less than all collected locations, depending on implementation details.
         This function also returns a list of remote patches that must be performed via `execute_remote_patches`.
         """
+        self._ensure_writable("collected-location reporting")
         multiworld_magic_item = self.multiworld_magic_item
         if multiworld_magic_item is None:
             return set()
@@ -204,9 +216,12 @@ class PrimeRemoteConnector(RemoteConnector):
         remote_pickups: tuple[RemotePickup, ...],
     ) -> bool:
         """Returns true if an operation was sent."""
+        self._ensure_writable("remote pickup delivery")
 
         in_cooldown = self.message_cooldown > 0.0
         multiworld_magic_item = self.multiworld_magic_item
+        if multiworld_magic_item is None:
+            return False
         magic_inv = inventory.get(multiworld_magic_item)
         if magic_inv is None or magic_inv.amount > 0 or magic_inv.capacity >= len(remote_pickups) or in_cooldown:
             return False
@@ -239,6 +254,7 @@ class PrimeRemoteConnector(RemoteConnector):
         :param patches: List of patches to execute
         :return:
         """
+        self._ensure_writable("remote patch execution")
         memory_operations = []
         for patch in patches:
             memory_operations.extend(patch.memory_operations)
@@ -333,7 +349,7 @@ class PrimeRemoteConnector(RemoteConnector):
 
             if region is not None:
                 await self.update_current_inventory()
-                if not has_pending_op:
+                if self.supports_writes and not has_pending_op:
                     self.message_cooldown = max(self.message_cooldown - self._dt, 0.0)
                     has_pending_op = await self._multiworld_interaction()
                     if not has_pending_op:
@@ -368,6 +384,7 @@ class PrimeRemoteConnector(RemoteConnector):
             return await self.receive_remote_pickups(self.last_inventory, self.remote_pickups)
 
     async def _send_next_pending_message(self) -> bool:
+        self._ensure_writable("HUD message delivery")
         if not self.pending_messages or self.message_cooldown > 0.0:
             return False
 
@@ -377,6 +394,7 @@ class PrimeRemoteConnector(RemoteConnector):
         return True
 
     async def display_arbitrary_message(self, message: str) -> None:
+        self._ensure_writable("arbitrary message delivery")
         self.pending_messages.append(message)
 
     async def set_remote_pickups(self, remote_pickups: tuple[RemotePickup, ...]) -> None:

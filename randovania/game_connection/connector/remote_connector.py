@@ -49,6 +49,10 @@ class RemoteConnector(QtCore.QObject):
     InventoryUpdated = QtCore.Signal(Inventory)
 
     @property
+    def supports_writes(self) -> bool:
+        return True
+
+    @property
     def game_enum(self) -> RandovaniaGame:
         raise NotImplementedError
 

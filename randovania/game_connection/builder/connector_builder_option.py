@@ -11,6 +11,7 @@ from randovania.game_connection.builder.dolphin_connector_builder import Dolphin
 from randovania.game_connection.builder.dread_connector_builder import DreadConnectorBuilder
 from randovania.game_connection.builder.msr_connector_builder import MSRConnectorBuilder
 from randovania.game_connection.builder.nintendont_connector_builder import NintendontConnectorBuilder
+from randovania.game_connection.builder.prime3_wii_connector_builder import Prime3WiiConnectorBuilder
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ _CHOICE_TO_BUILDER = {
     ConnectorBuilderChoice.CS: CSConnectorBuilder,
     ConnectorBuilderChoice.AM2R: AM2RConnectorBuilder,
     ConnectorBuilderChoice.MSR: MSRConnectorBuilder,
+    ConnectorBuilderChoice.PRIME3_WII: Prime3WiiConnectorBuilder,
 }
 
 

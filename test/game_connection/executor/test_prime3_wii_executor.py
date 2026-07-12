@@ -60,6 +60,7 @@ def executor_fixture(server: Prime3WiiFakeServer, sleep_spy):
 async def test_connect_hello_success(executor: Prime3WiiExecutor):
     assert await executor.connect() is None
     assert executor.is_connected()
+    assert executor.supports_writes is False
 
 
 async def test_connect_unsupported_protocol_version(executor: Prime3WiiExecutor, server: Prime3WiiFakeServer):

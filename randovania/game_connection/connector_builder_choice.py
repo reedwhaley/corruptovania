@@ -16,6 +16,7 @@ class ConnectorBuilderChoice(Enum):
     DREAD = "dread"
     NINTENDONT = "nintendont"
     MSR = "msr"
+    PRIME3_WII = "prime3-wii"
 
     @property
     def pretty_text(self) -> str:
@@ -52,4 +53,5 @@ _pretty_backend_name = {
     ConnectorBuilderChoice.DREAD: "Dread",
     ConnectorBuilderChoice.NINTENDONT: "Nintendont",
     ConnectorBuilderChoice.MSR: "Samus Returns",
+    ConnectorBuilderChoice.PRIME3_WII: "Prime 3 Wii",
 }

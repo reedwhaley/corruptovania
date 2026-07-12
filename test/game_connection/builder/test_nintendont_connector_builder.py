@@ -14,3 +14,4 @@ def test_create():
     executor = builder.create_executor()
     assert isinstance(executor, NintendontExecutor)
     assert executor.ip == "102.168.1.1"
+    assert executor.supports_writes is True

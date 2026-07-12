@@ -46,6 +46,8 @@ class MemoryOperation:
 
 
 class MemoryOperationExecutor:
+    supports_writes: bool = True
+
     def __init__(self) -> None:
         self.logger = logging.getLogger(type(self).__name__)
 

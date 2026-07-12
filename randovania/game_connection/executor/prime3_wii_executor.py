@@ -88,6 +88,7 @@ class _Prime3WiiDatagramProtocol(asyncio.DatagramProtocol):
 
 
 class Prime3WiiExecutor(MemoryOperationExecutor):
+    supports_writes = False
     _transport: asyncio.DatagramTransport | None = None
     _protocol_state: _ProtocolState | None = None
     _max_read_size: int | None = None

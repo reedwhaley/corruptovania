@@ -15,6 +15,10 @@ def corruption_remote_connector():
     return connector
 
 
+def test_multiworld_magic_item_is_unavailable_for_read_only_corruption(connector: CorruptionRemoteConnector):
+    assert connector.multiworld_magic_item is None
+
+
 @pytest.mark.parametrize("correct_vtable", [False, True])
 @pytest.mark.parametrize("has_cplayer", [False, True])
 @pytest.mark.parametrize("has_pending_op", [False, True])

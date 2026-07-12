@@ -28,6 +28,35 @@ class PrimeConnectorBuilder(ConnectorBuilder):
     def create_executor(self) -> MemoryOperationExecutor:
         raise NotImplementedError
 
+    def create_connector_candidates(self, executor: MemoryOperationExecutor) -> list[PrimeRemoteConnector]:
+        # Delay importing these to avoid too many early imports in startup
+        corruption_dol_versions = importlib.import_module("open_prime_rando.dol_patching.corruption.dol_versions")
+        echoes_dol_versions = importlib.import_module("open_prime_rando.dol_patching.echoes.dol_versions")
+        prime1_dol_versions = importlib.import_module("open_prime_rando.dol_patching.prime1.dol_versions")
+        corruption_connector_module = importlib.import_module(
+            "randovania.game_connection.connector.corruption_remote_connector"
+        )
+        echoes_connector_module = importlib.import_module(
+            "randovania.game_connection.connector.echoes_remote_connector"
+        )
+        prime1_connector_module = importlib.import_module(
+            "randovania.game_connection.connector.prime1_remote_connector"
+        )
+        CorruptionRemoteConnector = corruption_connector_module.CorruptionRemoteConnector
+        EchoesRemoteConnector = echoes_connector_module.EchoesRemoteConnector
+        Prime1RemoteConnector = prime1_connector_module.Prime1RemoteConnector
+
+        all_connectors: list[PrimeRemoteConnector] = [
+            Prime1RemoteConnector(version, executor) for version in prime1_dol_versions.ALL_VERSIONS
+        ]
+        all_connectors.extend(
+            [EchoesRemoteConnector(version, executor) for version in echoes_dol_versions.ALL_VERSIONS]
+        )
+        all_connectors.extend(
+            [CorruptionRemoteConnector(version, executor) for version in corruption_dol_versions.ALL_VERSIONS]
+        )
+        return all_connectors
+
     def get_status_message(self) -> str | None:
         return self._last_status_message
 
@@ -35,15 +64,6 @@ class PrimeConnectorBuilder(ConnectorBuilder):
         if importlib.util.find_spec("open_prime_rando") is None:
             self._status_message("open_prime_rando not installed", log=False)
             return None
-
-        # Delay importing these to avoid too many early imports in startup
-        from open_prime_rando.dol_patching.corruption import dol_versions as corruption_dol_versions
-        from open_prime_rando.dol_patching.echoes import dol_versions as echoes_dol_versions
-        from open_prime_rando.dol_patching.prime1 import dol_versions as prime1_dol_versions
-
-        from randovania.game_connection.connector.corruption_remote_connector import CorruptionRemoteConnector
-        from randovania.game_connection.connector.echoes_remote_connector import EchoesRemoteConnector
-        from randovania.game_connection.connector.prime1_remote_connector import Prime1RemoteConnector
 
         executor = self.create_executor()
 
@@ -54,15 +74,7 @@ class PrimeConnectorBuilder(ConnectorBuilder):
             return None
 
         self._status_message("Identifying game...", log=False)
-        all_connectors: list[PrimeRemoteConnector] = [
-            Prime1RemoteConnector(version, executor) for version in prime1_dol_versions.ALL_VERSIONS
-        ]
-        all_connectors.extend(
-            [EchoesRemoteConnector(version, executor) for version in echoes_dol_versions.ALL_VERSIONS]
-        )
-        all_connectors.extend(
-            [CorruptionRemoteConnector(version, executor) for version in corruption_dol_versions.ALL_VERSIONS]
-        )
+        all_connectors = self.create_connector_candidates(executor)
         read_first_ops = [
             MemoryOperation(
                 connectors.version.build_string_address, read_byte_count=min(len(connectors.version.build_string), 4)

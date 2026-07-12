@@ -49,9 +49,8 @@ class CorruptionRemoteConnector(PrimeRemoteConnector):
         return ">Q"
 
     @property
-    def multiworld_magic_item(self) -> ItemResourceInfo:
-        # TODO
-        raise NotImplementedError
+    def multiworld_magic_item(self) -> ItemResourceInfo | None:
+        return None
 
     async def current_game_status(self) -> tuple[bool, Region | None]:
         """

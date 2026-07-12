@@ -1,189 +1,244 @@
 # Prime 3 Wii Runtime Patch Plan
 
+## Scope of this milestone
+
+This milestone establishes source-backed infrastructure for future Prime 3 Wii runtime injection. It does not enable runtime networking, select a production hook, or claim that Wii networking is operational.
+
+Implemented foundations now live in [`randovania/games/prime3/exporter/dol_patcher.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/dol_patcher.py:1):
+
+- DOL header parsing for all 7 text slots and 11 data slots
+- deterministic executable text-section insertion
+- guarded instruction-word replacement
+- PowerPC opcode-18 unconditional branch encoding
+- conservative single-instruction trampoline planning
+- payload artifact metadata with deterministic JSON serialization and SHA-256 validation
+- existing layout-UUID patch support
+
 ## Current export and patch path
 
-The current Prime 3 export path is split between Python orchestration and Gollop's bundled patcher assets:
+- [`randovania/games/prime3/exporter/game_exporter.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/game_exporter.py:60) extracts the Wii image, optionally applies `main.hdiff`, stages `Standard.ntwk` and `.pak` updates, runs `MP3Randomizer`, and repacks with `wit`.
+- [`randovania/games/prime3/exporter/toolchain.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/toolchain.py:58) resolves only `MP3Randomizer`, `hpatchz`, `wit`, and `nodtool`/Python `nod`.
+- [`tools/prime3_patcher/MP3Randomizer/MP3Randomizer/Patches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/Patches.cs:268) and related C# assets patch `.pak` and `Standard.ntwk`, not PowerPC instructions.
+- The source-backed Python DOL patcher is now the only repo-supported place for deterministic `main.dol` mutation beyond the bundled `main.hdiff`.
 
-- [`randovania/games/prime3/exporter/game_exporter.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/game_exporter.py:60) extracts the Wii disc image, optionally applies `main.hdiff` to `DATA/sys/main.dol` for the deflicker toggle, copies selected `.pak` files and `Standard.ntwk` into a temp workspace, runs `MP3Randomizer`, then repacks with `wit`.
-- [`randovania/games/prime3/exporter/dol_patcher.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/dol_patcher.py:1) now provides the first source-backed Prime 3 DOL patch seam. It parses DOL section mappings, resolves virtual addresses to file offsets, validates the selected Corruption build string from `open_prime_rando`, and atomically embeds a layout UUID into the build string for physical-Wii identity only.
-- [`randovania/games/prime3/exporter/toolchain.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/toolchain.py:58) resolves only four helper families: `MP3Randomizer`, `hpatchz`, `wit`, and `nodtool`/Python `nod`.
-- [`tools/prime3_patcher/MP3Randomizer/MP3Randomizer/MP3Randomizer.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/MP3Randomizer.cs:48) builds `Patches`, modifies `.pak` files through `PAK.modify_pak`, and tweaks `Standard.ntwk` through [`NTWK.modify_ntwk`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/NTWK.cs:8).
-- [`tools/prime3_patcher/MP3Randomizer/MP3Randomizer/Patches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/Patches.cs:268), [`GeneralPatches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/GeneralPatches.cs:5), and [`StartPatches.cs`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_patcher/MP3Randomizer/MP3Randomizer/StartPatches.cs:7) are all script-layer/object/property patch builders. They do not patch PowerPC instructions or `main.dol`.
+## DOL executable-section insertion strategy
 
-## Proven findings
+`append_executable_text_section(...)` adds one new file-backed executable section only when the caller provides all placement metadata explicitly:
 
-1. `main.dol` is now modified by two guarded export-time paths:
-   - the optional bundled binary diff `MP3Update/main.hdiff` when `disable_deflicker` is enabled
-   - the new source-backed UUID identity patch when `enable_prime3_wii_networking` is enabled
-2. The C# Prime 3 patcher does not participate in `main.dol` patching. It only edits `.pak` resources and `Standard.ntwk`.
-3. `open_prime_rando` participates only on the host/live-connection side for Corruption. [`randovania/game_connection/connector/corruption_remote_connector.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/game_connection/connector/corruption_remote_connector.py:44) imports `open_prime_rando.dol_patching`, but its Corruption write-path methods are still hard-disabled.
-4. Version-specific Corruption DOL metadata is represented as `CorruptionDolVersion` dataclasses in the installed dependency [`open_prime_rando.dol_patching.corruption.dol_versions`](/C:/Users/Reed%20Whaley/AppData/Local/Programs/Python/Python312/Lib/site-packages/open_prime_rando/dol_patching/corruption/dol_versions.py:10). The repo currently knows about three builds: Wii NTSC, Wii PAL, and Wii NTSC-J.
-5. The user-provided original DOL at `E:\ROMS\Corruption Extract\DATA\sys\main.dol` was validated against that metadata and matches the Wii NTSC build string exactly at `0x805822B0`. Its SHA-256 is `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`.
-6. No stable executable payload area is proven anywhere in this repository. The validated NTSC DOL does expose several empty section slots in the header, but there is no existing metadata proving that filling one is safe for Corruption, and the loaded globals such as `cstate_manager_global` and `game_state_pointer` live in BSS/MEM rather than file-backed sections.
-7. No existing Corruption patch in this repo branches to injected PowerPC code. The existing Prime-family remote execution helper in installed `open_prime_rando` is generic, but Corruption lacks the hook metadata needed to use it.
-8. Instruction-cache invalidation after runtime code writes is proven necessary by existing installed helper code. [`open_prime_rando.dol_patching.all_prime_dol_patches.remote_execution_patch_start`](/C:/Users/Reed%20Whaley/AppData/Local/Programs/Python/Python312/Lib/site-packages/open_prime_rando/dol_patching/all_prime_dol_patches.py:104) explicitly emits `icbi`, `sync`, and `isync` after externally overwriting instructions. I found no equally proven Corruption-specific data-cache flush sequence in the current workspace, so D-cache handling remains unresolved.
-9. The first supported target should be Wii NTSC. That is now verified against the user-provided original DOL, not just inferred from `ALL_VERSIONS` ordering and `RM3E01` patcher assets.
-10. The hook that would service networking often enough without blocking gameplay is not proven. `open_prime_rando` expects a version-defined `string_display.update_hint_state` hook for live remote execution, but all Corruption versions currently set `string_display = None`.
-11. No Wii IOS socket, thread, or cache-management imports are present in the repo. Searches for `OSCreateThread`, `socket`, `net_*`, `IOS_*`, `libogc`, `devkitPPC`, and related symbols did not find a supported Wii runtime implementation.
-12. The repository does not contain an established PowerPC C, C++, Rust, or assembly payload build chain for Prime 3 Wii. The only PPC-capable tooling present is Python-side `ppc_asm`, which can assemble instruction bytes and edit DOLs, not compile a standalone Wii runtime.
-13. Shipping a compiled Wii payload through the current pipeline is therefore still a design task. The only proven insertion mechanisms today are `hpatchz` binary diffs and Python-side DOL patching primitives.
+- `payload_bytes`
+- `payload_virtual_address`
+- `required_alignment`
+- optional `entry_symbol_offset`
 
-## New UUID identity milestone
+The API guarantees:
 
-Physical-Wii networking now has an explicit Prime 3 configuration flag:
+- all text and data section table entries are parsed and preserved
+- the first genuinely empty text slot is selected
+- insertion fails if no empty text slot exists
+- appended file offset is aligned to the requested power-of-two alignment
+- virtual overlap with any existing text/data section is rejected
+- file-range overlap with any existing mapped section is rejected
+- BSS overlap is rejected
+- 32-bit address and size overflow are rejected
+- malformed or truncated DOL headers are rejected
+- duplicate/conflicting insertion is rejected through the overlap and slot-availability checks
+- the result reports slot index, file offset, virtual address, payload size, alignment padding, resulting file size, and optional entry symbol address
 
-- `enable_prime3_wii_networking: bool = False`
-- default remains `False`
-- the flag is Prime-3-only
-- old JSON presets load with `False`
-- preset migration now backfills the field
-- Prime 3 permalink/schema data changed because the configuration bit-pack layout gained a new field, so permalink schema version moved from `13` to `14`
+Production code must continue to require `payload_virtual_address` explicitly. Analysis helpers may suggest candidates, but no automatic address selection is safe enough to ship.
 
-When the flag is enabled during export:
+## Branch encoding constraints
 
-1. the exporter applies `main.hdiff` first if deflicker is enabled
-2. it then reads the working-copy `DATA/sys/main.dol`
-3. it identifies the supported Corruption DOL version from `open_prime_rando.dol_patching.corruption.dol_versions`
-4. it verifies the complete expected build string for that version
-5. it embeds the layout UUID into build-string bytes `6..21`
-6. it atomically replaces the working-copy DOL
+`encode_ppc_unconditional_branch(...)` currently supports PowerPC opcode 18 only:
 
-The UUID storage contract intentionally matches [`PrimeRemoteConnector.check_for_world_uid()`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/game_connection/connector/prime_remote_connector.py:82) and the fake Corruption memory helper:
+- relative branch
+- relative branch-and-link
+- absolute branch when the target is representable in the 26-bit absolute encoding
 
-- read the full version-specific build string
-- treat bytes `6..21` as the 16 raw UUID bytes
-- preserve the build-string prefix and suffix exactly
-- treat the untouched retail build string as `INVALID_UUID`
+Guardrails:
 
-Failure behavior is guarded and explicit:
+- source and destination must be 4-byte aligned
+- relative displacement must stay within the signed 26-bit range
+- absolute targets are limited to `0x00000000..0x01fffffc`
+- unsupported or overflowing forms fail explicitly instead of truncating bits
 
-- unsupported or unknown Corruption DOL versions are rejected
-- truncated or malformed DOLs are rejected
-- unmapped virtual addresses are rejected
-- unexpected build-string bytes are rejected
-- conflicting already-patched UUIDs are rejected
-- atomic replacement failures are surfaced
+Tests round-trip generated instructions through the existing DOL analyzer decoder so the encoded branch semantics are checked against the repo’s analysis tooling.
 
-## Real NTSC validation
+## Guarded hook requirements
 
-Validation against the user-provided retail NTSC DOL at `E:\ROMS\Corruption Extract\DATA\sys\main.dol` succeeded with a temporary copy:
+`patch_guarded_instruction_word(...)` is the future hook-installation primitive. It only patches a single mapped executable-text instruction when:
 
-- the original file hash remained unchanged
-- the patched temporary copy changed
-- file size remained unchanged
-- section layout remained unchanged
-- the analyzer found exactly one changed range
-- that range is a 16-byte `data` change at `build_string_address + 6`
-- no text-section changes were detected
-- no decoded branch changes were detected
+- the target address resolves through the DOL section table
+- the target lies in a text section
+- the target is 4-byte aligned
+- the current instruction exactly matches `expected_original_word`
 
-## Selected protocol source of truth
+It rejects:
 
-Because no supported Wii payload language or compiler is present, the safest shared definition is a language-neutral manifest plus deterministic generators:
+- unmapped targets
+- data-section targets
+- truncated instructions
+- unexpected originals
+- already-replaced instructions
 
-- [`randovania/game_connection/executor/prime3_wii_protocol.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/game_connection/executor/prime3_wii_protocol.py:1) remains the authoritative behavior.
-- [`randovania/game_connection/executor/prime3_wii_protocol_artifacts.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/game_connection/executor/prime3_wii_protocol_artifacts.py:1) generates:
-  - a JSON-friendly protocol manifest containing magic, enum values, packet layout, byte order, CRC coverage, and payload layouts
-  - deterministic packet vectors with exact encoded hexadecimal
-- [`tools/generate_prime3_wii_protocol_artifacts.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/generate_prime3_wii_protocol_artifacts.py:1) is the regeneration entrypoint for future runtime build tooling on Windows, macOS, or Linux.
+It does not search heuristically for patterns. Future production hook metadata must carry an exact version-specific address and exact original instruction word.
 
-This avoids maintaining a second handwritten constant table before the runtime language decision is made.
+## Trampoline limitations
 
-## Runtime payload language and build requirements
+`build_single_instruction_trampoline(...)` only plans the smallest safe trampoline shape:
 
-No runtime payload language is selected for implementation in this milestone because the repository does not prove one.
+1. branch from the hook to the payload entry
+2. copy one displaced instruction into the trampoline location
+3. branch from the trampoline back to the return address
 
-- Proven available host tools:
-  - Python 3.12
-  - installed `open_prime_rando`
-  - installed `ppc_asm`
-  - C#/.NET tooling for `MP3Randomizer`
-- Missing proof:
-  - no `devkitPPC` or equivalent Wii SDK/toolchain configuration
-  - no `libogc` integration
-  - no Wii-target cargo target or linker script
-  - no existing Prime 3 runtime object format or binary blob pipeline
+This helper is intentionally conservative. It rejects at least:
 
-As a result, there is no safe host-testable Wii runtime core to add yet without inventing a dead-end toolchain.
+- conditional branches
+- unconditional branches
+- PC-relative control-flow instructions
+- selected opcode-19 branch forms (`bclr`, `bcctr`)
+- missing or ambiguous trampoline placement
+- branch range failures
 
-## Payload binary format and DOL insertion design
+This is enough to validate patch structure without claiming that arbitrary PowerPC instructions are relocation-safe.
 
-The future payload path should use metadata-driven DOL patching rather than a raw binary diff:
+## Payload artifact contract
 
-- define version metadata for:
-  - hook address
-  - hook instruction overwrite size
-  - payload load address
-  - payload maximum size
-  - cache-flush requirements
-- produce payload bytes from the eventual chosen Wii toolchain
-- embed the payload from Python during export, either by:
-  - writing a verified new DOL section with `DolEditor.add_section`, or
-  - writing into a separately verified free/executable region
-- patch the verified hook site with a deterministic branch into the payload
+`Prime3PayloadArtifact` defines the source-backed payload metadata contract. The serialized form carries:
 
-That design is intentionally not implemented here because neither the hook nor the payload region is currently proven for Corruption.
+- raw payload bytes as base64
+- required virtual load address
+- entry-symbol offset
+- required alignment
+- payload SHA-256
+- protocol-manifest version
+- build-tool identity
+- build-tool version
+- source-tree digest
 
-## Hook, payload region, and threading status
+Host-machine paths are intentionally excluded. Validation enforces:
 
-- Verified hook point: none for Corruption.
-- Verified payload region: none for Corruption.
-- Existing periodic or per-frame hook evidence:
-  - only indirect evidence via `open_prime_rando`'s generic `update_hint_state` remote-execution hook model
-  - Corruption does not currently expose that metadata
-- Separate OS thread creation: unresolved and unsupported by current repo evidence.
+- power-of-two alignment
+- entry offset inside the payload
+- SHA-256 match
+- 32-bit address arithmetic safety for the payload and entry symbol
 
-Without verified hook metadata, even a synthetic DOL branch proof would require fabricated addresses. This milestone stops short of that.
+Because there is no supported compiler pipeline yet, the artifact contract is currently exercised with synthetic payload fixtures only.
 
-## Networking behavior target
+## Compiler and toolchain findings
 
-The already-implemented host protocol establishes the intended runtime contract:
+Repository-supported build tooling does not currently include a Wii-native PowerPC compiler or linker.
 
-- UDP port: `43674`
-- commands: `HELLO`, `READ_MEMORY`, `PING`, `DISCONNECT`, `RESERVED_MAILBOX`
-- no arbitrary writes
-- range policy currently enforced by the host executor: `0x80000000` through `0x81800000`
-- request-ID echo and CRC32 framing already defined
+Verified repository-supported tooling:
 
-Future runtime expectations:
+- Python 3.12
+- installed `open_prime_rando`
+- installed `ppc_asm`
+- .NET build flow for `MP3Randomizer`
+- helper packaging for `wit`, `hpatchz`, and `nodtool`
 
-- initialize LAN-only UDP socket state during runtime startup
-- keep socket ownership in the runtime payload, not the game logic
-- use non-blocking receive/send behavior on the game thread unless a safe worker-thread model is later proven
-- reject malformed packets before any memory dereference
-- reset session state on `DISCONNECT`
-- allow reconnects without restarting the game
+Not proven in the repo, CI, or release packaging:
 
-## On-screen status and startup behavior
+- `powerpc-eabi-gcc`
+- `powerpc-eabi-ld`
+- `powerpc-eabi-objcopy`
+- `devkitPPC`
+- `clang`/LLVM configured for `powerpc-none-eabi`
+- `libogc`
+- a linker script or deterministic raw-binary emission path for Prime 3 runtime code
 
-On-screen IP display is unresolved. The natural mechanism in the existing Prime-family live patch system would be HUD-string injection, but Corruption currently lacks verified `string_display` hook metadata.
+Local PATH checks also did not find the common PPC tool names. `ppc_asm` is useful for instruction assembly and DOL editing, but it is not a repository-backed native payload compiler pipeline.
 
-Startup failure behavior should therefore be conservative:
+Conclusion: this milestone must stop at artifact metadata, insertion primitives, and synthetic validation. The remaining toolchain decision is still a blocker for any real source-built Wii runtime payload.
 
-- if socket or IOS init fails, remain inert and readable
-- do not crash gameplay
-- expose failure only through a future verified HUD/debug path
+## Real NTSC DOL section-slot analysis
 
-## Cross-platform build and packaging expectations
+The user-provided retail NTSC DOL at `E:\ROMS\Corruption Extract\DATA\sys\main.dol` was inspected from a temporary copy only.
 
-Windows, macOS, and Linux can all generate the protocol manifest/vectors now because the generator is pure Python.
+Verified header layout:
 
-They cannot yet build a Wii runtime payload from this repository because the required Wii-native compiler/linker stack is not present or documented.
+- used text slots: `text0`, `text1`
+- unused text slots: `text2`, `text3`, `text4`, `text5`, `text6`
+- used data slots: `data0` through `data7`
+- unused data slots: `data8`, `data9`, `data10`
+- highest mapped text end: `0x80575680`
+- highest mapped data end: `0x80684380`
+- BSS range: `0x805c0800..0x806843a4`
 
-## Licensing and provenance
+Theoretical non-overlapping virtual gaps after excluding all mapped sections and BSS:
 
-No external Wii networking code was copied in this milestone. Any future adoption of external runtime code needs:
+- `0x80575f60..0x80575f80` size `0x20`
+- `0x805c07e0..0x805c0800` size `0x20`
 
-- license review
-- provenance recording
-- attribution if required
-- explicit justification for adapting it into this repository
+Both of those tiny gaps are within relative-branch reach of existing text sections, but they are only 32 bytes each. They are not a viable long-term runtime allocation strategy.
 
-## Remaining blockers before IOS UDP runtime work
+Raw mapped-section gaps that looked larger at first glance are not safe candidates once BSS is excluded. In particular, the apparent `0x805c07e0..0x806781c0` section-table gap is mostly consumed by BSS and must not be used for injected code.
 
-1. Corruption-specific verified hook metadata is still missing.
-2. Corruption-specific verified executable/free payload region metadata is still missing.
-3. No established Wii runtime compiler/linker toolchain exists in the repo.
-4. No proven Corruption symbol/import map exists for IOS sockets, threading, memory barriers, or cache helpers.
-5. Corruption HUD string-display hook metadata is still missing, which blocks reuse of the existing remote execution model.
-6. No executable payload, mailbox, item delivery, or location delivery path exists yet; this milestone only establishes export-time identity tagging.
+File append behavior for the temp validation used `0x20` alignment. The appended payload landed at file offset `0x005c4100`, which required no extra padding because the retail file size was already aligned.
+
+## Temporary unreferenced payload-section validation
+
+A harmless synthetic validation was performed against a temporary copy only:
+
+- payload bytes: four `nop` instructions, 16 bytes total
+- payload virtual address: `0x80575f60`
+- selected text slot: `text2`
+- payload file offset: `0x005c4100`
+- entry symbol address: `0x80575f60`
+
+Analyzer verification on the temporary copy showed:
+
+- one new appended payload region only
+- header changes limited to the new text-slot mapping fields
+- no existing mapped-section bytes changed
+- no decoded branch changes
+- no hook instruction changes
+
+The original retail DOL remained untouched and no proprietary payload bytes entered Git.
+
+## Hook reconnaissance status
+
+No Corruption hook is verified for production use in this milestone.
+
+Current evidence still stops short of the required bar:
+
+- no version-specific hook address is proven against the retail NTSC DOL
+- no exact original instruction word is committed as production metadata
+- no per-frame or otherwise suitable lifecycle hook is proven with sufficient ABI context
+- no confirmed payload placement larger than the tiny 32-byte header gaps is available
+
+The repo and installed `open_prime_rando` metadata continue to show that Corruption lacks the `string_display.update_hint_state` hook metadata used by the existing remote-execution model in other Prime titles.
+
+Status:
+
+- verified hook: none
+- candidate hooks worth future investigation: main-loop, startup, and state-manager update paths only at the evidence level, not as production addresses
+
+## CI and release packaging implications
+
+Current CI and release packaging can validate:
+
+- Python patch logic
+- protocol manifests and vectors
+- analyzer behavior
+- exporter integration
+
+Current CI and release packaging cannot validate:
+
+- PowerPC payload compilation
+- linker-script correctness
+- deterministic raw Wii binary emission
+- cache-management or IOS import behavior inside retail Corruption
+
+Until a supported native toolchain is added to repo policy and CI, all runtime-payload work must remain at the metadata and synthetic-fixture layer.
+
+## Exact next blocker
+
+The next blocker before real runtime networking code is not hook patching logic anymore. It is the missing repository-supported Wii payload build strategy.
+
+That blocker must be resolved together with:
+
+- a CI-supported compiler/linker path
+- a larger verified executable payload allocation strategy for Corruption
+- a version-specific verified hook site with exact original instruction data
+
+Only after those three pieces are proven should the project start adding native runtime behavior such as IOS networking, sockets, threads, mailbox handling, or item/location delivery.

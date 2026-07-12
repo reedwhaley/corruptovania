@@ -4,7 +4,14 @@ import argparse
 import hashlib
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+if __package__ in {None, ""}:
+    _repository_root = Path(__file__).resolve().parents[2]
+    _repository_root_str = os.fspath(_repository_root)
+    if _repository_root_str not in sys.path:
+        sys.path.insert(0, _repository_root_str)
 
 from randovania.game_connection.executor.prime3_wii_protocol import PROTOCOL_VERSION
 from randovania.games.prime3.exporter.runtime_payload import (

@@ -187,7 +187,6 @@ Corruption-specific findings from the retail DOL:
 
 What is not yet proven:
 
-- the exact Corruption routine that finalizes ArenaLo or ArenaHi
 - whether a static MEM1 payload above current BSS survives every later game allocator step
 - whether a MEM2-backed DOL text section is a safe and supported loader target for this title
 - a Corruption-specific executable runtime allocation path with known cache-management semantics
@@ -195,15 +194,30 @@ What is not yet proven:
 
 ## Arena and heap findings
 
-No Corruption-specific arena reservation is verified in this milestone.
+No production-safe Corruption-specific arena reservation is verified in this milestone.
 
 Evidence quality today:
 
 - generic Wii low-memory arena fields and MEM2 usable-range fields are known
 - Corruption-specific DOL header layout is known
-- Corruption-specific arena-boundary setter instructions are not yet identified
+- the retail startup stub at `0x800063c4..0x8000642c` writes the same aligned pointer to:
+  - `0x80000034`, which generic Dolphin OS memory maps document as `ArenaHi`
+  - `0x80003110`, which Wii low-memory maps document as MEM1 arena end
+- later OS init code at `0x804de1d8..0x804de278` reads `0x80003110`, `0x80003124`, and `0x80003128` and copies those values into internal allocator globals
+- no later direct store to `0x80000034` or `0x80003110` was found in the retail DOL text sections
 
-Because that last step is missing, no production allocation metadata was added. Empty address space above BSS is not treated as safe by default.
+What this proves:
+
+- adding a DOL section above current BSS does not by itself reserve that range from later MEM1 allocation
+- if a static MEM1 payload region is ever reserved structurally, the boundary class to change is the MEM1 high boundary represented by `0x80000034` and `0x80003110`
+
+What this still does not prove:
+
+- that a lowered `ArenaHi` / MEM1 arena end value is sufficient for Corruption's later heap, REL, and game allocator behavior
+- that no later non-text-side write from IOS, apploader state, or runtime data initialization can still affect the same effective reservation
+- that a chosen MEM1 payload span above BSS is large enough and harmless for real gameplay startup across this title's full boot path
+
+Because those survival and ownership questions are still open, no production allocation metadata was added. Empty address space above BSS is not treated as safe by default.
 
 ## Allocation strategy evaluation
 
@@ -212,7 +226,7 @@ Because that last step is missing, no production allocation metadata was added. 
 - theoretical capacity: up to the remaining MEM1 headroom above `0x806843a4`
 - branch reachability from startup code: yes
 - current status: rejected for production
-- blocker: no proof that Corruption excludes the chosen range from later arena or heap allocation
+- blocker: a new section above BSS remains inside the default MEM1 arena unless the startup-written high boundary is reduced explicitly
 
 ### 2. Static DOL section in a MEM2 range
 
@@ -221,13 +235,17 @@ Because that last step is missing, no production allocation metadata was added. 
 - current status: rejected for production
 - blockers:
   - no Corruption-specific loader proof for MEM2 DOL sections
-  - no verified MEM2 reservation for this title
+  - no verified Corruption-owned MEM2 reservation write was identified; the retail DOL only reads the IOS/apploader-provided MEM2 bounds at `0x80003124` and `0x80003128`
   - would require a proven trampoline or secondary hop strategy
 
 ### 3. Reserve memory by reducing an arena boundary
 
-- current status: best long-term candidate class, but not verified
-- blocker: no exact version-specific instruction or data write has been proven yet
+- current status: best-supported candidate class, but not verified for production
+- exact candidate boundary:
+  - startup code at `0x80006410..0x8000642c` stores the aligned boundary value to `0x80000034` and `0x80003110`
+- remaining blockers:
+  - no proof yet that lowering that boundary by payload size leaves Corruption stable through later heap, REL, and gameplay startup
+  - no proof yet for the smallest safe reserved span or whether it must also be mirrored into later internal allocator state deliberately
 
 ### 4. Runtime allocation from a known executable-capable arena
 
@@ -261,16 +279,19 @@ Candidate:
 - expected original instruction word: `0x38000000`
 - mnemonic: `li r0, 0`
 - execution timing: startup only
-- execution frequency: once
+- execution frequency: one inbound branch from the DOL entry stub was found, and no other in-DOL branch target to `0x8000633c` was found
 - displacement safety with the current conservative trampoline helper: yes, because this instruction is plain non-control-flow
 - stack validity: better than the raw entry instruction because the prologue has already executed, but still not fully ABI-proven for payload entry
+- startup context:
+  - executes after register/base setup at `0x8000648c` and section/BSS init at `0x8000651c`
+  - executes before the later OS init fan-out at `0x804c5160` and `0x804de05c`
 - branch reachability:
   - MEM1/BSS-adjacent candidates: yes
   - MEM2 candidates via one direct relative branch: no
 - confidence: low
 - missing proof:
   - exact startup invariants at this point
-  - whether this location occurs after all required OS and arena initialization
+  - whether a payload entered here can safely rely on any OS service, heap state, or arena state
   - whether a payload entered here could safely touch any runtime service needed later
 
 An earlier startup address, `0x80006320`, is also exact and easy to identify, but its original instruction is `0x4800016d` (`bl 0x8000648c`), which is a control-flow instruction and therefore rejected by the current conservative single-instruction trampoline builder.
@@ -318,7 +339,7 @@ What is still missing from repository-wide support:
 ## Exact remaining blockers before a harmless executable hook test
 
 1. Identify the exact Corruption arena or heap boundary mechanism that can reserve a payload range explicitly.
-2. Prove that the reserved range survives startup and remains excluded from later heap and REL allocation.
+2. Prove that a lowered `0x80000034` / `0x80003110` boundary survives startup and remains excluded from later heap and REL allocation.
 3. Upgrade at least one hook candidate from low-confidence evidence to version-specific verified metadata with understood calling context.
 4. Only then combine the existing DOL patch primitives with the source-built payload artifact in a temporary, unreferenced, harmless DOL validation.
 

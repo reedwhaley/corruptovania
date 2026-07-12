@@ -51,6 +51,7 @@ Observed file hashes:
 
 - Original SHA-256: `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
 - Patched SHA-256: `05bfd79478121fe32a72a64b9ef0c701088e80aea0cc4c57907ea7e9d14f0f32`
+- Extracted CDV SHA-256: `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
 
 ## DOL Structure Summary
 
@@ -162,21 +163,137 @@ What is available locally:
 
 One relevant update note says the patch set removed a black line visible in the main menu at resolutions above native. That aligns with the idea that this DOL patch may be related to display or filter behavior, but it does not prove the exact semantics of the four seven-byte edits.
 
+## Three-Way Comparison: Retail, `main.hdiff`, And Extracted CDV DOL
+
+Three files were compared:
+
+- `A`: retail Wii NTSC `main.dol`
+- `B`: temporary copy of `A` patched with `MP3Update/main.hdiff`
+- `C`: `main.dol` extracted from a Corruptovania-generated ISO
+
+Observed hashes and sizes:
+
+| Label | SHA-256 | Size |
+| --- | --- | ---: |
+| `A` | `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104` | `6045952` |
+| `B` | `05bfd79478121fe32a72a64b9ef0c701088e80aea0cc4c57907ea7e9d14f0f32` | `6045952` |
+| `C` | `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104` | `6045952` |
+
+Equality results:
+
+- `A == B`: `false`
+- `A == C`: `true`
+- `B == C`: `false`
+
+All three files use the same DOL header layout and the same mapped section table. No file introduces appended bytes, expanded sections, or header edits.
+
+### `A -> B`
+
+This remains exactly the previously established `main.hdiff` result:
+
+- `4` changed ranges
+- `28` total changed bytes
+- all changes are `data` in `data5`
+- no executable text changes
+- no decoded changed `b` or `bl` instructions
+- no overlap with known Corruption metadata spans
+
+The four changed ranges are:
+
+| File Offset | Virtual Address | Length | Classification | Section |
+| --- | --- | ---: | --- | --- |
+| `0x5A20EA` | `0x805A600A` | `7` | `data` | `data5` |
+| `0x5A2162` | `0x805A6082` | `7` | `data` | `data5` |
+| `0x5A219E` | `0x805A60BE` | `7` | `data` | `data5` |
+| `0x5A21DA` | `0x805A60FA` | `7` | `data` | `data5` |
+
+These are structured-data substitutions in a mapped data section, not executable text edits. No local source proves a more specific semantic meaning, so they remain unresolved data substitutions.
+
+### `B -> C`
+
+`B -> C` is the inverse of the same four seven-byte `data5` changes.
+
+Observed facts:
+
+- `4` changed ranges
+- `28` total changed bytes
+- all changes are `data` in `data5`
+- no executable text changes
+- no decoded changed `b` or `bl` instructions
+- no header changes
+- no appended data
+- no expanded sections
+- no overlap with the checked Corruption metadata spans
+
+The changed offsets and addresses are identical to `A -> B`, which means the extracted CDV DOL does not add new DOL-side runtime patching beyond the retail binary and in fact does not carry the `main.hdiff` change set.
+
+### `A -> C`
+
+`A -> C` produced no differences at all.
+
+Observed facts:
+
+- `0` changed ranges
+- `0` total changed bytes
+- no seed UUID changes
+- no build-string changes
+- no additional data changes
+- no executable text changes
+- no patched branches
+- no payload data
+- no DOL header or section changes
+- no appended data
+- no expanded sections
+
+This proves that the extracted Corruptovania-generated ISO contains the retail Wii NTSC `main.dol` unchanged.
+
+### Metadata Correlation
+
+The three-way analyzer was run with explicit metadata spans for:
+
+- build string at `0x805822B0`
+- embedded build-string UUID bytes at `0x805822B6`
+- `cstate_manager_global` at `0x805C4F70`
+- `game_state_pointer` at `0x8067DC0C`
+
+No changed range in `A -> B`, `B -> C`, or `A -> C` intersects any of those spans.
+
+Implications:
+
+- the extracted CDV DOL does not store a seed or layout UUID in the known build-string slot
+- the extracted CDV DOL does not patch the known `CStateManager` or game-state pointer addresses
+- there is no proven remote-execution or string-display DOL seam present in the extracted CDV DOL
+
+`open_prime_rando` still has `string_display=None` for Corruption Wii NTSC, so there is also no source-backed Corruption HUD-display patch address set available from the installed metadata.
+
+### Exporter Correlation
+
+Current exporter behavior explains the retail-identical `C` result:
+
+- `randovania/games/prime3/exporter/game_exporter.py` only applies `main.hdiff` when `patch_data["disable_deflicker"]` is enabled
+- `randovania/games/prime3/layout/corruption_configuration.py` sets `disable_deflicker: bool = False` by default
+
+So a Corruptovania-generated ISO can legitimately keep the retail `main.dol` unchanged unless that option is explicitly enabled.
+
 ## Conclusions
 
 - The existing Prime 3 Wii `main.hdiff` is a tiny data-only patch.
+- The extracted CDV `main.dol` is byte-identical to the retail Wii NTSC `main.dol`.
 - It does not prove a code hook, branch trampoline, payload region, or executable extension point.
+- The actual exported DOL does not contain a seed UUID patch, build-string patch, executable branch patch, payload injection, or section expansion.
 - It does not provide a verified safe place to attach a future Wii networking runtime payload.
 - It does not overlap the known Corruption runtime metadata addresses already used by `open_prime_rando`.
+- The actual CDV export offers nothing in `main.dol` that is not already present in retail, and therefore nothing beyond the already-known `main.hdiff` artifact.
 
 ## Recommended Next Step
 
-Do not build a new runtime payload on top of this `main.hdiff`.
+Do not build a new runtime payload on top of this `main.hdiff`, and do not assume the current Corruptovania export path gives you a patched Prime 3 DOL to build on.
 
 The next engineering step should be one of:
 
 1. obtain the original source or design notes that produced this DOL patch, if they exist
 2. design a new, source-backed DOL patch path specifically for the Wii networking payload
-3. separately verify a real hook site and a real executable payload allocation strategy before adding any runtime metadata seam to the repository
+3. choose and verify a deliberate export-time trigger for that patch path instead of relying on the current retail-identical CDV DOL
+4. separately verify a real hook site and a real executable payload allocation strategy before adding any runtime metadata seam to the repository
 
 Until one of those paths is completed, there is no evidence-backed reason to treat the current Prime 3 Wii DOL patch as reusable runtime-hook infrastructure.

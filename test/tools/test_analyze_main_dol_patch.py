@@ -208,6 +208,19 @@ def test_branch_target_classification():
     assert report.decoded_branches[0].target_in_changed_region is False
 
 
+def test_branch_target_can_land_in_changed_range():
+    original = _build_dol(text_sections=[(0x100, 0x80004000, b"\x60\x00\x00\x00" * 6)])
+    patched = bytearray(original)
+    patched[0x100:0x104] = (0x48000008).to_bytes(4, "big")
+    patched[0x108:0x10C] = (0x48000008).to_bytes(4, "big")
+
+    report = module.analyze_dol_patch(_write_tmp(original), _write_tmp(bytes(patched)))
+
+    assert report.decoded_branches[0].target_classification == "inside changed executable region"
+    assert report.decoded_branches[0].target_changed_range_classification == "text"
+    assert report.decoded_branches[0].target_changed_range_section_name == "text0"
+
+
 def test_zero_filled_candidate_region_reporting():
     original = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 64)])
     patched = _build_dol(text_sections=[(0x100, 0x80004000, b"\x00" * 64)])
@@ -217,7 +230,123 @@ def test_zero_filled_candidate_region_reporting():
     assert report.zero_candidates[0].length >= 32
 
 
-def test_json_report_generation(tmp_path: Path):
+def test_metadata_annotations_are_supplied_externally():
+    original = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 8)])
+    patched = _build_dol(text_sections=[(0x100, 0x80004000, b"B" * 8)])
+    spans = (module.MetadataSpan(name="build_string", start_address=0x80004000, length=8),)
+
+    report = module.analyze_dol_patch(_write_tmp(original), _write_tmp(patched), spans)
+
+    assert report.changed_ranges[0].annotations[0].name == "build_string"
+
+
+def test_three_identical_files():
+    data = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 8)])
+    a_path = _write_tmp(data)
+    b_path = _write_tmp(data)
+    c_path = _write_tmp(data)
+
+    report = module.analyze_three_way_dol_patch(a_path, b_path, c_path)
+
+    assert all(comparison.changed_range_count == 0 for comparison in report.comparisons)
+    assert report.comparisons[0].report.original_sha256 == report.comparisons[0].report.patched_sha256
+
+
+def test_three_way_separates_data_text_and_combined_changes():
+    a = _build_dol(
+        text_sections=[(0x100, 0x80004000, b"\x60\x00\x00\x00" * 4)],
+        data_sections=[(0x200, 0x80300000, b"A" * 8)],
+    )
+    b = bytearray(a)
+    b[0x200:0x204] = b"DATA"
+    c = bytearray(b)
+    c[0x100:0x104] = (0x48000008).to_bytes(4, "big")
+
+    report = module.analyze_three_way_dol_patch(_write_tmp(a), _write_tmp(bytes(b)), _write_tmp(bytes(c)))
+    comparisons = {comparison.label: comparison for comparison in report.comparisons}
+
+    assert comparisons["A->B"].is_data_only is True
+    assert comparisons["A->B"].has_text_changes is False
+    assert comparisons["B->C"].has_text_changes is True
+    assert comparisons["B->C"].has_data_changes is False
+    assert comparisons["A->C"].has_text_changes is True
+    assert comparisons["A->C"].has_data_changes is True
+
+
+def test_three_way_json_output(tmp_path: Path):
+    a = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 8)])
+    b = _build_dol(text_sections=[(0x100, 0x80004000, b"B" * 8)])
+    c = _build_dol(text_sections=[(0x100, 0x80004000, b"C" * 8)])
+    a_path = tmp_path / "a.dol"
+    b_path = tmp_path / "b.dol"
+    c_path = tmp_path / "c.dol"
+    output_path = tmp_path / "three_way.json"
+    a_path.write_bytes(a)
+    b_path.write_bytes(b)
+    c_path.write_bytes(c)
+
+    assert module.main(
+        [
+            "--original-dol",
+            str(a_path),
+            "--patched-dol",
+            str(b_path),
+            "--third-dol",
+            str(c_path),
+            "--original-label",
+            "A",
+            "--patched-label",
+            "B",
+            "--third-label",
+            "C",
+            "--json-output",
+            str(output_path),
+        ]
+    ) == 0
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["files"]["A"]["sha256"]
+    assert [item["label"] for item in payload["comparisons"]] == ["A->B", "B->C", "A->C"]
+
+
+def test_three_way_markdown_output(tmp_path: Path):
+    a = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 8)])
+    b = _build_dol(text_sections=[(0x100, 0x80004000, b"B" * 8)])
+    c = _build_dol(text_sections=[(0x100, 0x80004000, b"C" * 8)])
+    a_path = tmp_path / "a.dol"
+    b_path = tmp_path / "b.dol"
+    c_path = tmp_path / "c.dol"
+    output_path = tmp_path / "three_way.md"
+    a_path.write_bytes(a)
+    b_path.write_bytes(b)
+    c_path.write_bytes(c)
+
+    assert module.main(
+        [
+            "--original-dol",
+            str(a_path),
+            "--patched-dol",
+            str(b_path),
+            "--third-dol",
+            str(c_path),
+            "--original-label",
+            "A",
+            "--patched-label",
+            "B",
+            "--third-label",
+            "C",
+            "--markdown-output",
+            str(output_path),
+        ]
+    ) == 0
+
+    text = output_path.read_text(encoding="utf-8")
+    assert "A->B" in text
+    assert "B->C" in text
+    assert "A->C" in text
+
+
+def test_two_way_json_report_generation(tmp_path: Path):
     original = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 8)])
     patched = _build_dol(text_sections=[(0x100, 0x80004000, b"B" * 8)])
     original_path = tmp_path / "original.dol"
@@ -241,7 +370,7 @@ def test_json_report_generation(tmp_path: Path):
     assert payload["changed_ranges"]
 
 
-def test_markdown_report_generation(tmp_path: Path):
+def test_two_way_markdown_report_generation(tmp_path: Path):
     original = _build_dol(text_sections=[(0x100, 0x80004000, b"A" * 8)])
     patched = _build_dol(text_sections=[(0x100, 0x80004000, b"B" * 8)])
     original_path = tmp_path / "original.dol"

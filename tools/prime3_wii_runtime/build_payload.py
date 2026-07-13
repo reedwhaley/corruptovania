@@ -86,6 +86,8 @@ RELOCATED_EXECUTED_MARKER_VALUE = 0x52554E21
 RELOCATED_SUCCESS_STATUS_VALUE = 0x52544F4B
 RELOCATED_BOOTSTRAP_RETURN_MARKER_VALUE = 0x4252544E
 RUNTIME_ENTRY_SYMBOL = "runtime_entry"
+RUNTIME_POLL_ENTRY_SYMBOL = "runtime_poll_entry"
+RUNTIME_POLL_HOOK_WRAPPER_SYMBOL = "runtime_poll_hook_wrapper"
 RUNTIME_CODE_START_SYMBOL = "runtime_code_start"
 RUNTIME_CODE_END_SYMBOL = "runtime_code_end"
 RUNTIME_STATE_START_SYMBOL = "runtime_state_start"
@@ -97,6 +99,10 @@ RUNTIME_EXECUTED_MARKER_SYMBOL = "runtime_executed_marker"
 RUNTIME_EXECUTION_COUNTER_SYMBOL = "runtime_execution_counter"
 RUNTIME_STATUS_SYMBOL = "runtime_status"
 RUNTIME_BOOTSTRAP_RETURN_MARKER_SYMBOL = "runtime_bootstrap_return_marker"
+RUNTIME_POLL_COUNTER_SYMBOL = "runtime_poll_counter"
+RUNTIME_POLL_HEARTBEAT_SYMBOL = "runtime_poll_heartbeat"
+RUNTIME_POLL_LAST_SEQUENCE_SYMBOL = "runtime_poll_last_sequence"
+RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
 
 
 @dataclasses.dataclass(frozen=True)
@@ -105,6 +111,8 @@ class RelocatedRuntimeBuildResult:
     payload_sha256: str
     payload_size: int
     entry_address: int
+    poll_entry_address: int
+    poll_hook_wrapper_address: int
     code_start: int
     code_end: int
     state_start: int
@@ -117,6 +125,9 @@ class RelocatedRuntimeBuildResult:
     runtime_execution_counter_address: int
     runtime_status_address: int
     bootstrap_return_marker_address: int
+    poll_counter_address: int
+    poll_heartbeat_address: int
+    poll_last_sequence_address: int
     cache_range_start: int
     cache_range_size: int
 
@@ -385,10 +396,14 @@ def build_prime3_runtime_payload(
             embedded_runtime_blob_sha256=relocated_runtime.payload_sha256,
             runtime_destination_address=runtime_destination,
             runtime_entry_address=relocated_runtime.entry_address,
+            runtime_poll_entry_address=relocated_runtime.poll_entry_address,
+            runtime_poll_hook_wrapper_address=relocated_runtime.poll_hook_wrapper_address,
             runtime_code_start=relocated_runtime.code_start,
             runtime_code_end=relocated_runtime.code_end,
             runtime_state_start=relocated_runtime.state_start,
             runtime_state_end=relocated_runtime.state_end,
+            runtime_stack_start=None,
+            runtime_stack_end=None,
             required_source_alignment=PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
             required_destination_alignment=PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
             cache_line_size=RELOCATED_RUNTIME_CACHE_LINE_SIZE,
@@ -407,6 +422,12 @@ def build_prime3_runtime_payload(
             runtime_success_status_value=RELOCATED_SUCCESS_STATUS_VALUE,
             bootstrap_return_marker_address=relocated_runtime.bootstrap_return_marker_address,
             bootstrap_return_marker_value=RELOCATED_BOOTSTRAP_RETURN_MARKER_VALUE,
+            runtime_poll_counter_address=relocated_runtime.poll_counter_address,
+            runtime_poll_counter_size=4,
+            runtime_poll_heartbeat_address=relocated_runtime.poll_heartbeat_address,
+            runtime_poll_heartbeat_size=4,
+            runtime_poll_last_sequence_address=relocated_runtime.poll_last_sequence_address,
+            runtime_poll_last_sequence_size=4,
         )
 
     manifest = Prime3RuntimePayloadManifest(
@@ -454,6 +475,7 @@ def _build_relocated_runtime(
     compiler_defines = [
         f"-DPRIME3_RUNTIME_EXECUTED_MARKER_VALUE=0x{RELOCATED_EXECUTED_MARKER_VALUE:08X}",
         f"-DPRIME3_RUNTIME_SUCCESS_STATUS_VALUE=0x{RELOCATED_SUCCESS_STATUS_VALUE:08X}",
+        f"-DPRIME3_RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS=0x{RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS:08X}",
     ]
     _run(
         [
@@ -506,6 +528,8 @@ def _build_relocated_runtime(
         raise RuntimeError("Relocated runtime ELF has dynamic sections.")
 
     entry_address = _extract_symbol_address(readelf_symbols, RUNTIME_ENTRY_SYMBOL)
+    poll_entry_address = _extract_symbol_address(readelf_symbols, RUNTIME_POLL_ENTRY_SYMBOL)
+    poll_hook_wrapper_address = _extract_symbol_address(readelf_symbols, RUNTIME_POLL_HOOK_WRAPPER_SYMBOL)
     code_start = _extract_symbol_address(readelf_symbols, RUNTIME_CODE_START_SYMBOL)
     code_end = _extract_symbol_address(readelf_symbols, RUNTIME_CODE_END_SYMBOL)
     state_start = _extract_symbol_address(readelf_symbols, RUNTIME_STATE_START_SYMBOL)
@@ -517,6 +541,9 @@ def _build_relocated_runtime(
     runtime_execution_counter_address = _extract_symbol_address(readelf_symbols, RUNTIME_EXECUTION_COUNTER_SYMBOL)
     runtime_status_address = _extract_symbol_address(readelf_symbols, RUNTIME_STATUS_SYMBOL)
     bootstrap_return_marker_address = _extract_symbol_address(readelf_symbols, RUNTIME_BOOTSTRAP_RETURN_MARKER_SYMBOL)
+    poll_counter_address = _extract_symbol_address(readelf_symbols, RUNTIME_POLL_COUNTER_SYMBOL)
+    poll_heartbeat_address = _extract_symbol_address(readelf_symbols, RUNTIME_POLL_HEARTBEAT_SYMBOL)
+    poll_last_sequence_address = _extract_symbol_address(readelf_symbols, RUNTIME_POLL_LAST_SEQUENCE_SYMBOL)
     cache_range_start, cache_range_size = compute_cache_range(
         address=runtime_destination,
         size=len(payload_bytes),
@@ -527,6 +554,8 @@ def _build_relocated_runtime(
         payload_sha256=payload_sha256,
         payload_size=len(payload_bytes),
         entry_address=entry_address,
+        poll_entry_address=poll_entry_address,
+        poll_hook_wrapper_address=poll_hook_wrapper_address,
         code_start=code_start,
         code_end=code_end,
         state_start=state_start,
@@ -539,6 +568,9 @@ def _build_relocated_runtime(
         runtime_execution_counter_address=runtime_execution_counter_address,
         runtime_status_address=runtime_status_address,
         bootstrap_return_marker_address=bootstrap_return_marker_address,
+        poll_counter_address=poll_counter_address,
+        poll_heartbeat_address=poll_heartbeat_address,
+        poll_last_sequence_address=poll_last_sequence_address,
         cache_range_start=cache_range_start,
         cache_range_size=cache_range_size,
     )

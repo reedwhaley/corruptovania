@@ -54,6 +54,19 @@ python tools/prime3_wii_runtime/build_probe_dol.py `
   --halt-at-entry
 ```
 
+Recurring poll validation uses the relocated runtime plus the Wii NTSC accessor hook at `0x800BB71C` instead of an entry gate:
+
+```powershell
+python tools/prime3_wii_runtime/build_probe_dol.py `
+  --original-dol <original main.dol> `
+  --output-dol <temp>\probe-main.dol `
+  --payload-bin <temp>\payload\payload.bin `
+  --payload-manifest <temp>\payload\payload.json `
+  --report <temp>\probe-section.json `
+  --payload-address 0x806843C0 `
+  --install-recurring-poll-hook
+```
+
 The probe DOL builder:
 
 - starts from the retail `main.dol`
@@ -84,6 +97,8 @@ python tools/prime3_wii_runtime/verify_probe_delivery.py `
   --payload-address <probe payload virtual address> `
   --halt-at-entry
 ```
+
+For the recurring poll path, swap `--halt-at-entry` for `--install-recurring-poll-hook`.
 
 Pass:
 
@@ -143,6 +158,19 @@ python tools/prime3_wii_runtime/observe_probe.py `
   --report <temp>\probe-memory.json `
   --startup-word 0x80006320=0x48000000 `
   --startup-word 0x8000633C=0x38000000
+```
+
+For the recurring poll path, observe the installed retail hook word and sample the relocated runtime state over time:
+
+```powershell
+python tools/prime3_wii_runtime/observe_probe.py `
+  --payload-address 0x806843C0 `
+  --payload-bin <temp>\payload\payload.bin `
+  --payload-manifest <temp>\payload\payload.json `
+  --report <temp>\probe-memory.json `
+  --hook-address 0x800BB71C `
+  --expected-hook-word <probe-report recurring_poll_hook hook_replacement_instruction> `
+  --repeat-delay-ms 1000
 ```
 
 It reads only:

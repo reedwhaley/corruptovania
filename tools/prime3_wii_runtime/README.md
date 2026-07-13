@@ -9,7 +9,8 @@ Current scope:
 - `relocated_runtime.S` builds a separate high-MEM1 runtime blob for the relocation proof
 - `build_probe_dol.py` and `verify_probe_delivery.py` support static DOL patch/verify runs for the generated payload artifacts
 - `observe_probe.py` remains read-only and reports live payload/bootstrap state from Dolphin memory
-- no networking, IOS, recurring hook, or normal exporter integration is included
+- recurring poll hook installation is supported for the validated Wii NTSC retail DOL accessor at `0x800BB71C`
+- no networking, IOS, or normal exporter integration is included
 
 ## Supported local toolchain
 
@@ -65,6 +66,8 @@ Static DOL patch and verification helpers:
 ```powershell
 python tools/prime3_wii_runtime/build_probe_dol.py --original-dol <main.dol> --output-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <probe-report.json> --payload-address 0x806843C0 --install-relocated-runtime
 python tools/prime3_wii_runtime/verify_probe_delivery.py --original-dol <main.dol> --probe-dol <probe.dol> --extracted-final-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <verify-report.json> --payload-address 0x806843C0 --install-relocated-runtime
+python tools/prime3_wii_runtime/build_probe_dol.py --original-dol <main.dol> --output-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <probe-report.json> --payload-address 0x806843C0 --install-recurring-poll-hook
+python tools/prime3_wii_runtime/verify_probe_delivery.py --original-dol <main.dol> --probe-dol <probe.dol> --extracted-final-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <verify-report.json> --payload-address 0x806843C0 --install-recurring-poll-hook
 ```
 
 ## Manifest contract

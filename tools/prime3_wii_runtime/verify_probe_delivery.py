@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--halt-at-entry", action="store_true")
     parser.add_argument("--install-entry-bootstrap", action="store_true")
     parser.add_argument("--install-relocated-runtime", action="store_true")
+    parser.add_argument("--install-recurring-poll-hook", action="store_true")
     return parser.parse_args()
 
 
@@ -47,6 +48,7 @@ def main() -> None:
         halt_at_entry=args.halt_at_entry,
         install_entry_bootstrap=args.install_entry_bootstrap,
         install_relocated_runtime=args.install_relocated_runtime,
+        install_recurring_poll_hook=args.install_recurring_poll_hook,
     )
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(report.to_json_text(), encoding="utf-8")

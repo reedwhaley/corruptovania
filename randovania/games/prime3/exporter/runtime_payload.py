@@ -12,7 +12,7 @@ from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, Pr
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION = 1
+PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION = 2
 PRIME3_RUNTIME_TARGET_ARCHITECTURE = "powerpc"
 PRIME3_RUNTIME_TARGET_ENDIANNESS = "big"
 PRIME3_RUNTIME_TARGET_ABI = "eabi"
@@ -187,10 +187,14 @@ class Prime3RelocatedRuntimeMetadata:
     embedded_runtime_blob_sha256: str
     runtime_destination_address: int
     runtime_entry_address: int
+    runtime_poll_entry_address: int
+    runtime_poll_hook_wrapper_address: int
     runtime_code_start: int
     runtime_code_end: int
     runtime_state_start: int
     runtime_state_end: int
+    runtime_stack_start: int | None
+    runtime_stack_end: int | None
     required_source_alignment: int
     required_destination_alignment: int
     cache_line_size: int
@@ -209,6 +213,12 @@ class Prime3RelocatedRuntimeMetadata:
     runtime_success_status_value: int
     bootstrap_return_marker_address: int
     bootstrap_return_marker_value: int
+    runtime_poll_counter_address: int
+    runtime_poll_counter_size: int
+    runtime_poll_heartbeat_address: int
+    runtime_poll_heartbeat_size: int
+    runtime_poll_last_sequence_address: int
+    runtime_poll_last_sequence_size: int
 
     def validate(
         self,
@@ -244,12 +254,27 @@ class Prime3RelocatedRuntimeMetadata:
             raise Prime3DolPatchError("Runtime destination range exceeds the reserved range.")
         if not (self.runtime_code_start <= self.runtime_entry_address < self.runtime_code_end):
             raise Prime3DolPatchError("Runtime entry address is outside the runtime code range.")
+        if not (self.runtime_code_start <= self.runtime_poll_entry_address < self.runtime_code_end):
+            raise Prime3DolPatchError("Runtime poll entry address is outside the runtime code range.")
+        if not (self.runtime_code_start <= self.runtime_poll_hook_wrapper_address < self.runtime_code_end):
+            raise Prime3DolPatchError("Runtime poll hook wrapper address is outside the runtime code range.")
         if self.runtime_code_start != self.runtime_destination_address:
             raise Prime3DolPatchError("Runtime code must begin at the destination address.")
         if self.runtime_code_end > runtime_end:
             raise Prime3DolPatchError("Runtime code range exceeds the embedded runtime size.")
         if not (self.runtime_code_end <= self.runtime_state_start <= self.runtime_state_end <= runtime_end):
             raise Prime3DolPatchError("Runtime state range is invalid or overlaps runtime code.")
+        if (self.runtime_stack_start is None) != (self.runtime_stack_end is None):
+            raise Prime3DolPatchError("Runtime stack range must provide both start and end together.")
+        if self.runtime_stack_start is not None:
+            assert self.runtime_stack_end is not None
+            if not (
+                self.runtime_state_start
+                <= self.runtime_stack_start
+                <= self.runtime_stack_end
+                <= self.runtime_state_end
+            ):
+                raise Prime3DolPatchError("Runtime stack range must stay inside the runtime state range.")
 
         diagnostic_end = bootstrap_diagnostic_start + bootstrap_diagnostic_size
         state_ranges = (
@@ -259,6 +284,13 @@ class Prime3RelocatedRuntimeMetadata:
             ("runtime_execution_counter", self.runtime_execution_counter_address, self.runtime_execution_counter_size),
             ("runtime_status", self.runtime_status_address, 4),
             ("bootstrap_return_marker", self.bootstrap_return_marker_address, 4),
+            ("runtime_poll_counter", self.runtime_poll_counter_address, self.runtime_poll_counter_size),
+            ("runtime_poll_heartbeat", self.runtime_poll_heartbeat_address, self.runtime_poll_heartbeat_size),
+            (
+                "runtime_poll_last_sequence",
+                self.runtime_poll_last_sequence_address,
+                self.runtime_poll_last_sequence_size,
+            ),
         )
         for name, start, size in state_ranges:
             if not (self.runtime_state_start <= start < self.runtime_state_end):
@@ -292,10 +324,14 @@ class Prime3RelocatedRuntimeMetadata:
             embedded_runtime_blob_sha256=_json_string(data, "embedded_runtime_blob_sha256"),
             runtime_destination_address=_json_int(data, "runtime_destination_address"),
             runtime_entry_address=_json_int(data, "runtime_entry_address"),
+            runtime_poll_entry_address=_json_int(data, "runtime_poll_entry_address"),
+            runtime_poll_hook_wrapper_address=_json_int(data, "runtime_poll_hook_wrapper_address"),
             runtime_code_start=_json_int(data, "runtime_code_start"),
             runtime_code_end=_json_int(data, "runtime_code_end"),
             runtime_state_start=_json_int(data, "runtime_state_start"),
             runtime_state_end=_json_int(data, "runtime_state_end"),
+            runtime_stack_start=_json_optional_int(data, "runtime_stack_start"),
+            runtime_stack_end=_json_optional_int(data, "runtime_stack_end"),
             required_source_alignment=_json_int(data, "required_source_alignment"),
             required_destination_alignment=_json_int(data, "required_destination_alignment"),
             cache_line_size=_json_int(data, "cache_line_size"),
@@ -314,6 +350,12 @@ class Prime3RelocatedRuntimeMetadata:
             runtime_success_status_value=_json_int(data, "runtime_success_status_value"),
             bootstrap_return_marker_address=_json_int(data, "bootstrap_return_marker_address"),
             bootstrap_return_marker_value=_json_int(data, "bootstrap_return_marker_value"),
+            runtime_poll_counter_address=_json_int(data, "runtime_poll_counter_address"),
+            runtime_poll_counter_size=_json_int(data, "runtime_poll_counter_size"),
+            runtime_poll_heartbeat_address=_json_int(data, "runtime_poll_heartbeat_address"),
+            runtime_poll_heartbeat_size=_json_int(data, "runtime_poll_heartbeat_size"),
+            runtime_poll_last_sequence_address=_json_int(data, "runtime_poll_last_sequence_address"),
+            runtime_poll_last_sequence_size=_json_int(data, "runtime_poll_last_sequence_size"),
         )
 
 

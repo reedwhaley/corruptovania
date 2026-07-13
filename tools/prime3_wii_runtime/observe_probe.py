@@ -57,6 +57,8 @@ class ProbeObservationConfig:
     payload_bytes: bytes
     manifest: Prime3RuntimePayloadManifest
     startup_words: tuple[StartupWordExpectation, ...]
+    hook_address: int | None = None
+    expected_hook_word: int | None = None
     repeat_delay_seconds: float = 0.0
     iso_path: str | None = None
     iso_sha256: str | None = None
@@ -106,6 +108,8 @@ class RelocatedRuntimeObservation(TypedDict):
     address: int
     size: int
     sha256: str
+    code_sha256: str
+    state_sha256: str
     matches_expected: bool
     all_zero: bool
     classification: str
@@ -118,12 +122,16 @@ class RelocatedRuntimeObservation(TypedDict):
     runtime_status_matches_expected: bool
     bootstrap_return_marker_value: int
     bootstrap_return_matches_expected: bool
+    runtime_poll_counter_value: int
+    runtime_poll_heartbeat_value: int
+    runtime_poll_last_sequence_value: int
 
 
 class ProbeState(TypedDict):
     game_id: bytes
     startup_words: dict[str, StartupWordObservation]
     live_halt_word: int | None
+    live_hook_word: int | None
     payload_sha256: str
     payload_matches_expected: bool
     payload_all_zero: bool
@@ -148,6 +156,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-game-id", default="RM3E01")
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--startup-word", action="append", default=[])
+    parser.add_argument("--hook-address", type=_parse_int)
+    parser.add_argument("--expected-hook-word", type=_parse_int)
     parser.add_argument("--repeat-delay-ms", type=int, default=0)
     parser.add_argument("--iso-path")
     parser.add_argument("--iso-sha256")
@@ -179,6 +189,14 @@ def observe_probe_memory(
         "expected_halt_address": config.halt_address,
         "expected_halt_word": config.expected_halt_word,
         "live_halt_word": first_read["live_halt_word"],
+        "hook_address": config.hook_address,
+        "expected_hook_word": config.expected_hook_word,
+        "live_hook_word": first_read["live_hook_word"],
+        "hook_word_matches_expected": (
+            None
+            if config.hook_address is None or config.expected_hook_word is None or first_read["live_hook_word"] is None
+            else first_read["live_hook_word"] == config.expected_hook_word
+        ),
         "halt_active": _halt_active(first_read, config),
         "game_id": game_id.decode("ascii", errors="replace"),
         "entrypoint_address": config.startup_words[0].address if config.startup_words else None,
@@ -192,6 +210,7 @@ def observe_probe_memory(
         "payload_all_zero": first_read["payload_all_zero"],
         "repeated_read_stable": first_read["payload_sha256"] == second_read["payload_sha256"],
         "second_live_payload_sha256": second_read["payload_sha256"],
+        "poll_rate_sample_interval_seconds": config.repeat_delay_seconds,
         "entry_gate_active": all(item["matches"] for item in first_read["startup_words"].values())
         if first_read["startup_words"]
         else False,
@@ -213,6 +232,29 @@ def observe_probe_memory(
         result["bootstrap_diagnostic"] = first_read["bootstrap_diagnostic"]
     if first_read["relocated_runtime"] is not None:
         result["relocated_runtime"] = first_read["relocated_runtime"]
+        result["state_checksum"] = first_read["relocated_runtime"]["state_sha256"]
+        result["second_state_checksum"] = second_read["relocated_runtime"]["state_sha256"]
+        result["poll_counter_delta"] = (
+            second_read["relocated_runtime"]["runtime_poll_counter_value"]
+            - first_read["relocated_runtime"]["runtime_poll_counter_value"]
+        )
+        result["poll_counter_monotonic"] = (
+            second_read["relocated_runtime"]["runtime_poll_counter_value"]
+            >= first_read["relocated_runtime"]["runtime_poll_counter_value"]
+        )
+        result["heartbeat_updated"] = (
+            second_read["relocated_runtime"]["runtime_poll_heartbeat_value"]
+            != first_read["relocated_runtime"]["runtime_poll_heartbeat_value"]
+        )
+        result["approximate_calls_per_second"] = (
+            None
+            if config.repeat_delay_seconds <= 0
+            else (
+                second_read["relocated_runtime"]["runtime_poll_counter_value"]
+                - first_read["relocated_runtime"]["runtime_poll_counter_value"]
+            )
+            / config.repeat_delay_seconds
+        )
     if first_read["boot_info_plus_8"] is not None:
         result["boot_info_plus_8"] = first_read["boot_info_plus_8"]
     if first_read["invalid_boot_info_pointer"] is not None:
@@ -243,6 +285,12 @@ def _read_probe_state(
     if config.halt_address is not None:
         live_halt_word = int.from_bytes(
             _read_exact(backend, config.halt_address, 4, f"halt word 0x{config.halt_address:08x}"),
+            "big",
+        )
+    live_hook_word = None
+    if config.hook_address is not None:
+        live_hook_word = int.from_bytes(
+            _read_exact(backend, config.hook_address, 4, f"hook word 0x{config.hook_address:08x}"),
             "big",
         )
 
@@ -333,15 +381,24 @@ def _read_probe_state(
             metadata.embedded_runtime_blob_size,
             f"relocated runtime bytes 0x{metadata.runtime_destination_address:08x}",
         )
+        runtime_code_offset = metadata.runtime_code_start - metadata.runtime_destination_address
+        runtime_code_end_offset = metadata.runtime_code_end - metadata.runtime_destination_address
+        runtime_state_offset = metadata.runtime_state_start - metadata.runtime_destination_address
+        runtime_state_end_offset = metadata.runtime_state_end - metadata.runtime_destination_address
         runtime_executed_marker_offset = metadata.runtime_executed_marker_address - metadata.runtime_destination_address
         copy_complete_marker_offset = metadata.copy_complete_marker_address - metadata.runtime_destination_address
         counter_offset = metadata.runtime_execution_counter_address - metadata.runtime_destination_address
         status_offset = metadata.runtime_status_address - metadata.runtime_destination_address
         bootstrap_return_offset = metadata.bootstrap_return_marker_address - metadata.runtime_destination_address
+        poll_counter_offset = metadata.runtime_poll_counter_address - metadata.runtime_destination_address
+        poll_heartbeat_offset = metadata.runtime_poll_heartbeat_address - metadata.runtime_destination_address
+        poll_last_sequence_offset = metadata.runtime_poll_last_sequence_address - metadata.runtime_destination_address
         relocated_runtime = {
             "address": metadata.runtime_destination_address,
             "size": metadata.embedded_runtime_blob_size,
             "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
+            "code_sha256": hashlib.sha256(runtime_bytes[runtime_code_offset:runtime_code_end_offset]).hexdigest(),
+            "state_sha256": hashlib.sha256(runtime_bytes[runtime_state_offset:runtime_state_end_offset]).hexdigest(),
             "matches_expected": runtime_bytes == expected_runtime_bytes,
             "all_zero": all(item == 0 for item in runtime_bytes),
             "classification": _classify_payload(runtime_bytes, expected_runtime_bytes),
@@ -379,6 +436,18 @@ def _read_probe_state(
                 "big",
             )
             == metadata.bootstrap_return_marker_value,
+            "runtime_poll_counter_value": int.from_bytes(
+                runtime_bytes[poll_counter_offset : poll_counter_offset + 4],
+                "big",
+            ),
+            "runtime_poll_heartbeat_value": int.from_bytes(
+                runtime_bytes[poll_heartbeat_offset : poll_heartbeat_offset + 4],
+                "big",
+            ),
+            "runtime_poll_last_sequence_value": int.from_bytes(
+                runtime_bytes[poll_last_sequence_offset : poll_last_sequence_offset + 4],
+                "big",
+            ),
         }
 
     boot_info_pointer = low_memory_words["0x800000F4"]
@@ -397,6 +466,7 @@ def _read_probe_state(
         "game_id": game_id,
         "startup_words": startup_words,
         "live_halt_word": live_halt_word,
+        "live_hook_word": live_hook_word,
         "payload_sha256": payload_sha256,
         "payload_matches_expected": payload_bytes == config.payload_bytes,
         "payload_all_zero": all(item == 0 for item in payload_bytes),
@@ -486,6 +556,8 @@ def main() -> None:
         payload_bytes=payload_bytes,
         manifest=manifest,
         startup_words=tuple(_parse_startup_word(item) for item in args.startup_word),
+        hook_address=args.hook_address,
+        expected_hook_word=args.expected_hook_word,
         repeat_delay_seconds=max(args.repeat_delay_ms, 0) / 1000.0,
         iso_path=args.iso_path,
         iso_sha256=args.iso_sha256,

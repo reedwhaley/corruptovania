@@ -33,6 +33,10 @@ ENTRY_CHECKPOINT_NAME = "entry"
 MEM1_START = 0x80000000
 MEM1_END = 0x81800000
 OBSERVED_ENTRY_ARENA_HIGH = 0x817FE3A0
+RECURRING_POLL_HOOK_ADDRESS = 0x800BB71C
+RECURRING_POLL_HOOK_EXPECTED_WORD = 0x80630024
+RECURRING_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
+RECURRING_POLL_HOOK_VERSION_DESCRIPTION = "Wii NTSC"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -72,6 +76,7 @@ class ProbeDolBuildResult:
     checkpoint_gate: CheckpointGateResult | None = None
     entry_bootstrap: EntryBootstrapInstallResult | None = None
     relocated_runtime: RelocatedRuntimeInstallResult | None = None
+    recurring_poll_hook: RecurringPollHookInstallResult | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -205,6 +210,62 @@ class RelocatedRuntimeInstallResult:
 
 
 @dataclasses.dataclass(frozen=True)
+class RecurringPollHookInstallResult:
+    bootstrap_mode: str
+    entrypoint: int
+    original_entry_instruction: int
+    original_branch_target: int
+    original_continuation_address: int
+    bootstrap_address: int
+    bootstrap_size: int
+    compound_payload_sha256: str
+    bootstrap_replacement_instruction: int
+    hook_address: int
+    expected_hook_instruction: int
+    hook_replacement_instruction: int
+    displaced_instruction_word: int
+    displaced_instruction_handling: str
+    wrapper_address: int
+    poll_entry_address: int
+    return_address: int
+    branch_distance: int
+    runtime_destination: int
+    runtime_blob_sha256: str
+    poll_counter_address: int
+    heartbeat_address: int
+    hook_installed: bool
+    normal_exporter_integration: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "bootstrap_mode": self.bootstrap_mode,
+            "entrypoint": self.entrypoint,
+            "original_entry_instruction": self.original_entry_instruction,
+            "original_branch_target": self.original_branch_target,
+            "original_continuation_address": self.original_continuation_address,
+            "bootstrap_address": self.bootstrap_address,
+            "bootstrap_size": self.bootstrap_size,
+            "compound_payload_sha256": self.compound_payload_sha256,
+            "bootstrap_replacement_instruction": self.bootstrap_replacement_instruction,
+            "hook_address": self.hook_address,
+            "expected_hook_instruction": self.expected_hook_instruction,
+            "hook_replacement_instruction": self.hook_replacement_instruction,
+            "displaced_instruction_word": self.displaced_instruction_word,
+            "displaced_instruction_handling": self.displaced_instruction_handling,
+            "wrapper_address": self.wrapper_address,
+            "poll_entry_address": self.poll_entry_address,
+            "return_address": self.return_address,
+            "branch_distance": self.branch_distance,
+            "runtime_destination": self.runtime_destination,
+            "runtime_blob_sha256": self.runtime_blob_sha256,
+            "poll_counter_address": self.poll_counter_address,
+            "heartbeat_address": self.heartbeat_address,
+            "hook_installed": self.hook_installed,
+            "normal_exporter_integration": self.normal_exporter_integration,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
 class FileIdentity:
     label: str
     path: str
@@ -273,6 +334,7 @@ class ProbeDeliveryVerification:
     checkpoint_gate: CheckpointGateResult | None
     entry_bootstrap: EntryBootstrapInstallResult | None
     relocated_runtime: RelocatedRuntimeInstallResult | None
+    recurring_poll_hook: RecurringPollHookInstallResult | None
     original_contains_probe_section: bool
     manifest_offsets_valid: bool
     comparisons: tuple[DolComparison, ...]
@@ -289,6 +351,9 @@ class ProbeDeliveryVerification:
             "checkpoint_gate": None if self.checkpoint_gate is None else self.checkpoint_gate.to_json_dict(),
             "entry_bootstrap": None if self.entry_bootstrap is None else self.entry_bootstrap.to_json_dict(),
             "relocated_runtime": None if self.relocated_runtime is None else self.relocated_runtime.to_json_dict(),
+            "recurring_poll_hook": (
+                None if self.recurring_poll_hook is None else self.recurring_poll_hook.to_json_dict()
+            ),
             "original_contains_probe_section": self.original_contains_probe_section,
             "manifest_offsets_valid": self.manifest_offsets_valid,
             "comparisons": [item.to_json_dict() for item in self.comparisons],
@@ -530,6 +595,69 @@ def install_relocated_runtime_patch(
     )
 
 
+def install_recurring_poll_hook_patch(
+    dol_bytes: bytes,
+    *,
+    probe_section: Prime3ProbeSection,
+    manifest: Prime3RuntimePayloadManifest,
+    versions: Iterable[CorruptionDolVersionLike] | None = None,
+) -> tuple[bytes, RecurringPollHookInstallResult]:
+    selected_version = identify_supported_corruption_version(dol_bytes, versions=versions)
+    if versions is None and selected_version.description != RECURRING_POLL_HOOK_VERSION_DESCRIPTION:
+        raise Prime3DolPatchError(
+            f"Recurring poll hook only supports {RECURRING_POLL_HOOK_VERSION_DESCRIPTION}, "
+            f"got {selected_version.description}."
+        )
+    patched_bytes, relocated_runtime = install_relocated_runtime_patch(
+        dol_bytes,
+        probe_section=probe_section,
+        manifest=manifest,
+        versions=versions,
+    )
+    runtime_metadata = manifest.relocated_runtime
+    if runtime_metadata is None:
+        raise Prime3DolPatchError("Recurring poll hook installation requires relocated runtime metadata.")
+
+    replacement_instruction = encode_ppc_unconditional_branch(
+        RECURRING_POLL_HOOK_ADDRESS,
+        runtime_metadata.runtime_poll_hook_wrapper_address,
+    )
+    patched_bytes, hook_patch = patch_guarded_instruction_word(
+        patched_bytes,
+        address=RECURRING_POLL_HOOK_ADDRESS,
+        expected_original_word=RECURRING_POLL_HOOK_EXPECTED_WORD,
+        replacement_word=replacement_instruction,
+    )
+    return patched_bytes, RecurringPollHookInstallResult(
+        bootstrap_mode=relocated_runtime.bootstrap_mode,
+        entrypoint=relocated_runtime.entrypoint,
+        original_entry_instruction=relocated_runtime.original_entry_instruction,
+        original_branch_target=relocated_runtime.original_branch_target,
+        original_continuation_address=relocated_runtime.original_continuation_address,
+        bootstrap_address=relocated_runtime.bootstrap_address,
+        bootstrap_size=relocated_runtime.bootstrap_size,
+        compound_payload_sha256=relocated_runtime.compound_payload_sha256,
+        bootstrap_replacement_instruction=relocated_runtime.replacement_instruction,
+        hook_address=RECURRING_POLL_HOOK_ADDRESS,
+        expected_hook_instruction=RECURRING_POLL_HOOK_EXPECTED_WORD,
+        hook_replacement_instruction=hook_patch.replacement_word,
+        displaced_instruction_word=RECURRING_POLL_HOOK_EXPECTED_WORD,
+        displaced_instruction_handling=(
+            "Replays lwz r3,0x24(r3) inside the high runtime wrapper before branching to 0x800BB720."
+        ),
+        wrapper_address=runtime_metadata.runtime_poll_hook_wrapper_address,
+        poll_entry_address=runtime_metadata.runtime_poll_entry_address,
+        return_address=RECURRING_POLL_HOOK_CONTINUATION_ADDRESS,
+        branch_distance=runtime_metadata.runtime_poll_hook_wrapper_address - RECURRING_POLL_HOOK_ADDRESS,
+        runtime_destination=runtime_metadata.runtime_destination_address,
+        runtime_blob_sha256=runtime_metadata.embedded_runtime_blob_sha256,
+        poll_counter_address=runtime_metadata.runtime_poll_counter_address,
+        heartbeat_address=runtime_metadata.runtime_poll_heartbeat_address,
+        hook_installed=True,
+        normal_exporter_integration=False,
+    )
+
+
 def _checkpoint_gate_result_from_patch(
     header: DolHeader,
     patch_result: GuardedInstructionPatchResult,
@@ -562,6 +690,7 @@ def build_unhooked_probe_dol(
     halt_at_entry: bool = False,
     install_entry_bootstrap: bool = False,
     install_relocated_runtime: bool = False,
+    install_recurring_poll_hook: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDolBuildResult:
     manifest.validate()
@@ -607,15 +736,18 @@ def build_unhooked_probe_dol(
     checkpoint_gate = None
     entry_bootstrap = None
     relocated_runtime = None
+    recurring_poll_hook = None
     checkpoint_spec = _resolve_checkpoint_gate(
         halt_at_address=halt_at_address,
         expected_halt_word=expected_halt_word,
         checkpoint_name=checkpoint_name,
         halt_at_entry=halt_at_entry,
     )
-    if (install_entry_bootstrap or install_relocated_runtime) and checkpoint_spec is not None:
+    if (
+        install_entry_bootstrap or install_relocated_runtime or install_recurring_poll_hook
+    ) and checkpoint_spec is not None:
         raise Prime3DolPatchError("Bootstrap installation modes cannot be combined with a checkpoint gate.")
-    if install_entry_bootstrap and install_relocated_runtime:
+    if sum((install_entry_bootstrap, install_relocated_runtime, install_recurring_poll_hook)) > 1:
         raise Prime3DolPatchError("Use only one bootstrap installation mode at a time.")
     if install_entry_bootstrap:
         probe_dol_bytes, entry_bootstrap = install_entry_bootstrap_patch(
@@ -626,6 +758,13 @@ def build_unhooked_probe_dol(
         )
     if install_relocated_runtime:
         probe_dol_bytes, relocated_runtime = install_relocated_runtime_patch(
+            probe_dol_bytes,
+            probe_section=probe_section,
+            manifest=manifest,
+            versions=versions,
+        )
+    if install_recurring_poll_hook:
+        probe_dol_bytes, recurring_poll_hook = install_recurring_poll_hook_patch(
             probe_dol_bytes,
             probe_section=probe_section,
             manifest=manifest,
@@ -645,6 +784,7 @@ def build_unhooked_probe_dol(
         checkpoint_gate=checkpoint_gate,
         entry_bootstrap=entry_bootstrap,
         relocated_runtime=relocated_runtime,
+        recurring_poll_hook=recurring_poll_hook,
     )
 
 
@@ -662,6 +802,7 @@ def verify_probe_delivery(
     halt_at_entry: bool = False,
     install_entry_bootstrap: bool = False,
     install_relocated_runtime: bool = False,
+    install_recurring_poll_hook: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDeliveryVerification:
     original_dol_bytes = original_dol_path.read_bytes()
@@ -682,6 +823,7 @@ def verify_probe_delivery(
         halt_at_entry=halt_at_entry,
         install_entry_bootstrap=install_entry_bootstrap,
         install_relocated_runtime=install_relocated_runtime,
+        install_recurring_poll_hook=install_recurring_poll_hook,
         versions=versions,
     )
     if build_result.probe_dol_bytes != probe_dol_bytes:
@@ -749,6 +891,9 @@ def verify_probe_delivery(
     if build_result.relocated_runtime is not None:
         _verify_relocated_runtime_word(probe_dol_bytes, probe_header, build_result.relocated_runtime)
         _verify_relocated_runtime_word(extracted_dol_bytes, extracted_header, build_result.relocated_runtime)
+    if build_result.recurring_poll_hook is not None:
+        _verify_recurring_poll_hook_word(probe_dol_bytes, probe_header, build_result.recurring_poll_hook)
+        _verify_recurring_poll_hook_word(extracted_dol_bytes, extracted_header, build_result.recurring_poll_hook)
 
     return ProbeDeliveryVerification(
         original_dol=_file_identity("original", original_dol_path, original_dol_bytes),
@@ -760,6 +905,7 @@ def verify_probe_delivery(
         checkpoint_gate=build_result.checkpoint_gate,
         entry_bootstrap=build_result.entry_bootstrap,
         relocated_runtime=build_result.relocated_runtime,
+        recurring_poll_hook=build_result.recurring_poll_hook,
         original_contains_probe_section=original_contains_probe_section,
         manifest_offsets_valid=manifest_offsets_valid,
         comparisons=comparisons,
@@ -855,6 +1001,24 @@ def _verify_relocated_runtime_word(
         raise Prime3DolPatchError(
             f"DOL relocated runtime bootstrap word at 0x{relocated_runtime.entrypoint:08x} was 0x{observed:08x}, "
             f"expected 0x{relocated_runtime.replacement_instruction:08x}."
+        )
+
+
+def _verify_recurring_poll_hook_word(
+    dol_bytes: bytes,
+    header: DolHeader,
+    recurring_poll_hook: RecurringPollHookInstallResult,
+) -> None:
+    file_offset = header.offset_for_address(recurring_poll_hook.hook_address)
+    if file_offset is None:
+        raise Prime3DolPatchError(
+            f"Recurring poll hook address 0x{recurring_poll_hook.hook_address:08x} is not mapped."
+        )
+    observed = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
+    if observed != recurring_poll_hook.hook_replacement_instruction:
+        raise Prime3DolPatchError(
+            f"DOL recurring poll hook word at 0x{recurring_poll_hook.hook_address:08x} was 0x{observed:08x}, "
+            f"expected 0x{recurring_poll_hook.hook_replacement_instruction:08x}."
         )
 
 

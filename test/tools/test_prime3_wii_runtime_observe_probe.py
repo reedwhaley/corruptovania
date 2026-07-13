@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from randovania.game_connection.executor.prime3_wii_protocol import PROTOCOL_VERSION
 from randovania.games.prime3.exporter.runtime_payload import Prime3RuntimePayloadManifest
 
 
@@ -57,7 +58,7 @@ class FakeBackend:
 
 def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
     return Prime3RuntimePayloadManifest(
-        schema_version=1,
+        schema_version=2,
         target_architecture="powerpc",
         target_endianness="big",
         target_abi="eabi",
@@ -71,7 +72,7 @@ def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
         entry_symbol_name="payload_entry",
         entry_symbol_offset=0,
         source_digest="deadbeef",
-        protocol_artifact_version=1,
+        protocol_artifact_version=PROTOCOL_VERSION,
         unresolved_relocation_count=0,
         dynamic_section_count=0,
         canary_start_offset=0x10,
@@ -130,28 +131,38 @@ def _relocated_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
         "embedded_runtime_blob_sha256": __import__("hashlib").sha256(payload_bytes[0x20:0x80]).hexdigest(),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
+        "runtime_poll_entry_address": 0x817E1004,
+        "runtime_poll_hook_wrapper_address": 0x817E1014,
         "runtime_code_start": 0x817E1000,
-        "runtime_code_end": 0x817E1020,
-        "runtime_state_start": 0x817E1020,
-        "runtime_state_end": 0x817E1060,
+        "runtime_code_end": 0x817E1028,
+        "runtime_state_start": 0x817E1028,
+        "runtime_state_end": 0x817E1058,
+        "runtime_stack_start": None,
+        "runtime_stack_end": None,
         "required_source_alignment": 0x20,
         "required_destination_alignment": 0x20,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
         "cache_range_size": 0x60,
-        "runtime_canary_address": 0x817E1020,
+        "runtime_canary_address": 0x817E1028,
         "runtime_canary_size": 0x10,
         "runtime_canary_sha256": __import__("hashlib").sha256(b"R" * 0x10).hexdigest(),
-        "copy_complete_marker_address": 0x817E1030,
+        "copy_complete_marker_address": 0x817E1038,
         "copy_complete_marker_value": 0x434F5059,
-        "runtime_executed_marker_address": 0x817E1034,
+        "runtime_executed_marker_address": 0x817E103C,
         "runtime_executed_marker_value": 0x52554E21,
-        "runtime_execution_counter_address": 0x817E1038,
+        "runtime_execution_counter_address": 0x817E1040,
         "runtime_execution_counter_size": 4,
-        "runtime_status_address": 0x817E103C,
+        "runtime_status_address": 0x817E1044,
         "runtime_success_status_value": 0x52544F4B,
-        "bootstrap_return_marker_address": 0x817E1040,
+        "bootstrap_return_marker_address": 0x817E1048,
         "bootstrap_return_marker_value": 0x4252544E,
+        "runtime_poll_counter_address": 0x817E104C,
+        "runtime_poll_counter_size": 4,
+        "runtime_poll_heartbeat_address": 0x817E1050,
+        "runtime_poll_heartbeat_size": 4,
+        "runtime_poll_last_sequence_address": 0x817E1054,
+        "runtime_poll_last_sequence_size": 4,
     }
     return Prime3RuntimePayloadManifest.from_json_dict(raw)
 
@@ -268,11 +279,14 @@ def test_observe_probe_reads_bootstrap_diagnostic_block() -> None:
 def test_observe_probe_reads_relocated_runtime_state() -> None:
     module = _load_module()
     runtime_blob = bytearray(b"R" * 0x60)
-    runtime_blob[0x30:0x34] = (0x434F5059).to_bytes(4, "big")
-    runtime_blob[0x34:0x38] = (0x52554E21).to_bytes(4, "big")
-    runtime_blob[0x38:0x3C] = (1).to_bytes(4, "big")
-    runtime_blob[0x3C:0x40] = (0x52544F4B).to_bytes(4, "big")
-    runtime_blob[0x40:0x44] = (0x4252544E).to_bytes(4, "big")
+    runtime_blob[0x38:0x3C] = (0x434F5059).to_bytes(4, "big")
+    runtime_blob[0x3C:0x40] = (0x52554E21).to_bytes(4, "big")
+    runtime_blob[0x40:0x44] = (1).to_bytes(4, "big")
+    runtime_blob[0x44:0x48] = (0x52544F4B).to_bytes(4, "big")
+    runtime_blob[0x48:0x4C] = (0x4252544E).to_bytes(4, "big")
+    runtime_blob[0x4C:0x50] = (7).to_bytes(4, "big")
+    runtime_blob[0x50:0x54] = (7).to_bytes(4, "big")
+    runtime_blob[0x54:0x58] = (7).to_bytes(4, "big")
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob)
     manifest = _relocated_manifest(payload_bytes)
     config = module.ProbeObservationConfig(
@@ -313,6 +327,75 @@ def test_observe_probe_reads_relocated_runtime_state() -> None:
     assert result["relocated_runtime"]["runtime_execution_counter_value"] == 1
     assert result["relocated_runtime"]["runtime_status_matches_expected"] is True
     assert result["relocated_runtime"]["bootstrap_return_matches_expected"] is True
+    assert result["relocated_runtime"]["runtime_poll_counter_value"] == 7
+    assert result["relocated_runtime"]["runtime_poll_heartbeat_value"] == 7
+    assert result["relocated_runtime"]["runtime_poll_last_sequence_value"] == 7
+
+
+def test_observe_probe_reports_recurring_hook_and_poll_progress() -> None:
+    module = _load_module()
+    runtime_blob_first = bytearray(b"R" * 0x60)
+    runtime_blob_first[0x38:0x3C] = (0x434F5059).to_bytes(4, "big")
+    runtime_blob_first[0x3C:0x40] = (0x52554E21).to_bytes(4, "big")
+    runtime_blob_first[0x40:0x44] = (1).to_bytes(4, "big")
+    runtime_blob_first[0x44:0x48] = (0x52544F4B).to_bytes(4, "big")
+    runtime_blob_first[0x48:0x4C] = (0x4252544E).to_bytes(4, "big")
+    runtime_blob_first[0x4C:0x50] = (7).to_bytes(4, "big")
+    runtime_blob_first[0x50:0x54] = (7).to_bytes(4, "big")
+    runtime_blob_first[0x54:0x58] = (7).to_bytes(4, "big")
+
+    runtime_blob_second = bytearray(runtime_blob_first)
+    runtime_blob_second[0x4C:0x50] = (11).to_bytes(4, "big")
+    runtime_blob_second[0x50:0x54] = (11).to_bytes(4, "big")
+    runtime_blob_second[0x54:0x58] = (11).to_bytes(4, "big")
+
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob_first)
+    manifest = _relocated_manifest(payload_bytes)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(
+            module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),
+        ),
+        hook_address=0x800BB71C,
+        expected_hook_word=0x48000005,
+        repeat_delay_seconds=0.25,
+    )
+
+    first_memory = _memory_for_config(module, config)
+    second_memory = _memory_for_config(module, config)
+    first_memory[0x800BB71C] = (0x48000005).to_bytes(4, "big")
+    second_memory[0x800BB71C] = (0x48000005).to_bytes(4, "big")
+    first_memory[0x817E1000] = bytes(runtime_blob_first)
+    second_memory[0x817E1000] = bytes(runtime_blob_second)
+    for memory in (first_memory, second_memory):
+        diagnostic = bytearray(b"\x00" * 0x40)
+        diagnostic[0x00:0x10] = b"P3BOOTSTRAPCANRY"
+        diagnostic[0x14:0x18] = (0x50334254).to_bytes(4, "big")
+        diagnostic[0x18:0x1C] = (1).to_bytes(4, "big")
+        diagnostic[0x1C:0x20] = (0x817FE3A0).to_bytes(4, "big")
+        diagnostic[0x20:0x24] = (0x817FE3A0).to_bytes(4, "big")
+        diagnostic[0x24:0x28] = (0x817E0000).to_bytes(4, "big")
+        diagnostic[0x28:0x2C] = (0xB0071002).to_bytes(4, "big")
+        memory[0x817E0100] = bytes(diagnostic)
+        memory[0x80000034] = (0x817E0000).to_bytes(4, "big")
+        memory[0x80003110] = (0x817E0000).to_bytes(4, "big")
+
+    backend = FakeBackend([first_memory, second_memory])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["live_hook_word"] == 0x48000005
+    assert result["hook_word_matches_expected"] is True
+    assert result["poll_counter_delta"] == 4
+    assert result["poll_counter_monotonic"] is True
+    assert result["heartbeat_updated"] is True
+    assert result["approximate_calls_per_second"] == 16.0
 
 
 def test_observe_probe_rejects_short_payload_read() -> None:
@@ -445,7 +528,9 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
     report_path = tmp_path.joinpath("report.json")
     payload_path.write_bytes(config.payload_bytes)
     manifest_path.write_text(config.manifest.to_json_text(), encoding="utf-8")
-    monkeypatch.setattr(module, "dolphin_memory_engine", FakeBackend(_memory_for_config(module, config)))
+    memory = _memory_for_config(module, config)
+    memory[0x800BB71C] = (0x48000005).to_bytes(4, "big")
+    monkeypatch.setattr(module, "dolphin_memory_engine", FakeBackend(memory))
     monkeypatch.setattr(
         sys,
         "argv",
@@ -469,6 +554,10 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
             "0x80006320=0x48000000",
             "--startup-word",
             "0x8000633C=0x38000000",
+            "--hook-address",
+            "0x800BB71C",
+            "--expected-hook-word",
+            "0x48000005",
             "--iso-path",
             "X:\\probe.iso",
             "--iso-sha256",
@@ -483,6 +572,8 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["payload_matches_expected"] is True
     assert payload["checkpoint_name"] == "entry"
+    assert payload["hook_address"] == 0x800BB71C
+    assert payload["expected_hook_word"] == 0x48000005
     assert payload["iso_path"] == "X:\\probe.iso"
 
 

@@ -88,28 +88,38 @@ def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
         "embedded_runtime_blob_sha256": hashlib.sha256(payload_bytes[0x1A0:0x220]).hexdigest(),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
+        "runtime_poll_entry_address": 0x817E1020,
+        "runtime_poll_hook_wrapper_address": 0x817E1030,
         "runtime_code_start": 0x817E1000,
-        "runtime_code_end": 0x817E1040,
-        "runtime_state_start": 0x817E1040,
+        "runtime_code_end": 0x817E104C,
+        "runtime_state_start": 0x817E1050,
         "runtime_state_end": 0x817E1080,
+        "runtime_stack_start": None,
+        "runtime_stack_end": None,
         "required_source_alignment": 0x20,
         "required_destination_alignment": 0x20,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
         "cache_range_size": 0x80,
-        "runtime_canary_address": 0x817E1040,
+        "runtime_canary_address": 0x817E1050,
         "runtime_canary_size": 0x10,
         "runtime_canary_sha256": hashlib.sha256(b"P3HIRUNTIMECANAR").hexdigest(),
-        "copy_complete_marker_address": 0x817E1050,
+        "copy_complete_marker_address": 0x817E1060,
         "copy_complete_marker_value": 0x434F5059,
-        "runtime_executed_marker_address": 0x817E1054,
+        "runtime_executed_marker_address": 0x817E1064,
         "runtime_executed_marker_value": 0x52554E21,
-        "runtime_execution_counter_address": 0x817E1058,
+        "runtime_execution_counter_address": 0x817E1068,
         "runtime_execution_counter_size": 4,
-        "runtime_status_address": 0x817E105C,
+        "runtime_status_address": 0x817E106C,
         "runtime_success_status_value": 0x52544F4B,
-        "bootstrap_return_marker_address": 0x817E1060,
+        "bootstrap_return_marker_address": 0x817E1070,
         "bootstrap_return_marker_value": 0x4252544E,
+        "runtime_poll_counter_address": 0x817E1074,
+        "runtime_poll_counter_size": 4,
+        "runtime_poll_heartbeat_address": 0x817E1078,
+        "runtime_poll_heartbeat_size": 4,
+        "runtime_poll_last_sequence_address": 0x817E107C,
+        "runtime_poll_last_sequence_size": 4,
     }
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
@@ -237,6 +247,8 @@ def test_runtime_payload_manifest_accepts_relocated_runtime_metadata() -> None:
     assert parsed.relocated_runtime is not None
     assert parsed.relocated_runtime.runtime_destination_address == 0x817E1000
     assert parsed.relocated_runtime.cache_range_size == 0x80
+    assert parsed.relocated_runtime.runtime_poll_hook_wrapper_address == 0x817E1030
+    assert parsed.relocated_runtime.runtime_poll_last_sequence_address == 0x817E107C
 
 
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
@@ -246,13 +258,47 @@ def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstr
     relocated["runtime_destination_address"] = 0x817E0100
     relocated["runtime_entry_address"] = 0x817E0100
     relocated["runtime_code_start"] = 0x817E0100
-    relocated["runtime_code_end"] = 0x817E0120
-    relocated["runtime_state_start"] = 0x817E0120
-    relocated["runtime_state_end"] = 0x817E0164
-    relocated["runtime_canary_address"] = 0x817E0120
+    relocated["runtime_poll_entry_address"] = 0x817E0104
+    relocated["runtime_poll_hook_wrapper_address"] = 0x817E0110
+    relocated["runtime_code_end"] = 0x817E0118
+    relocated["runtime_state_start"] = 0x817E0118
+    relocated["runtime_state_end"] = 0x817E0158
+    relocated["runtime_canary_address"] = 0x817E0118
+    relocated["copy_complete_marker_address"] = 0x817E0128
+    relocated["runtime_executed_marker_address"] = 0x817E012C
+    relocated["runtime_execution_counter_address"] = 0x817E0130
+    relocated["runtime_status_address"] = 0x817E0134
+    relocated["bootstrap_return_marker_address"] = 0x817E0138
+    relocated["runtime_poll_counter_address"] = 0x817E013C
+    relocated["runtime_poll_heartbeat_address"] = 0x817E0140
+    relocated["runtime_poll_last_sequence_address"] = 0x817E0144
+    relocated["cache_range_start"] = 0x817E0100
+    relocated["cache_range_size"] = 0x80
     raw["relocated_runtime"] = relocated
 
     with pytest.raises(Prime3DolPatchError, match="overlaps the bootstrap diagnostic block"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
+def test_runtime_payload_manifest_rejects_partial_runtime_stack_range() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 136)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    relocated["runtime_stack_start"] = 0x817E1050
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="provide both start and end together"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
+def test_runtime_payload_manifest_rejects_runtime_poll_range_outside_state() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 136)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    relocated["runtime_poll_last_sequence_address"] = 0x817E1080
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="runtime_poll_last_sequence is outside the runtime state range"):
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 

@@ -114,32 +114,42 @@ def _make_relocated_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payl
         "low_bootstrap_size": 0x60,
         "low_bootstrap_sha256": probe_delivery._sha256_bytes(payload_bytes[:0x60]),
         "embedded_runtime_blob_offset": 0x60,
-        "embedded_runtime_blob_size": 0x20,
+        "embedded_runtime_blob_size": 0x60,
         "embedded_runtime_blob_sha256": probe_delivery._sha256_bytes(payload_bytes[0x60:0x80]),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
+        "runtime_poll_entry_address": 0x817E1004,
+        "runtime_poll_hook_wrapper_address": 0x817E1014,
         "runtime_code_start": 0x817E1000,
-        "runtime_code_end": 0x817E1004,
-        "runtime_state_start": 0x817E1004,
-        "runtime_state_end": 0x817E1020,
+        "runtime_code_end": 0x817E102C,
+        "runtime_state_start": 0x817E1030,
+        "runtime_state_end": 0x817E1054,
+        "runtime_stack_start": None,
+        "runtime_stack_end": None,
         "required_source_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
         "required_destination_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
-        "cache_range_size": 0x20,
-        "runtime_canary_address": 0x817E1004,
+        "cache_range_size": 0x60,
+        "runtime_canary_address": 0x817E1030,
         "runtime_canary_size": 0x04,
-        "runtime_canary_sha256": probe_delivery._sha256_bytes(payload_bytes[0x64:0x68]),
-        "copy_complete_marker_address": 0x817E1010,
+        "runtime_canary_sha256": probe_delivery._sha256_bytes(payload_bytes[0x70:0x74]),
+        "copy_complete_marker_address": 0x817E1034,
         "copy_complete_marker_value": 0x434F5059,
-        "runtime_executed_marker_address": 0x817E1014,
+        "runtime_executed_marker_address": 0x817E1038,
         "runtime_executed_marker_value": 0x52554E21,
-        "runtime_execution_counter_address": 0x817E1018,
+        "runtime_execution_counter_address": 0x817E103C,
         "runtime_execution_counter_size": 4,
-        "runtime_status_address": 0x817E101C,
+        "runtime_status_address": 0x817E1040,
         "runtime_success_status_value": 0x52544F4B,
-        "bootstrap_return_marker_address": 0x817E100C,
+        "bootstrap_return_marker_address": 0x817E1044,
         "bootstrap_return_marker_value": 0x4252544E,
+        "runtime_poll_counter_address": 0x817E1048,
+        "runtime_poll_counter_size": 4,
+        "runtime_poll_heartbeat_address": 0x817E104C,
+        "runtime_poll_heartbeat_size": 4,
+        "runtime_poll_last_sequence_address": 0x817E1050,
+        "runtime_poll_last_sequence_size": 4,
     }
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
@@ -179,6 +189,30 @@ def _entry_gate_original() -> bytes:
         version,
         include_build_string=False,
         text_sections=[(0x100, probe_delivery.EXPECTED_ENTRYPOINT, contents)],
+        entry_point=probe_delivery.EXPECTED_ENTRYPOINT,
+    )
+
+
+def _recurring_hook_original() -> bytes:
+    version = _entry_gate_version()
+    entry_contents = (
+        probe_delivery.EXPECTED_ENTRY_WORD.to_bytes(4, "big")
+        + b"\x60\x00\x00\x00" * 7
+        + version.build_string
+        + b"\x00" * 0x20
+    )
+    hook_contents = (
+        probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD.to_bytes(4, "big")
+        + b"\x4E\x80\x00\x20"
+        + b"\x00" * 0x18
+    )
+    return _build_synthetic_dol(
+        version,
+        include_build_string=False,
+        text_sections=[
+            (0x100, probe_delivery.EXPECTED_ENTRYPOINT, entry_contents),
+            (0x200, probe_delivery.RECURRING_POLL_HOOK_ADDRESS, hook_contents),
+        ],
         entry_point=probe_delivery.EXPECTED_ENTRYPOINT,
     )
 
@@ -322,7 +356,7 @@ def test_build_unhooked_probe_dol_supports_entry_bootstrap_install() -> None:
 
 
 def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -342,9 +376,33 @@ def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
     assert result.relocated_runtime.runtime_destination == 0x817E1000
     assert result.relocated_runtime.runtime_entry == 0x817E1000
     assert result.relocated_runtime.runtime_blob_offset == 0x60
-    assert result.relocated_runtime.runtime_blob_size == 0x20
+    assert result.relocated_runtime.runtime_blob_size == 0x60
     assert result.relocated_runtime.cache_range_start == 0x817E1000
-    assert result.relocated_runtime.cache_range_size == 0x20
+    assert result.relocated_runtime.cache_range_size == 0x60
+
+
+def test_build_unhooked_probe_dol_supports_recurring_poll_hook_install() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
+    )
+
+    result = probe_delivery.build_unhooked_probe_dol(
+        _recurring_hook_original(),
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        install_recurring_poll_hook=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert result.recurring_poll_hook is not None
+    assert result.recurring_poll_hook.hook_address == probe_delivery.RECURRING_POLL_HOOK_ADDRESS
+    assert result.recurring_poll_hook.expected_hook_instruction == probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD
+    assert result.recurring_poll_hook.wrapper_address == 0x817E1014
+    assert result.recurring_poll_hook.poll_entry_address == 0x817E1004
+    assert result.recurring_poll_hook.return_address == probe_delivery.RECURRING_POLL_HOOK_CONTINUATION_ADDRESS
 
 
 def test_build_unhooked_probe_dol_rejects_high_address_outside_mem1() -> None:
@@ -479,7 +537,7 @@ def test_build_unhooked_probe_dol_rejects_entry_bootstrap_with_checkpoint_gate()
 
 
 def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -498,7 +556,7 @@ def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate
 
 
 def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -512,6 +570,44 @@ def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None
             payload_virtual_address=0x806843C0,
             install_entry_bootstrap=True,
             install_relocated_runtime=True,
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_build_unhooked_probe_dol_rejects_recurring_hook_with_checkpoint_gate() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="cannot be combined with a checkpoint gate"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x806843C0,
+            install_recurring_poll_hook=True,
+            halt_at_entry=True,
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_build_unhooked_probe_dol_rejects_recurring_hook_with_other_bootstrap_mode() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="only one bootstrap installation mode"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x806843C0,
+            install_relocated_runtime=True,
+            install_recurring_poll_hook=True,
             versions=(_entry_gate_version(),),
         )
 
@@ -640,7 +736,7 @@ def test_verify_probe_delivery_accepts_entry_bootstrap_chain(tmp_path: Path) -> 
 
 
 def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -680,6 +776,48 @@ def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -
     assert report.relocated_runtime.runtime_destination == 0x817E1000
     assert report.relocated_runtime.runtime_entry == 0x817E1000
     assert report.relocated_runtime.replacement_instruction != probe_delivery.ENTRY_GATE_WORD
+
+
+def test_verify_probe_delivery_accepts_recurring_poll_hook_chain(tmp_path: Path) -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+    )
+    original_bytes = _recurring_hook_original()
+    built = probe_delivery.build_unhooked_probe_dol(
+        original_bytes,
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        install_recurring_poll_hook=True,
+        versions=(_entry_gate_version(),),
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    probe_path = tmp_path.joinpath("probe.dol")
+    extracted_path = tmp_path.joinpath("extracted.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    original_path.write_bytes(original_bytes)
+    probe_path.write_bytes(built.probe_dol_bytes)
+    extracted_path.write_bytes(built.probe_dol_bytes)
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+
+    report = probe_delivery.verify_probe_delivery(
+        original_dol_path=original_path,
+        probe_dol_path=probe_path,
+        extracted_final_dol_path=extracted_path,
+        payload_bin_path=payload_path,
+        payload_manifest_path=manifest_path,
+        payload_virtual_address=0x806843C0,
+        install_recurring_poll_hook=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert report.recurring_poll_hook is not None
+    assert report.recurring_poll_hook.wrapper_address == 0x817E1014
+    assert report.recurring_poll_hook.hook_replacement_instruction != probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD
 
 
 def test_verify_probe_delivery_rejects_missing_appended_section(tmp_path: Path) -> None:
@@ -958,7 +1096,7 @@ def test_build_probe_dol_script_writes_entry_bootstrap_report(tmp_path: Path) ->
 
 def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) -> None:
     module = _load_build_probe_module()
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -999,4 +1137,50 @@ def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) 
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["relocated_runtime"]["runtime_destination"] == 0x817E1000
-    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x20
+    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x60
+
+
+def test_build_probe_dol_script_writes_recurring_poll_hook_report(tmp_path: Path) -> None:
+    module = _load_build_probe_module()
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    output_dol = tmp_path.joinpath("recurring-hook-probe.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    report_path = tmp_path.joinpath("recurring-hook-probe.json")
+    original_path.write_bytes(_recurring_hook_original())
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+    original_build_unhooked_probe_dol = module.build_unhooked_probe_dol
+
+    def _patched_build_unhooked_probe_dol(*args, **kwargs):
+        kwargs.setdefault("versions", (_entry_gate_version(),))
+        return original_build_unhooked_probe_dol(*args, **kwargs)
+
+    module.build_unhooked_probe_dol = _patched_build_unhooked_probe_dol
+
+    sys.argv = [
+        "build_probe_dol.py",
+        "--original-dol",
+        str(original_path),
+        "--output-dol",
+        str(output_dol),
+        "--payload-bin",
+        str(payload_path),
+        "--payload-manifest",
+        str(manifest_path),
+        "--report",
+        str(report_path),
+        "--payload-address",
+        "0x806843C0",
+        "--install-recurring-poll-hook",
+    ]
+    module.main()
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["recurring_poll_hook"]["hook_address"] == probe_delivery.RECURRING_POLL_HOOK_ADDRESS
+    assert payload["recurring_poll_hook"]["wrapper_address"] == 0x817E1014

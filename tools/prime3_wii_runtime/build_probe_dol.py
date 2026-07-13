@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--halt-at-entry", action="store_true")
     parser.add_argument("--install-entry-bootstrap", action="store_true")
     parser.add_argument("--install-relocated-runtime", action="store_true")
+    parser.add_argument("--install-recurring-poll-hook", action="store_true")
     return parser.parse_args()
 
 
@@ -49,6 +50,7 @@ def main() -> None:
         halt_at_entry=args.halt_at_entry,
         install_entry_bootstrap=args.install_entry_bootstrap,
         install_relocated_runtime=args.install_relocated_runtime,
+        install_recurring_poll_hook=args.install_recurring_poll_hook,
     )
     args.output_dol.parent.mkdir(parents=True, exist_ok=True)
     args.output_dol.write_bytes(result.probe_dol_bytes)
@@ -60,6 +62,8 @@ def main() -> None:
         report["entry_bootstrap"] = result.entry_bootstrap.to_json_dict()
     if result.relocated_runtime is not None:
         report["relocated_runtime"] = result.relocated_runtime.to_json_dict()
+    if result.recurring_poll_hook is not None:
+        report["recurring_poll_hook"] = result.recurring_poll_hook.to_json_dict()
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

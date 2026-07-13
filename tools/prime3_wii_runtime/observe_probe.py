@@ -6,8 +6,9 @@ import hashlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypedDict
 
 if __package__ in {None, ""}:
     _repository_root = Path(__file__).resolve().parents[2]
@@ -26,6 +27,8 @@ LOW_MEMORY_WORDS = (
     0x80003110,
     BOOT_INFO_POINTER_ADDRESS,
 )
+MEM1_START = 0x80000000
+MEM1_END = 0x81800000
 
 
 class DolphinReadOnlyBackend(Protocol):
@@ -51,10 +54,47 @@ class ProbeObservationConfig:
     payload_bytes: bytes
     manifest: Prime3RuntimePayloadManifest
     startup_words: tuple[StartupWordExpectation, ...]
+    repeat_delay_seconds: float = 0.0
+    iso_path: str | None = None
+    iso_sha256: str | None = None
+    dolphin_command_line: str | None = None
 
 
 class ProbeObservationError(RuntimeError):
     pass
+
+
+class StartupWordObservation(TypedDict):
+    expected: int
+    observed: int
+    matches: bool
+
+
+class ProbeCanaryObservation(TypedDict):
+    address: int
+    size: int
+    sha256: str
+    matches_expected: bool
+
+
+class ProbeCounterObservation(TypedDict):
+    address: int
+    size: int
+    value: int
+
+
+class ProbeState(TypedDict):
+    game_id: bytes
+    startup_words: dict[str, StartupWordObservation]
+    payload_sha256: str
+    payload_matches_expected: bool
+    payload_all_zero: bool
+    payload_classification: str
+    low_memory_words: dict[str, int]
+    canary: ProbeCanaryObservation | None
+    counter: ProbeCounterObservation | None
+    boot_info_plus_8: int | None
+    invalid_boot_info_pointer: int | None
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +105,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-game-id", default="RM3E01")
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--startup-word", action="append", default=[])
+    parser.add_argument("--repeat-delay-ms", type=int, default=0)
+    parser.add_argument("--iso-path")
+    parser.add_argument("--iso-sha256")
+    parser.add_argument("--dolphin-command-line")
     return parser.parse_args()
 
 
@@ -73,13 +117,62 @@ def observe_probe_memory(
     config: ProbeObservationConfig,
 ) -> dict[str, object]:
     _ensure_connected(backend)
-    game_id = _read_exact(backend, GAME_ID_ADDRESS, len(config.expected_game_id), "game ID")
+    first_read = _read_probe_state(backend, config)
+    advance_cycle = getattr(backend, "advance_cycle", None)
+    if callable(advance_cycle):
+        advance_cycle()
+    if config.repeat_delay_seconds > 0:
+        time.sleep(config.repeat_delay_seconds)
+    second_read = _read_probe_state(backend, config)
+
+    game_id = first_read["game_id"]
     if game_id != config.expected_game_id:
         raise ProbeObservationError(
             f"Unexpected game ID {game_id!r}; expected {config.expected_game_id!r}."
         )
 
-    startup_words = {}
+    result: dict[str, object] = {
+        "game_id": game_id.decode("ascii", errors="replace"),
+        "entrypoint_address": config.startup_words[0].address if config.startup_words else None,
+        "startup_words": first_read["startup_words"],
+        "payload_address": config.payload_address,
+        "payload_size": config.manifest.payload_size,
+        "expected_payload_sha256": hashlib.sha256(config.payload_bytes).hexdigest(),
+        "live_payload_sha256": first_read["payload_sha256"],
+        "payload_matches_expected": first_read["payload_matches_expected"],
+        "payload_classification": first_read["payload_classification"],
+        "payload_all_zero": first_read["payload_all_zero"],
+        "repeated_read_stable": first_read["payload_sha256"] == second_read["payload_sha256"],
+        "second_live_payload_sha256": second_read["payload_sha256"],
+        "entry_gate_active": all(item["matches"] for item in first_read["startup_words"].values())
+        if first_read["startup_words"]
+        else False,
+        "low_memory_words": first_read["low_memory_words"],
+    }
+
+    if first_read["canary"] is not None:
+        result["canary"] = first_read["canary"]
+    if first_read["counter"] is not None:
+        result["counter"] = first_read["counter"]
+    if first_read["boot_info_plus_8"] is not None:
+        result["boot_info_plus_8"] = first_read["boot_info_plus_8"]
+    if first_read["invalid_boot_info_pointer"] is not None:
+        result["invalid_boot_info_pointer"] = first_read["invalid_boot_info_pointer"]
+    if config.iso_path is not None:
+        result["iso_path"] = config.iso_path
+    if config.iso_sha256 is not None:
+        result["iso_sha256"] = config.iso_sha256
+    if config.dolphin_command_line is not None:
+        result["dolphin_command_line"] = config.dolphin_command_line
+    return result
+
+
+def _read_probe_state(
+    backend: DolphinReadOnlyBackend,
+    config: ProbeObservationConfig,
+) -> ProbeState:
+    game_id = _read_exact(backend, GAME_ID_ADDRESS, len(config.expected_game_id), "game ID")
+    startup_words: dict[str, StartupWordObservation] = {}
     for item in config.startup_words:
         observed = int.from_bytes(_read_exact(backend, item.address, 4, f"startup word 0x{item.address:08x}"), "big")
         startup_words[f"0x{item.address:08X}"] = {
@@ -90,52 +183,70 @@ def observe_probe_memory(
 
     payload_bytes = _read_exact(backend, config.payload_address, config.manifest.payload_size, "payload bytes")
     payload_sha256 = hashlib.sha256(payload_bytes).hexdigest()
+    low_memory_words: dict[str, int] = {}
+    for address in LOW_MEMORY_WORDS:
+        low_memory_words[f"0x{address:08X}"] = int.from_bytes(
+            _read_exact(backend, address, 4, f"word 0x{address:08x}"),
+            "big",
+        )
 
-    result: dict[str, object] = {
-        "game_id": game_id.decode("ascii", errors="replace"),
-        "startup_words": startup_words,
-        "payload_address": config.payload_address,
-        "payload_size": config.manifest.payload_size,
-        "payload_sha256": payload_sha256,
-        "payload_matches_expected": payload_bytes == config.payload_bytes,
-        "low_memory_words": {},
-    }
-
+    canary: ProbeCanaryObservation | None = None
     if config.manifest.canary_start_offset is not None and config.manifest.canary_size is not None:
         start = config.manifest.canary_start_offset
         end = start + config.manifest.canary_size
         canary_bytes = payload_bytes[start:end]
-        result["canary"] = {
+        canary = {
             "address": config.payload_address + start,
             "size": config.manifest.canary_size,
             "sha256": hashlib.sha256(canary_bytes).hexdigest(),
             "matches_expected": canary_bytes == config.payload_bytes[start:end],
         }
 
+    counter: ProbeCounterObservation | None = None
     if config.manifest.counter_offset is not None and config.manifest.counter_size is not None:
         start = config.manifest.counter_offset
         end = start + config.manifest.counter_size
-        result["counter"] = {
+        counter = {
             "address": config.payload_address + start,
             "size": config.manifest.counter_size,
             "value": int.from_bytes(payload_bytes[start:end], "big"),
         }
 
-    low_memory_words = {}
-    for address in LOW_MEMORY_WORDS:
-        low_memory_words[f"0x{address:08X}"] = int.from_bytes(
-            _read_exact(backend, address, 4, f"word 0x{address:08x}"),
-            "big",
-        )
-    result["low_memory_words"] = low_memory_words
-
     boot_info_pointer = low_memory_words["0x800000F4"]
+    boot_info_plus_8 = None
+    invalid_boot_info_pointer = None
     if boot_info_pointer != 0:
-        result["boot_info_plus_8"] = int.from_bytes(
-            _read_exact(backend, boot_info_pointer + 0x08, 4, f"word 0x{boot_info_pointer + 0x08:08x}"),
-            "big",
-        )
-    return result
+        if not MEM1_START <= boot_info_pointer <= MEM1_END - 4:
+            invalid_boot_info_pointer = boot_info_pointer
+        else:
+            boot_info_plus_8 = int.from_bytes(
+                _read_exact(backend, boot_info_pointer + 0x08, 4, f"word 0x{boot_info_pointer + 0x08:08x}"),
+                "big",
+            )
+
+    return {
+        "game_id": game_id,
+        "startup_words": startup_words,
+        "payload_sha256": payload_sha256,
+        "payload_matches_expected": payload_bytes == config.payload_bytes,
+        "payload_all_zero": all(item == 0 for item in payload_bytes),
+        "payload_classification": _classify_payload(payload_bytes, config.payload_bytes),
+        "low_memory_words": low_memory_words,
+        "canary": canary,
+        "counter": counter,
+        "boot_info_plus_8": boot_info_plus_8,
+        "invalid_boot_info_pointer": invalid_boot_info_pointer,
+    }
+
+
+def _classify_payload(payload_bytes: bytes, expected_payload_bytes: bytes) -> str:
+    if len(payload_bytes) != len(expected_payload_bytes):
+        return "partial read"
+    if payload_bytes == expected_payload_bytes:
+        return "exact payload match"
+    if all(item == 0 for item in payload_bytes):
+        return "all zero"
+    return "payload present but altered"
 
 
 def _ensure_connected(backend: DolphinReadOnlyBackend) -> None:
@@ -174,6 +285,10 @@ def main() -> None:
         payload_bytes=payload_bytes,
         manifest=manifest,
         startup_words=tuple(_parse_startup_word(item) for item in args.startup_word),
+        repeat_delay_seconds=max(args.repeat_delay_ms, 0) / 1000.0,
+        iso_path=args.iso_path,
+        iso_sha256=args.iso_sha256,
+        dolphin_command_line=args.dolphin_command_line,
     )
     report = observe_probe_memory(dolphin_memory_engine, config)
     args.report.parent.mkdir(parents=True, exist_ok=True)

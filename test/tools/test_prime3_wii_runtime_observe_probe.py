@@ -22,10 +22,17 @@ def _load_module():
 
 
 class FakeBackend:
-    def __init__(self, memory: dict[int, bytes], *, hooked: bool = True, hook_success: bool = True):
+    def __init__(
+        self,
+        memory: dict[int, bytes] | list[dict[int, bytes]],
+        *,
+        hooked: bool = True,
+        hook_success: bool = True,
+    ):
         self.memory = memory
         self._hooked = hooked
         self._hook_success = hook_success
+        self._cycle = 0
 
     def is_hooked(self) -> bool:
         return self._hooked
@@ -37,8 +44,15 @@ class FakeBackend:
         self._hooked = False
 
     def read_bytes(self, address: int, size: int) -> bytes:
-        data = self.memory.get(address, b"")
+        source = self.memory
+        if isinstance(source, list):
+            index = min(self._cycle, len(source) - 1)
+            source = source[index]
+        data = source.get(address, b"")
         return data[:size]
+
+    def advance_cycle(self) -> None:
+        self._cycle += 1
 
 
 def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
@@ -74,7 +88,10 @@ def _config(module, payload_address: int = 0x817F0000, startup_word: int = 0x380
         payload_address=payload_address,
         payload_bytes=payload_bytes,
         manifest=_manifest(payload_bytes),
-        startup_words=(module.StartupWordExpectation(address=0x8000633C, expected_word=startup_word),),
+        startup_words=(
+            module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),
+            module.StartupWordExpectation(address=0x8000633C, expected_word=startup_word),
+        ),
     )
 
 
@@ -82,6 +99,7 @@ def _memory_for_config(module, config, *, startup_word: int = 0x38000000, short_
     payload_bytes = config.payload_bytes[:-1] if short_payload else config.payload_bytes
     return {
         module.GAME_ID_ADDRESS: b"RM3E01",
+        0x80006320: (0x48000000).to_bytes(4, "big"),
         0x8000633C: startup_word.to_bytes(4, "big"),
         config.payload_address: payload_bytes,
         module.BOOT_INFO_POINTER_ADDRESS: (0x817FC3A0).to_bytes(4, "big"),
@@ -100,6 +118,7 @@ def test_observe_probe_reads_complete_payload() -> None:
 
     assert result["payload_matches_expected"] is True
     assert result["counter"]["value"] == 0
+    assert result["entry_gate_active"] is True
 
 
 def test_observe_probe_reports_wrong_startup_word() -> None:
@@ -145,6 +164,33 @@ def test_observe_probe_reports_canary_mismatch() -> None:
     assert result["canary"]["matches_expected"] is False
 
 
+def test_observe_probe_reports_all_zero_payload() -> None:
+    module = _load_module()
+    config = _config(module)
+    memory = _memory_for_config(module, config)
+    memory[config.payload_address] = b"\x00" * len(config.payload_bytes)
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["payload_classification"] == "all zero"
+    assert result["payload_all_zero"] is True
+
+
+def test_observe_probe_reports_altered_payload() -> None:
+    module = _load_module()
+    config = _config(module)
+    memory = _memory_for_config(module, config)
+    altered = bytearray(config.payload_bytes)
+    altered[0] ^= 0x01
+    memory[config.payload_address] = bytes(altered)
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["payload_classification"] == "payload present but altered"
+
+
 def test_observe_probe_rejects_wrong_game_build() -> None:
     module = _load_module()
     config = _config(module)
@@ -171,6 +217,42 @@ def test_observe_probe_module_exposes_no_write_api() -> None:
     assert not hasattr(module, "write_bytes")
 
 
+def test_observe_probe_reports_stable_repeated_reads() -> None:
+    module = _load_module()
+    config = _config(module)
+    backend = FakeBackend(_memory_for_config(module, config))
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["repeated_read_stable"] is True
+
+
+def test_observe_probe_reports_changing_repeated_reads() -> None:
+    module = _load_module()
+    config = _config(module)
+    first = _memory_for_config(module, config)
+    second = _memory_for_config(module, config)
+    second[config.payload_address] = b"\x00" * len(config.payload_bytes)
+    backend = FakeBackend([first, second])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["repeated_read_stable"] is False
+
+
+def test_observe_probe_rejects_invalid_pointer_dereference() -> None:
+    module = _load_module()
+    config = _config(module)
+    memory = _memory_for_config(module, config)
+    memory[module.BOOT_INFO_POINTER_ADDRESS] = (0x90000000).to_bytes(4, "big")
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["invalid_boot_info_pointer"] == 0x90000000
+    assert "boot_info_plus_8" not in result
+
+
 def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_module()
     config = _config(module)
@@ -194,7 +276,15 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
             "--report",
             str(report_path),
             "--startup-word",
+            "0x80006320=0x48000000",
+            "--startup-word",
             "0x8000633C=0x38000000",
+            "--iso-path",
+            "X:\\probe.iso",
+            "--iso-sha256",
+            "abc123",
+            "--dolphin-command-line",
+            "Dolphin.exe --exec X:\\probe.iso",
         ],
     )
 
@@ -202,3 +292,4 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["payload_matches_expected"] is True
+    assert payload["iso_path"] == "X:\\probe.iso"

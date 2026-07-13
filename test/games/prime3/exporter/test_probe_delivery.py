@@ -57,6 +57,51 @@ def _write_inputs(tmp_path: Path, *, extracted_bytes: bytes | None = None) -> tu
     return original_path, probe_path, extracted_path, payload_path, manifest_path
 
 
+def _entry_gate_version():
+    return _make_fake_version(address=0x80006340, build_string=b"!#$MetroidBuildInfo!#$FAKE")
+
+
+def _entry_gate_original() -> bytes:
+    version = _entry_gate_version()
+    contents = (
+        probe_delivery.EXPECTED_ENTRY_WORD.to_bytes(4, "big")
+        + b"\x60\x00\x00\x00" * 7
+        + version.build_string
+        + b"\x00" * 0x20
+    )
+    return _build_synthetic_dol(
+        version,
+        include_build_string=False,
+        text_sections=[(0x100, probe_delivery.EXPECTED_ENTRYPOINT, contents)],
+        entry_point=probe_delivery.EXPECTED_ENTRYPOINT,
+    )
+
+
+def _entry_gate_variant(
+    *,
+    instruction_word: int | None = None,
+    entry_point: int = probe_delivery.EXPECTED_ENTRYPOINT,
+    use_data_section: bool = False,
+    map_entrypoint: bool = True,
+) -> bytes:
+    version = _entry_gate_version()
+    if map_entrypoint:
+        entry_contents = (
+            (probe_delivery.EXPECTED_ENTRY_WORD if instruction_word is None else instruction_word).to_bytes(4, "big")
+            + b"\x60\x00\x00\x00" * 7
+            + version.build_string
+            + b"\x00" * 0x20
+        )
+        return _build_synthetic_dol(
+            version,
+            include_build_string=False,
+            text_sections=[] if use_data_section else [(0x100, probe_delivery.EXPECTED_ENTRYPOINT, entry_contents)],
+            data_sections=[(0x100, probe_delivery.EXPECTED_ENTRYPOINT, entry_contents)] if use_data_section else None,
+            entry_point=entry_point,
+        )
+    return _build_synthetic_dol(version, include_build_string=False, entry_point=entry_point)
+
+
 def _load_build_probe_module():
     module_path = Path(__file__).resolve().parents[4].joinpath("tools", "prime3_wii_runtime", "build_probe_dol.py")
     spec = importlib.util.spec_from_file_location("prime3_build_probe_dol_test", module_path)
@@ -81,6 +126,122 @@ def test_build_unhooked_probe_dol_uses_first_free_text_slot() -> None:
     assert result.probe_section.virtual_address % manifest.required_alignment == 0
 
 
+def test_build_unhooked_probe_dol_gate_disabled_by_default() -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+
+    result = probe_delivery.build_unhooked_probe_dol(_entry_gate_original(), payload_bytes, manifest)
+
+    assert result.entry_gate is None
+
+
+def test_build_unhooked_probe_dol_low_and_high_gated_output() -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+
+    low = probe_delivery.build_unhooked_probe_dol(
+        _entry_gate_original(),
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        halt_at_entry=True,
+        versions=(_entry_gate_version(),),
+    )
+    high = probe_delivery.build_unhooked_probe_dol(
+        _entry_gate_original(),
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x817E0000,
+        halt_at_entry=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert low.entry_gate is not None
+    assert low.probe_section.virtual_address == 0x806843C0
+    assert high.entry_gate is not None
+    assert high.probe_section.virtual_address == 0x817E0000
+
+
+def test_build_unhooked_probe_dol_rejects_high_address_outside_mem1() -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+
+    with pytest.raises(Prime3DolPatchError, match="exceeds MEM1"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x817FFFC8,
+        )
+
+
+def test_install_entry_gate_success() -> None:
+    patched, result = probe_delivery.install_entry_gate(
+        _entry_gate_original(),
+        versions=(_entry_gate_version(),),
+    )
+
+    header = parse_dol_header(patched)
+    file_offset = header.offset_for_address(probe_delivery.ENTRY_GATE_ADDRESS)
+    assert file_offset is not None
+    assert patched[file_offset : file_offset + 4] == probe_delivery.ENTRY_GATE_WORD.to_bytes(4, "big")
+    assert result.gate_address == probe_delivery.ENTRY_GATE_ADDRESS
+    assert result.original_instruction == probe_delivery.EXPECTED_ENTRY_WORD
+    assert result.replacement_instruction == probe_delivery.ENTRY_GATE_WORD
+    assert result.entrypoint == probe_delivery.EXPECTED_ENTRYPOINT
+
+
+def test_install_entry_gate_rejects_wrong_entrypoint() -> None:
+        with pytest.raises(Prime3DolPatchError, match="Unexpected Corruption DOL entrypoint"):
+            probe_delivery.install_entry_gate(
+            _entry_gate_variant(entry_point=0x80004000),
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_install_entry_gate_rejects_wrong_original_instruction() -> None:
+    with pytest.raises(Prime3DolPatchError, match="expected 0x4800016d"):
+        probe_delivery.install_entry_gate(
+            _entry_gate_variant(instruction_word=0x60000000),
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_install_entry_gate_rejects_already_gated_instruction() -> None:
+    with pytest.raises(Prime3DolPatchError, match="already contains the replacement"):
+        probe_delivery.install_entry_gate(
+            _entry_gate_variant(instruction_word=probe_delivery.ENTRY_GATE_WORD),
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_install_entry_gate_rejects_unmapped_entrypoint() -> None:
+    with pytest.raises(Prime3DolPatchError, match="not mapped"):
+        probe_delivery.install_entry_gate(
+            _entry_gate_variant(map_entrypoint=False),
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_install_entry_gate_rejects_data_section_entrypoint() -> None:
+    with pytest.raises(Prime3DolPatchError, match="not text"):
+        probe_delivery.install_entry_gate(
+            _entry_gate_variant(use_data_section=True),
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_install_entry_gate_changes_only_one_word() -> None:
+    original = _entry_gate_original()
+    patched, _ = probe_delivery.install_entry_gate(
+        original,
+        versions=(_entry_gate_version(),),
+    )
+
+    diff_offsets = [index for index, (a, b) in enumerate(zip(original, patched, strict=True)) if a != b]
+    assert diff_offsets == [0x100 + 2, 0x100 + 3]
+
+
 def test_verify_probe_delivery_accepts_identical_probe_chain(tmp_path: Path) -> None:
     original_path, probe_path, extracted_path, payload_path, manifest_path = _write_inputs(tmp_path)
 
@@ -96,6 +257,44 @@ def test_verify_probe_delivery_accepts_identical_probe_chain(tmp_path: Path) -> 
     assert report.original_contains_probe_section is False
     assert report.manifest_offsets_valid is True
     assert report.comparisons[1].classification == "byte-identical"
+
+
+def test_verify_probe_delivery_accepts_gated_probe_chain(tmp_path: Path) -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+    original_bytes = _entry_gate_original()
+    built = probe_delivery.build_unhooked_probe_dol(
+        original_bytes,
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        halt_at_entry=True,
+        versions=(_entry_gate_version(),),
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    probe_path = tmp_path.joinpath("probe.dol")
+    extracted_path = tmp_path.joinpath("extracted.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    original_path.write_bytes(original_bytes)
+    probe_path.write_bytes(built.probe_dol_bytes)
+    extracted_path.write_bytes(built.probe_dol_bytes)
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+
+    report = probe_delivery.verify_probe_delivery(
+        original_dol_path=original_path,
+        probe_dol_path=probe_path,
+        extracted_final_dol_path=extracted_path,
+        payload_bin_path=payload_path,
+        payload_manifest_path=manifest_path,
+        payload_virtual_address=0x806843C0,
+        halt_at_entry=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert report.entry_gate is not None
+    assert report.entry_gate.replacement_instruction == probe_delivery.ENTRY_GATE_WORD
 
 
 def test_verify_probe_delivery_rejects_missing_appended_section(tmp_path: Path) -> None:
@@ -274,3 +473,25 @@ def test_build_probe_dol_script_writes_report(tmp_path: Path) -> None:
 
     assert output_dol.is_file()
     assert report_path.is_file()
+
+
+def test_build_probe_dol_script_rejects_input_output_collision(tmp_path: Path) -> None:
+    module = _load_build_probe_module()
+    original_path, _probe_path, _extracted_path, payload_path, manifest_path = _write_inputs(tmp_path)
+    report_path = tmp_path.joinpath("script-probe.json")
+
+    sys.argv = [
+        "build_probe_dol.py",
+        "--original-dol",
+        str(original_path),
+        "--output-dol",
+        str(original_path),
+        "--payload-bin",
+        str(payload_path),
+        "--payload-manifest",
+        str(manifest_path),
+        "--report",
+        str(report_path),
+    ]
+    with pytest.raises(RuntimeError, match="must differ"):
+        module.main()

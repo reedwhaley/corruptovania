@@ -9,6 +9,7 @@ This workflow verifies only the developer-only probe delivery chain:
 - temporary rebuilt ISO
 - re-extracted `main.dol`
 - live Dolphin memory observation
+- a developer-only entry gate at `0x80006320` when requested
 
 It does not install a hook, reserve arena space, or claim any runtime-safe payload address.
 
@@ -27,6 +28,11 @@ For the current developer probe build:
 - counter size: `4`
 - expected initial counter value: `0`
 
+The developer-only entry gate replaces the retail first entry instruction at `0x80006320`:
+
+- original word: `0x4800016d`
+- gated word: `0x48000000`
+
 ## Probe DOL Generation
 
 Build the probe payload:
@@ -43,7 +49,9 @@ python tools/prime3_wii_runtime/build_probe_dol.py `
   --output-dol <temp>\probe-main.dol `
   --payload-bin <temp>\payload\payload.bin `
   --payload-manifest <temp>\payload\payload.json `
-  --report <temp>\probe-section.json
+  --report <temp>\probe-section.json `
+  --payload-address <probe payload virtual address> `
+  --halt-at-entry
 ```
 
 The probe DOL builder:
@@ -53,6 +61,7 @@ The probe DOL builder:
 - installs no hook
 - installs no arena reservation patch
 - appends the probe payload as a new unused text section at the smallest aligned address above the mapped sections and BSS
+- optionally replaces the first retail entry instruction with a self-branch gate for a halted-entry observation point
 
 ## Final-Image Verification
 
@@ -71,7 +80,9 @@ python tools/prime3_wii_runtime/verify_probe_delivery.py `
   --extracted-final-dol <temp>\reextract\DATA\sys\main.dol `
   --payload-bin <temp>\payload\payload.bin `
   --payload-manifest <temp>\payload\payload.json `
-  --report <temp>\probe-delivery.json
+  --report <temp>\probe-delivery.json `
+  --payload-address <probe payload virtual address> `
+  --halt-at-entry
 ```
 
 Pass:
@@ -81,12 +92,18 @@ Pass:
 - final extracted DOL keeps the same new text-section entry
 - final extracted DOL keeps the same payload bytes
 
-Observed static result for the current probe image:
+Observed static result for the current gated probe images:
 
 - original retail `main.dol` SHA-256: `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
-- intended probe `main.dol` SHA-256: `bc3aec3bf0ea27cc6fbd7d7fb07dc15c06480da63a8f523df706197cfe53a2b2`
-- re-extracted final `main.dol` SHA-256: `bc3aec3bf0ea27cc6fbd7d7fb07dc15c06480da63a8f523df706197cfe53a2b2`
-- rebuilt probe ISO SHA-256: `6b726f78cc072d21b213c9660d7368b5e4b630f6315acf14c0e5872a87d29621`
+- low halted-entry probe `main.dol` SHA-256: `c50d988ee25d597a058041459127a01c6fc4e49509c34839d4d976b06a490f14`
+- low re-extracted final `main.dol` SHA-256: `c50d988ee25d597a058041459127a01c6fc4e49509c34839d4d976b06a490f14`
+- low rebuilt probe ISO SHA-256: `d10437cc6e4d3ec35fde1a00ce7bce41476ce0787027810eabade6686518da75`
+- high halted-entry probe `main.dol` SHA-256: `cf2e22867cea45a92f36cb7c27fa5affd98b2fe6e0abc5696638823d1438cf2d`
+- high re-extracted final `main.dol` SHA-256: `cf2e22867cea45a92f36cb7c27fa5affd98b2fe6e0abc5696638823d1438cf2d`
+- high rebuilt probe ISO SHA-256: `97527033ecb0ee221d363bce38375ecaae7c22ce5c6c14d976c43a05119f81a0`
+- deterministic probe payload `payload.bin` SHA-256: `aad91d2d09ecb59f1f86dba8c6b806640e687ce57d53c96a336708e969d821c2`
+- deterministic probe payload `payload.elf` SHA-256: `efb5bd3448b3605991cabcf7dac013c35489c01cbd33e5787aa19a0c35da1a56`
+- deterministic probe payload `payload.json` SHA-256: `868d3d3db7942fe6454aaed3cc53d110e2dcb4a707ef19ce212c79d1f8dadd65`
 
 Failure:
 
@@ -124,6 +141,7 @@ python tools/prime3_wii_runtime/observe_probe.py `
   --payload-bin <temp>\payload\payload.bin `
   --payload-manifest <temp>\payload\payload.json `
   --report <temp>\probe-memory.json `
+  --startup-word 0x80006320=0x48000000 `
   --startup-word 0x8000633C=0x38000000
 ```
 
@@ -140,44 +158,30 @@ It reads only:
   - `0x800000F4`
 - `*(0x800000F4 + 0x08)` when the boot-info pointer is non-zero
 
-Observed post-boot read-only result from the exact rebuilt probe ISO:
+Observed halted-entry result from the exact rebuilt probe ISOs:
 
-- game ID matched `RM3E01`
-- startup word `0x8000633c` still matched the retail `0x38000000`
-- `0x800000f4 = 0x817fc3a0`
-- `*(0x817fc3a8) = 0`
-- `0x80000034 = 0x817fe3a0`
-- `0x80003110 = 0x817fe3a0`
-- the full payload range at `0x806843c0` read back as zeroes at the observed post-boot checkpoint
-- the canary therefore did not match
-- the counter still read `0`
+- both Dolphin launches used the exact absolute rebuilt ISO paths and unique Dolphin user directories
+- both running Dolphin process command lines still referenced the exact launched ISO paths
+- both runs reported game ID `RM3E01`
+- both runs reported the gated startup words:
+  - `0x80006320 = 0x48000000`
+  - `0x8000633c = 0x38000000`
+- both runs reported:
+  - `0x800000f4 = 0x817fc3a0`
+  - `*(0x817fc3a8) = 0`
+  - `0x80000034 = 0x817fe3a0`
+  - `0x80003110 = 0x817fe3a0`
+- low-address halted-entry result at `0x806843c0`:
+  - full payload SHA-256 matched `aad91d2d09ecb59f1f86dba8c6b806640e687ce57d53c96a336708e969d821c2`
+  - canary matched
+  - counter remained `0`
+- high-address halted-entry result at `0x817e0000`:
+  - full payload range read back as zeroes
+  - live payload SHA-256 was `3b18c58c739716e76429634a61375c45b3b5cd470c22ab6d3e14cee23dd992e1`
+  - canary did not match
+  - counter remained `0`
 
-This is not an entrypoint result. It proves only that the payload does not survive unchanged to the observed post-boot checkpoint.
-
-## Entrypoint Breakpoint Procedure
-
-The current repository tooling does not automate a pre-entry breakpoint. Use Dolphin's debugger manually:
-
-1. Launch the exact temporary ISO with a unique Dolphin user directory.
-2. Open the debugger before letting emulation continue.
-3. Set an execution breakpoint at `0x80006320`.
-4. Break before the entry instruction executes.
-5. Inspect:
-   - `0x8000633C`
-   - the appended payload address range
-   - canary bytes
-   - counter value
-   - `0x80000034`
-   - `0x80003110`
-   - `0x800000F4`
-6. Only if `0x800000F4` is valid, inspect `*(0x800000F4 + 0x08)`.
-
-If the payload is missing already at `0x80006320`, conclude either:
-
-- the wrong image booted, or
-- the loader did not copy the new section
-
-Do not continue into overwrite or reservation analysis until the image identity and DOL delivery chain are proven.
+This is now an entry-gated result, not a later post-boot snapshot. It proves that Dolphin's Wii DOL loader copied the appended low-address text section before the retail entry instruction but did not present the appended high-address text section intact at that same halted-entry state.
 
 ## Later Checkpoints
 
@@ -201,7 +205,7 @@ Capture:
 - written address range
 - whether the write matches BSS clear, arena init, heap init, REL loading, or another clear path
 
-If the payload is already zero at the first observable checkpoint after entry, do not infer the writer. Continue only with a real entry breakpoint and memory-check capture.
+If a later checkpoint zeroes the low-address payload, capture the earliest changed checkpoint and the writer PC before drawing overwrite conclusions.
 
 ## Cleanup
 

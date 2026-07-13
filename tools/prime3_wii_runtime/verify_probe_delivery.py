@@ -22,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--payload-bin", type=Path, required=True)
     parser.add_argument("--payload-manifest", type=Path, required=True)
+    parser.add_argument("--payload-address")
+    parser.add_argument("--halt-at-entry", action="store_true")
     return parser.parse_args()
 
 
@@ -33,6 +35,8 @@ def main() -> None:
         extracted_final_dol_path=args.extracted_final_dol,
         payload_bin_path=args.payload_bin,
         payload_manifest_path=args.payload_manifest,
+        payload_virtual_address=None if args.payload_address is None else int(args.payload_address, 0),
+        halt_at_entry=args.halt_at_entry,
     )
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(report.to_json_text(), encoding="utf-8")

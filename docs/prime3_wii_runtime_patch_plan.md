@@ -317,41 +317,61 @@ Verified probe-artifact properties:
   - execution-counter offset
   - execution-counter size
 - an explicit assembly wrapper that preserves startup state, reproduces the displaced `li r0, 0`, and returns
+- a developer-only entry gate at `0x80006320` that replaces `0x4800016d` with `0x48000000` for halted-entry observation
 
 What is not verified:
 
-- that a retail DOL patched with an appended high-memory probe section actually maps that section into live emulated memory
 - that the current `0x8000633c` hook candidate reaches that payload in the retail title
 
 ## Static probe delivery-chain result
 
-The unhooked probe-section image path is now verified structurally.
+The gated probe-section image path is now verified structurally for both tested placements.
 
 Observed temporary-image result:
 
 - original retail `main.dol` SHA-256: `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
-- intended probe `main.dol` SHA-256: `bc3aec3bf0ea27cc6fbd7d7fb07dc15c06480da63a8f523df706197cfe53a2b2`
-- re-extracted final `main.dol` SHA-256: `bc3aec3bf0ea27cc6fbd7d7fb07dc15c06480da63a8f523df706197cfe53a2b2`
-- rebuilt probe ISO SHA-256: `6b726f78cc072d21b213c9660d7368b5e4b630f6315acf14c0e5872a87d29621`
-- probe payload SHA-256: `aad91d2d09ecb59f1f86dba8c6b806640e687ce57d53c96a336708e969d821c2`
+- deterministic probe payload `payload.bin` SHA-256: `aad91d2d09ecb59f1f86dba8c6b806640e687ce57d53c96a336708e969d821c2`
+- deterministic probe payload `payload.elf` SHA-256: `efb5bd3448b3605991cabcf7dac013c35489c01cbd33e5787aa19a0c35da1a56`
+- deterministic probe payload `payload.json` SHA-256: `868d3d3db7942fe6454aaed3cc53d110e2dcb4a707ef19ce212c79d1f8dadd65`
+- low halted-entry probe `main.dol` SHA-256: `c50d988ee25d597a058041459127a01c6fc4e49509c34839d4d976b06a490f14`
+- low re-extracted final `main.dol` SHA-256: `c50d988ee25d597a058041459127a01c6fc4e49509c34839d4d976b06a490f14`
+- low rebuilt probe ISO SHA-256: `d10437cc6e4d3ec35fde1a00ce7bce41476ce0787027810eabade6686518da75`
+- high halted-entry probe `main.dol` SHA-256: `cf2e22867cea45a92f36cb7c27fa5affd98b2fe6e0abc5696638823d1438cf2d`
+- high re-extracted final `main.dol` SHA-256: `cf2e22867cea45a92f36cb7c27fa5affd98b2fe6e0abc5696638823d1438cf2d`
+- high rebuilt probe ISO SHA-256: `97527033ecb0ee221d363bce38375ecaae7c22ce5c6c14d976c43a05119f81a0`
 
 Verified appended section metadata:
 
-- text slot: `text2`
-- virtual address: `0x806843c0`
-- file offset: `0x005c46e0`
-- payload size: `148`
-- entry address: `0x806843c0`
-- canary address: `0x80684440`
-- counter address: `0x80684450`
+- low placement:
+  - text slot: `text2`
+  - virtual address: `0x806843c0`
+  - file offset: `0x005c46e0`
+  - payload size: `148`
+  - entry address: `0x806843c0`
+  - canary address: `0x80684440`
+  - counter address: `0x80684450`
+- high placement:
+  - text slot: `text2`
+  - virtual address: `0x817e0000`
+  - file offset: `0x005c46e0`
+  - payload size: `148`
+  - entry address: `0x817e0000`
+  - canary address: `0x817e0080`
+  - counter address: `0x817e0090`
+- gated entry word:
+  - gate address: `0x80006320`
+  - original word: `0x4800016d`
+  - replacement word: `0x48000000`
 
 Static pass result:
 
-- the intended probe DOL, the temporary-root DOL, and the re-extracted final DOL were byte-identical
-- the only original-to-probe DOL changes were the new text-section header entry and the appended payload bytes
-- no hook instruction or arena-reservation patch was installed in this image
+- low and high probe payload builds were deterministic across two independent rebuilds
+- low and high gated probe DOL builds were deterministic across two independent rebuilds
+- low and high intended probe DOLs matched their re-extracted final DOLs byte-for-byte
+- the only original-to-probe DOL changes were the entry-gate word, the new text-section header entry, and the appended payload bytes
+- no hook instruction or arena-reservation patch was installed in either image
 
-Therefore the image-build and ISO-delivery path is now proven for an unhooked probe section. The remaining uncertainty is in live memory, not in DOL or ISO construction.
+Therefore the image-build and ISO-delivery path is proven for both gated probe placements. The remaining uncertainty is now strictly about what the Wii loader and startup path make visible in live memory.
 
 ## Verified hook status
 
@@ -365,39 +385,40 @@ The minimum proof bar is still unmet because there is no candidate that simultan
 - understood calling context
 - proven safe payload memory
 
-## Harmless executable validation result
-
-Temporary source-built probe DOL copies and rebuilt ISO images were generated outside the repository for analysis, but no runtime execution claim is made.
-
-Observed result:
-
-- the static delivery chain now passes byte-identically from intended probe DOL through rebuilt ISO and re-extracted final DOL
-- a Dolphin launch using the exact rebuilt ISO path preserved the original startup word at `0x8000633c`
-- the post-boot payload read at `0x806843c0` did not match the appended probe payload bytes
-- that entire `148`-byte payload range read back as zeroes in the observed post-boot session
-- the post-boot canary therefore did not match and the counter remained `0`
-
-Therefore the current probe workflow is proven through ISO delivery but still not a verified runtime execution path.
-
 ## Live probe observation result
 
-What is verified from the exact rebuilt probe ISO:
+What is verified from the exact rebuilt halted-entry probe ISOs:
 
-- Dolphin was launched with the exact absolute probe ISO path
-- the running Dolphin process command line still referenced that exact path
-- the live game ID at `0x80000000` was `RM3E01`
-- the observed startup word at `0x8000633c` remained the original retail `0x38000000`
-- `0x800000f4` pointed to `0x817fc3a0`
-- `*(0x817fc3a8)` was `0`
-- at the observed post-boot checkpoint:
+- Dolphin was launched with the exact absolute rebuilt ISO paths
+- the running Dolphin process command lines still referenced those exact paths
+- both runs halted with the gated startup words still in memory:
+  - `0x80006320 = 0x48000000`
+  - `0x8000633c = 0x38000000`
+- both runs reported live game ID `RM3E01`
+- both runs reported:
+  - `0x800000f4 = 0x817fc3a0`
+  - `*(0x817fc3a8) = 0`
   - `0x80000034 = 0x817fe3a0`
   - `0x80003110 = 0x817fe3a0`
+- low appended-text placement at `0x806843c0` was fully present at the halted-entry state:
+  - payload SHA-256 matched `aad91d2d09ecb59f1f86dba8c6b806640e687ce57d53c96a336708e969d821c2`
+  - canary matched
+  - counter remained `0`
+- high appended-text placement at `0x817e0000` was already absent at that same halted-entry state:
+  - the full `148`-byte range read back as zeroes
+  - live payload SHA-256 was `3b18c58c739716e76429634a61375c45b3b5cd470c22ab6d3e14cee23dd992e1`
+  - canary did not match
+  - counter remained `0`
+
+What this proves:
+
+- Dolphin's Wii DOL loader copied the appended low-address text section before the retail entry instruction executed
+- the same loader/startup path did not leave the appended high-address text section intact at that halted-entry state
 
 What is not verified:
 
-- payload presence before the entry instruction at `0x80006320`
-- whether the loader copied the appended section before entry and a later writer zeroed it
-- the writer PC that produced the zeroed payload range
+- the exact loader rule that rejects or clears the high-address placement
+- the writer PC that eventually changes a valid low-address payload at later checkpoints
 - the writer PCs for `0x80000034` and `0x80003110`
 
 ## CI and packaging implications
@@ -418,9 +439,10 @@ What is still missing from repository-wide support:
 
 ## Exact remaining blockers before a harmless executable hook test
 
-1. Halt the exact rebuilt probe ISO before the entry instruction at `0x80006320` and verify whether the appended payload bytes are present there.
-2. If the payload is present at entry, capture the earliest checkpoint where that range becomes zero and record the writer PC.
-3. Capture the actual writer PCs for `0x80000034` and `0x80003110` on the active retail boot path.
-4. Only after those live-writer facts are known should arena-reservation candidates or a harmless hook be revisited.
+1. Re-check the low-address payload at later checkpoints after releasing the entry gate and capture the earliest point where it changes.
+2. Capture the writer PC for the first change to the low-address payload range.
+3. Determine why the high-address appended section is already zero at the halted-entry state.
+4. Capture the actual writer PCs for `0x80000034` and `0x80003110` on the active retail boot path.
+5. Only after those live-writer facts are known should arena-reservation candidates or a harmless hook be revisited.
 
-Until those four steps are complete, the project should stop at source-built artifact generation and validation rather than pretending runtime execution is ready.
+Until those five steps are complete, the project should stop at source-built artifact generation and validated halted-entry observation rather than pretending runtime execution is ready.

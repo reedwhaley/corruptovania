@@ -23,24 +23,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--payload-bin", type=Path, required=True)
     parser.add_argument("--payload-manifest", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--payload-address")
+    parser.add_argument("--halt-at-entry", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.original_dol.resolve() == args.output_dol.resolve():
+        raise RuntimeError("Input and output DOL paths must differ for probe builds.")
     manifest = Prime3RuntimePayloadManifest.from_json_text(args.payload_manifest.read_text(encoding="utf-8"))
     result = build_unhooked_probe_dol(
         args.original_dol.read_bytes(),
         args.payload_bin.read_bytes(),
         manifest,
+        payload_virtual_address=None if args.payload_address is None else int(args.payload_address, 0),
+        halt_at_entry=args.halt_at_entry,
     )
     args.output_dol.parent.mkdir(parents=True, exist_ok=True)
     args.output_dol.write_bytes(result.probe_dol_bytes)
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(
-        json.dumps(result.probe_section.to_json_dict(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    report = {"probe_section": result.probe_section.to_json_dict()}
+    if result.entry_gate is not None:
+        report["entry_gate"] = result.entry_gate.to_json_dict()
+    args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

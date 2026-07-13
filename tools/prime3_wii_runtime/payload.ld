@@ -9,6 +9,12 @@ SECTIONS
     {
         KEEP(*(.text.payload))
         *(.text .text.*)
+        *(.rodata .rodata.*)
+        . = ALIGN(32);
+        payload_embedded_runtime_start = .;
+        KEEP(*(.data .data.*))
+        payload_embedded_runtime_end = .;
+        *(.bss .bss.* COMMON)
     }
 
     /DISCARD/ :

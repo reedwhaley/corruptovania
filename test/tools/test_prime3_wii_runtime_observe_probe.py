@@ -115,6 +115,47 @@ def _bootstrap_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
     return Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def _relocated_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
+    raw = _bootstrap_manifest(payload_bytes).to_json_dict()
+    raw["payload_mode"] = "relocated_return_halt"
+    raw["entry_bootstrap"]["mode"] = "relocated_return_halt"
+    raw["entry_bootstrap"]["status_value"] = 0xB0071002
+    raw["relocated_runtime"] = {
+        "mode": "relocated_return_halt",
+        "low_bootstrap_address": 0x806843C0,
+        "low_bootstrap_size": 0x20,
+        "low_bootstrap_sha256": __import__("hashlib").sha256(payload_bytes[:0x20]).hexdigest(),
+        "embedded_runtime_blob_offset": 0x20,
+        "embedded_runtime_blob_size": 0x60,
+        "embedded_runtime_blob_sha256": __import__("hashlib").sha256(payload_bytes[0x20:0x80]).hexdigest(),
+        "runtime_destination_address": 0x817E1000,
+        "runtime_entry_address": 0x817E1000,
+        "runtime_code_start": 0x817E1000,
+        "runtime_code_end": 0x817E1020,
+        "runtime_state_start": 0x817E1020,
+        "runtime_state_end": 0x817E1060,
+        "required_source_alignment": 0x20,
+        "required_destination_alignment": 0x20,
+        "cache_line_size": 0x20,
+        "cache_range_start": 0x817E1000,
+        "cache_range_size": 0x60,
+        "runtime_canary_address": 0x817E1020,
+        "runtime_canary_size": 0x10,
+        "runtime_canary_sha256": __import__("hashlib").sha256(b"R" * 0x10).hexdigest(),
+        "copy_complete_marker_address": 0x817E1030,
+        "copy_complete_marker_value": 0x434F5059,
+        "runtime_executed_marker_address": 0x817E1034,
+        "runtime_executed_marker_value": 0x52554E21,
+        "runtime_execution_counter_address": 0x817E1038,
+        "runtime_execution_counter_size": 4,
+        "runtime_status_address": 0x817E103C,
+        "runtime_success_status_value": 0x52544F4B,
+        "bootstrap_return_marker_address": 0x817E1040,
+        "bootstrap_return_marker_value": 0x4252544E,
+    }
+    return Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def _config(module, payload_address: int = 0x817F0000, startup_word: int = 0x38000000):
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + b"\x00" * 0x10 + b"\x00\x00\x00\x00"
     return module.ProbeObservationConfig(
@@ -222,6 +263,56 @@ def test_observe_probe_reads_bootstrap_diagnostic_block() -> None:
     assert result["bootstrap_halt_loop_address"] == 0x806843D8
     assert result["bootstrap_diagnostic"]["counter_value"] == 1
     assert result["bootstrap_diagnostic"]["replacement_matches_expected"] is True
+
+
+def test_observe_probe_reads_relocated_runtime_state() -> None:
+    module = _load_module()
+    runtime_blob = bytearray(b"R" * 0x60)
+    runtime_blob[0x30:0x34] = (0x434F5059).to_bytes(4, "big")
+    runtime_blob[0x34:0x38] = (0x52554E21).to_bytes(4, "big")
+    runtime_blob[0x38:0x3C] = (1).to_bytes(4, "big")
+    runtime_blob[0x3C:0x40] = (0x52544F4B).to_bytes(4, "big")
+    runtime_blob[0x40:0x44] = (0x4252544E).to_bytes(4, "big")
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob)
+    manifest = _relocated_manifest(payload_bytes)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(
+            module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),
+            module.StartupWordExpectation(address=0x8000633C, expected_word=0x38000000),
+        ),
+    )
+    memory = _memory_for_config(module, config)
+    diagnostic = bytearray(b"\x00" * 0x40)
+    diagnostic[0x00:0x10] = b"P3BOOTSTRAPCANRY"
+    diagnostic[0x14:0x18] = (0x50334254).to_bytes(4, "big")
+    diagnostic[0x18:0x1C] = (1).to_bytes(4, "big")
+    diagnostic[0x1C:0x20] = (0x817FE3A0).to_bytes(4, "big")
+    diagnostic[0x20:0x24] = (0x817FE3A0).to_bytes(4, "big")
+    diagnostic[0x24:0x28] = (0x817E0000).to_bytes(4, "big")
+    diagnostic[0x28:0x2C] = (0xB0071002).to_bytes(4, "big")
+    memory[0x817E0100] = bytes(diagnostic)
+    runtime_state = bytearray(payload_bytes[0x20:0x80])
+    memory[0x817E1000] = bytes(runtime_state)
+    memory[0x80000034] = (0x817E0000).to_bytes(4, "big")
+    memory[0x80003110] = (0x817E0000).to_bytes(4, "big")
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["relocated_runtime"]["matches_expected"] is True
+    assert result["relocated_runtime"]["classification"] == "exact payload match"
+    assert result["relocated_runtime"]["copy_complete_matches_expected"] is True
+    assert result["relocated_runtime"]["runtime_executed_matches_expected"] is True
+    assert result["relocated_runtime"]["runtime_execution_counter_value"] == 1
+    assert result["relocated_runtime"]["runtime_status_matches_expected"] is True
+    assert result["relocated_runtime"]["bootstrap_return_matches_expected"] is True
 
 
 def test_observe_probe_rejects_short_payload_read() -> None:
@@ -426,3 +517,38 @@ def test_observe_probe_cli_requires_checkpoint_name(tmp_path: Path, monkeypatch:
 
     with pytest.raises(module.ProbeObservationError, match="non-empty --checkpoint-name"):
         module.main()
+
+
+def test_observe_probe_cli_allows_payload_only_without_checkpoint_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    config = _config(module)
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    report_path = tmp_path.joinpath("report.json")
+    payload_path.write_bytes(config.payload_bytes)
+    manifest_path.write_text(config.manifest.to_json_text(), encoding="utf-8")
+    monkeypatch.setattr(module, "dolphin_memory_engine", FakeBackend(_memory_for_config(module, config)))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "observe_probe.py",
+            "--payload-address",
+            hex(config.payload_address),
+            "--payload-bin",
+            str(payload_path),
+            "--payload-manifest",
+            str(manifest_path),
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    module.main()
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["checkpoint_name"] is None
+    assert payload["entry_gate_active"] is False

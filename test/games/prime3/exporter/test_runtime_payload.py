@@ -71,6 +71,49 @@ def _make_bootstrap_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3RuntimePayloadManifest:
+    manifest = _make_bootstrap_manifest(payload_bytes)
+    raw = manifest.to_json_dict()
+    raw["payload_mode"] = runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT
+    raw["entry_bootstrap"]["mode"] = runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT
+    raw["entry_bootstrap"]["status_value"] = 0xB0071001
+    raw["entry_bootstrap"]["halt_loop_address"] = 0x80684540
+    raw["relocated_runtime"] = {
+        "mode": runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+        "low_bootstrap_address": 0x806843C0,
+        "low_bootstrap_size": 0x1A0,
+        "low_bootstrap_sha256": hashlib.sha256(payload_bytes[:0x1A0]).hexdigest(),
+        "embedded_runtime_blob_offset": 0x1A0,
+        "embedded_runtime_blob_size": 0x80,
+        "embedded_runtime_blob_sha256": hashlib.sha256(payload_bytes[0x1A0:0x220]).hexdigest(),
+        "runtime_destination_address": 0x817E1000,
+        "runtime_entry_address": 0x817E1000,
+        "runtime_code_start": 0x817E1000,
+        "runtime_code_end": 0x817E1040,
+        "runtime_state_start": 0x817E1040,
+        "runtime_state_end": 0x817E1080,
+        "required_source_alignment": 0x20,
+        "required_destination_alignment": 0x20,
+        "cache_line_size": 0x20,
+        "cache_range_start": 0x817E1000,
+        "cache_range_size": 0x80,
+        "runtime_canary_address": 0x817E1040,
+        "runtime_canary_size": 0x10,
+        "runtime_canary_sha256": hashlib.sha256(b"P3HIRUNTIMECANAR").hexdigest(),
+        "copy_complete_marker_address": 0x817E1050,
+        "copy_complete_marker_value": 0x434F5059,
+        "runtime_executed_marker_address": 0x817E1054,
+        "runtime_executed_marker_value": 0x52554E21,
+        "runtime_execution_counter_address": 0x817E1058,
+        "runtime_execution_counter_size": 4,
+        "runtime_status_address": 0x817E105C,
+        "runtime_success_status_value": 0x52544F4B,
+        "bootstrap_return_marker_address": 0x817E1060,
+        "bootstrap_return_marker_value": 0x4252544E,
+    }
+    return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_json_is_deterministic() -> None:
     manifest = _make_manifest(b"\x4e\x80\x00\x20")
     assert manifest.to_json_text() == manifest.to_json_text()
@@ -184,6 +227,50 @@ def test_runtime_payload_manifest_rejects_bootstrap_diagnostic_outside_reserved_
 
     with pytest.raises(Prime3DolPatchError, match="diagnostic block address is outside the reserved range"):
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
+def test_runtime_payload_manifest_accepts_relocated_runtime_metadata() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 136)
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(manifest.to_json_dict())
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.runtime_destination_address == 0x817E1000
+    assert parsed.relocated_runtime.cache_range_size == 0x80
+
+
+def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 136)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    relocated["runtime_destination_address"] = 0x817E0100
+    relocated["runtime_entry_address"] = 0x817E0100
+    relocated["runtime_code_start"] = 0x817E0100
+    relocated["runtime_code_end"] = 0x817E0120
+    relocated["runtime_state_start"] = 0x817E0120
+    relocated["runtime_state_end"] = 0x817E0164
+    relocated["runtime_canary_address"] = 0x817E0120
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="overlaps the bootstrap diagnostic block"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
+@pytest.mark.parametrize(
+    ("address", "size", "line_size", "expected"),
+    [
+        (0x817E1000, 0x80, 0x20, (0x817E1000, 0x80)),
+        (0x817E1001, 0x80, 0x20, (0x817E1000, 0xA0)),
+        (0x817E1000, 1, 0x20, (0x817E1000, 0x20)),
+    ],
+)
+def test_compute_cache_range(address: int, size: int, line_size: int, expected: tuple[int, int]) -> None:
+    assert runtime_payload.compute_cache_range(address=address, size=size, cache_line_size=line_size) == expected
+
+
+def test_compute_cache_range_rejects_zero_length() -> None:
+    with pytest.raises(Prime3DolPatchError, match="must be positive"):
+        runtime_payload.compute_cache_range(address=0x817E1000, size=0, cache_line_size=0x20)
 
 
 def test_runtime_payload_manifest_rejects_partial_probe_metadata() -> None:

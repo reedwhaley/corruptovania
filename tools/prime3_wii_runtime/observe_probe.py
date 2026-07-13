@@ -102,6 +102,24 @@ class BootstrapDiagnosticObservation(TypedDict):
     status_matches_expected: bool
 
 
+class RelocatedRuntimeObservation(TypedDict):
+    address: int
+    size: int
+    sha256: str
+    matches_expected: bool
+    all_zero: bool
+    classification: str
+    copy_complete_marker_value: int
+    copy_complete_matches_expected: bool
+    runtime_executed_marker_value: int
+    runtime_executed_matches_expected: bool
+    runtime_execution_counter_value: int
+    runtime_status_value: int
+    runtime_status_matches_expected: bool
+    bootstrap_return_marker_value: int
+    bootstrap_return_matches_expected: bool
+
+
 class ProbeState(TypedDict):
     game_id: bytes
     startup_words: dict[str, StartupWordObservation]
@@ -114,6 +132,7 @@ class ProbeState(TypedDict):
     canary: ProbeCanaryObservation | None
     counter: ProbeCounterObservation | None
     bootstrap_diagnostic: BootstrapDiagnosticObservation | None
+    relocated_runtime: RelocatedRuntimeObservation | None
     boot_info_plus_8: int | None
     invalid_boot_info_pointer: int | None
 
@@ -192,6 +211,8 @@ def observe_probe_memory(
         result["counter"] = first_read["counter"]
     if first_read["bootstrap_diagnostic"] is not None:
         result["bootstrap_diagnostic"] = first_read["bootstrap_diagnostic"]
+    if first_read["relocated_runtime"] is not None:
+        result["relocated_runtime"] = first_read["relocated_runtime"]
     if first_read["boot_info_plus_8"] is not None:
         result["boot_info_plus_8"] = first_read["boot_info_plus_8"]
     if first_read["invalid_boot_info_pointer"] is not None:
@@ -300,6 +321,66 @@ def _read_probe_state(
             "status_matches_expected": status_value == metadata.status_value,
         }
 
+    relocated_runtime: RelocatedRuntimeObservation | None = None
+    if config.manifest.relocated_runtime is not None:
+        metadata = config.manifest.relocated_runtime
+        start = metadata.embedded_runtime_blob_offset
+        end = start + metadata.embedded_runtime_blob_size
+        expected_runtime_bytes = config.payload_bytes[start:end]
+        runtime_bytes = _read_exact(
+            backend,
+            metadata.runtime_destination_address,
+            metadata.embedded_runtime_blob_size,
+            f"relocated runtime bytes 0x{metadata.runtime_destination_address:08x}",
+        )
+        runtime_executed_marker_offset = metadata.runtime_executed_marker_address - metadata.runtime_destination_address
+        copy_complete_marker_offset = metadata.copy_complete_marker_address - metadata.runtime_destination_address
+        counter_offset = metadata.runtime_execution_counter_address - metadata.runtime_destination_address
+        status_offset = metadata.runtime_status_address - metadata.runtime_destination_address
+        bootstrap_return_offset = metadata.bootstrap_return_marker_address - metadata.runtime_destination_address
+        relocated_runtime = {
+            "address": metadata.runtime_destination_address,
+            "size": metadata.embedded_runtime_blob_size,
+            "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
+            "matches_expected": runtime_bytes == expected_runtime_bytes,
+            "all_zero": all(item == 0 for item in runtime_bytes),
+            "classification": _classify_payload(runtime_bytes, expected_runtime_bytes),
+            "copy_complete_marker_value": int.from_bytes(
+                runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
+                "big",
+            ),
+            "copy_complete_matches_expected": int.from_bytes(
+                runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
+                "big",
+            )
+            == metadata.copy_complete_marker_value,
+            "runtime_executed_marker_value": int.from_bytes(
+                runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
+                "big",
+            ),
+            "runtime_executed_matches_expected": int.from_bytes(
+                runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
+                "big",
+            )
+            == metadata.runtime_executed_marker_value,
+            "runtime_execution_counter_value": int.from_bytes(
+                runtime_bytes[counter_offset : counter_offset + 4],
+                "big",
+            ),
+            "runtime_status_value": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big"),
+            "runtime_status_matches_expected": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big")
+            == metadata.runtime_success_status_value,
+            "bootstrap_return_marker_value": int.from_bytes(
+                runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
+                "big",
+            ),
+            "bootstrap_return_matches_expected": int.from_bytes(
+                runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
+                "big",
+            )
+            == metadata.bootstrap_return_marker_value,
+        }
+
     boot_info_pointer = low_memory_words["0x800000F4"]
     boot_info_plus_8 = None
     invalid_boot_info_pointer = None
@@ -324,6 +405,7 @@ def _read_probe_state(
         "canary": canary,
         "counter": counter,
         "bootstrap_diagnostic": bootstrap_diagnostic,
+        "relocated_runtime": relocated_runtime,
         "boot_info_plus_8": boot_info_plus_8,
         "invalid_boot_info_pointer": invalid_boot_info_pointer,
     }
@@ -378,15 +460,20 @@ def _parse_startup_word(value: str) -> StartupWordExpectation:
 
 def main() -> None:
     args = parse_args()
-    if args.checkpoint_name is None and args.halt_address is None and args.expected_halt_word is None:
+    if (
+        args.checkpoint_name is None
+        and args.halt_address is None
+        and args.expected_halt_word is None
+        and not args.startup_word
+    ):
         checkpoint_name = None
     else:
         if args.checkpoint_name is None or not args.checkpoint_name.strip():
             raise ProbeObservationError("Checkpoint observation requires a non-empty --checkpoint-name.")
-        if args.halt_address is None:
-            raise ProbeObservationError("Checkpoint observation requires --halt-address.")
-        if args.expected_halt_word is None:
-            raise ProbeObservationError("Checkpoint observation requires --expected-halt-word.")
+        if (args.halt_address is None) != (args.expected_halt_word is None):
+            raise ProbeObservationError(
+                "Checkpoint halt observation requires both --halt-address and --expected-halt-word."
+            )
         checkpoint_name = args.checkpoint_name
     manifest = Prime3RuntimePayloadManifest.from_json_text(args.payload_manifest.read_text(encoding="utf-8"))
     payload_bytes = args.payload_bin.read_bytes()

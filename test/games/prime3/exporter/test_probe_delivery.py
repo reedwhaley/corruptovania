@@ -73,6 +73,77 @@ def _make_bootstrap_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payl
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def _make_relocated_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payload.Prime3RuntimePayloadManifest:
+    raw = _make_manifest(payload_bytes).to_json_dict()
+    raw["payload_mode"] = mode
+    raw["entry_bootstrap"] = {
+        "mode": mode,
+        "staging_address": 0x806843C0,
+        "staging_save_area_offset": 0x20,
+        "staging_save_area_size": 0x10,
+        "halt_loop_address": 0x806843E0 if "halt" in mode else None,
+        "reserved_boundary": 0x817E0000,
+        "reserved_range_start": 0x817E0000,
+        "reserved_range_end": 0x817FE3A0,
+        "diagnostic_address": 0x817E0100,
+        "diagnostic_block_size": 0x40,
+        "canary_address": 0x817E0100,
+        "canary_size": 0x10,
+        "canary_sha256": probe_delivery._sha256_bytes(b"P3BOOTSTRAPCANRY"),
+        "marker_address": 0x817E0114,
+        "marker_value": 0x50334254,
+        "counter_address": 0x817E0118,
+        "counter_size": 4,
+        "original_80000034_address": 0x817E011C,
+        "original_80003110_address": 0x817E0120,
+        "replacement_value_address": 0x817E0124,
+        "replacement_value": 0x817E0000,
+        "status_address": 0x817E0128,
+        "status_value": (
+            0xB0071001
+            if mode == runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT
+            else 0xB0071002
+        ),
+        "original_entry_instruction": probe_delivery.EXPECTED_ENTRY_WORD,
+        "original_branch_target": 0x8000648C,
+        "original_continuation_address": 0x80006324,
+    }
+    raw["relocated_runtime"] = {
+        "mode": mode,
+        "low_bootstrap_address": 0x806843C0,
+        "low_bootstrap_size": 0x60,
+        "low_bootstrap_sha256": probe_delivery._sha256_bytes(payload_bytes[:0x60]),
+        "embedded_runtime_blob_offset": 0x60,
+        "embedded_runtime_blob_size": 0x20,
+        "embedded_runtime_blob_sha256": probe_delivery._sha256_bytes(payload_bytes[0x60:0x80]),
+        "runtime_destination_address": 0x817E1000,
+        "runtime_entry_address": 0x817E1000,
+        "runtime_code_start": 0x817E1000,
+        "runtime_code_end": 0x817E1004,
+        "runtime_state_start": 0x817E1004,
+        "runtime_state_end": 0x817E1020,
+        "required_source_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
+        "required_destination_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
+        "cache_line_size": 0x20,
+        "cache_range_start": 0x817E1000,
+        "cache_range_size": 0x20,
+        "runtime_canary_address": 0x817E1004,
+        "runtime_canary_size": 0x04,
+        "runtime_canary_sha256": probe_delivery._sha256_bytes(payload_bytes[0x64:0x68]),
+        "copy_complete_marker_address": 0x817E1010,
+        "copy_complete_marker_value": 0x434F5059,
+        "runtime_executed_marker_address": 0x817E1014,
+        "runtime_executed_marker_value": 0x52554E21,
+        "runtime_execution_counter_address": 0x817E1018,
+        "runtime_execution_counter_size": 4,
+        "runtime_status_address": 0x817E101C,
+        "runtime_success_status_value": 0x52544F4B,
+        "bootstrap_return_marker_address": 0x817E100C,
+        "bootstrap_return_marker_value": 0x4252544E,
+    }
+    return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def _write_inputs(tmp_path: Path, *, extracted_bytes: bytes | None = None) -> tuple[Path, Path, Path, Path, Path]:
     version = _make_fake_version()
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + b"\x00" * 0x10 + b"\x00" * 4
@@ -250,6 +321,32 @@ def test_build_unhooked_probe_dol_supports_entry_bootstrap_install() -> None:
     assert result.entry_bootstrap.reserved_high == 0x817E0000
 
 
+def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
+    )
+
+    result = probe_delivery.build_unhooked_probe_dol(
+        _entry_gate_original(),
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        install_relocated_runtime=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert result.relocated_runtime is not None
+    assert result.relocated_runtime.bootstrap_mode == runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT
+    assert result.relocated_runtime.runtime_destination == 0x817E1000
+    assert result.relocated_runtime.runtime_entry == 0x817E1000
+    assert result.relocated_runtime.runtime_blob_offset == 0x60
+    assert result.relocated_runtime.runtime_blob_size == 0x20
+    assert result.relocated_runtime.cache_range_start == 0x817E1000
+    assert result.relocated_runtime.cache_range_size == 0x20
+
+
 def test_build_unhooked_probe_dol_rejects_high_address_outside_mem1() -> None:
     payload_bytes = b"\xaa" * 0x40
     manifest = _make_manifest(payload_bytes)
@@ -381,6 +478,44 @@ def test_build_unhooked_probe_dol_rejects_entry_bootstrap_with_checkpoint_gate()
         )
 
 
+def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="cannot be combined with a checkpoint gate"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x806843C0,
+            install_relocated_runtime=True,
+            halt_at_entry=True,
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="only one bootstrap installation mode"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x806843C0,
+            install_entry_bootstrap=True,
+            install_relocated_runtime=True,
+            versions=(_entry_gate_version(),),
+        )
+
+
 def test_install_entry_gate_rejects_unmapped_entrypoint() -> None:
     with pytest.raises(Prime3DolPatchError, match="not mapped"):
         probe_delivery.install_entry_gate(
@@ -502,6 +637,49 @@ def test_verify_probe_delivery_accepts_entry_bootstrap_chain(tmp_path: Path) -> 
 
     assert report.entry_bootstrap is not None
     assert report.entry_bootstrap.replacement_instruction != probe_delivery.ENTRY_GATE_WORD
+
+
+def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+    )
+    original_bytes = _entry_gate_original()
+    built = probe_delivery.build_unhooked_probe_dol(
+        original_bytes,
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        install_relocated_runtime=True,
+        versions=(_entry_gate_version(),),
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    probe_path = tmp_path.joinpath("probe.dol")
+    extracted_path = tmp_path.joinpath("extracted.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    original_path.write_bytes(original_bytes)
+    probe_path.write_bytes(built.probe_dol_bytes)
+    extracted_path.write_bytes(built.probe_dol_bytes)
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+
+    report = probe_delivery.verify_probe_delivery(
+        original_dol_path=original_path,
+        probe_dol_path=probe_path,
+        extracted_final_dol_path=extracted_path,
+        payload_bin_path=payload_path,
+        payload_manifest_path=manifest_path,
+        payload_virtual_address=0x806843C0,
+        install_relocated_runtime=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert report.relocated_runtime is not None
+    assert report.relocated_runtime.runtime_destination == 0x817E1000
+    assert report.relocated_runtime.runtime_entry == 0x817E1000
+    assert report.relocated_runtime.replacement_instruction != probe_delivery.ENTRY_GATE_WORD
 
 
 def test_verify_probe_delivery_rejects_missing_appended_section(tmp_path: Path) -> None:
@@ -776,3 +954,49 @@ def test_build_probe_dol_script_writes_entry_bootstrap_report(tmp_path: Path) ->
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["entry_bootstrap"]["original_branch_target"] == 0x8000648C
+
+
+def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) -> None:
+    module = _load_build_probe_module()
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x20
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    output_dol = tmp_path.joinpath("relocated-probe.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    report_path = tmp_path.joinpath("relocated-probe.json")
+    original_path.write_bytes(_entry_gate_original())
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+    original_build_unhooked_probe_dol = module.build_unhooked_probe_dol
+
+    def _patched_build_unhooked_probe_dol(*args, **kwargs):
+        kwargs.setdefault("versions", (_entry_gate_version(),))
+        return original_build_unhooked_probe_dol(*args, **kwargs)
+
+    module.build_unhooked_probe_dol = _patched_build_unhooked_probe_dol
+
+    sys.argv = [
+        "build_probe_dol.py",
+        "--original-dol",
+        str(original_path),
+        "--output-dol",
+        str(output_dol),
+        "--payload-bin",
+        str(payload_path),
+        "--payload-manifest",
+        str(manifest_path),
+        "--report",
+        str(report_path),
+        "--payload-address",
+        "0x806843C0",
+        "--install-relocated-runtime",
+    ]
+    module.main()
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["relocated_runtime"]["runtime_destination"] == 0x817E1000
+    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x20

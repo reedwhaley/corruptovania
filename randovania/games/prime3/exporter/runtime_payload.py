@@ -22,10 +22,50 @@ PRIME3_RUNTIME_PAYLOAD_MODE_NORMAL = "normal"
 PRIME3_RUNTIME_PAYLOAD_MODE_PROBE = "probe"
 PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT = "entry_bootstrap_halt"
 PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_CONTINUE = "entry_bootstrap_continue"
+PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT = "relocated_copy_halt"
+PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT = "relocated_return_halt"
+PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE = "relocated_continue"
 PRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODES = (
     PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT,
     PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_CONTINUE,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
 )
+PRIME3_RUNTIME_RELOCATED_MODES = (
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+)
+PRIME3_RUNTIME_HALT_MODES = (
+    PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
+)
+PRIME3_RUNTIME_CONTINUE_MODES = (
+    PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_CONTINUE,
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+)
+
+
+def compute_cache_range(*, address: int, size: int, cache_line_size: int) -> tuple[int, int]:
+    if cache_line_size <= 0 or cache_line_size & (cache_line_size - 1) != 0:
+        raise Prime3DolPatchError(f"Cache line size must be a positive power of two, got {cache_line_size}.")
+    if address < 0:
+        raise Prime3DolPatchError(f"Cache range address must be non-negative, got {address}.")
+    if size <= 0:
+        raise Prime3DolPatchError(f"Cache range size must be positive, got {size}.")
+    try:
+        end = address + size
+    except OverflowError as exc:
+        raise Prime3DolPatchError("Cache range overflowed the integer address space.") from exc
+    if end <= address:
+        raise Prime3DolPatchError("Cache range end must be above the start address.")
+    aligned_start = address & ~(cache_line_size - 1)
+    aligned_end = (end + cache_line_size - 1) & ~(cache_line_size - 1)
+    if aligned_end <= aligned_start:
+        raise Prime3DolPatchError("Cache-aligned range must be non-empty.")
+    return aligned_start, aligned_end - aligned_start
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,10 +110,10 @@ class Prime3EntryBootstrapMetadata:
             self.staging_address <= self.halt_loop_address < self.staging_address + payload_size
         ):
             raise Prime3DolPatchError("Entry bootstrap halt loop address is outside the staged payload range.")
-        if self.mode == PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT and self.halt_loop_address is None:
-            raise Prime3DolPatchError("Entry bootstrap halt mode requires a halt loop address.")
-        if self.mode == PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_CONTINUE and self.halt_loop_address is not None:
-            raise Prime3DolPatchError("Entry bootstrap continue mode must not define a halt loop address.")
+        if self.mode in PRIME3_RUNTIME_HALT_MODES and self.halt_loop_address is None:
+            raise Prime3DolPatchError("Entry bootstrap halt modes require a halt loop address.")
+        if self.mode in PRIME3_RUNTIME_CONTINUE_MODES and self.halt_loop_address is not None:
+            raise Prime3DolPatchError("Entry bootstrap continue modes must not define a halt loop address.")
         if self.reserved_range_start != self.reserved_boundary:
             raise Prime3DolPatchError("Entry bootstrap reserved range must start at the reserved boundary.")
         if self.reserved_range_end <= self.reserved_range_start:
@@ -97,44 +137,10 @@ class Prime3EntryBootstrapMetadata:
                 raise Prime3DolPatchError(f"Entry bootstrap field {name} is outside the reserved range.")
             if start + size > self.reserved_range_end:
                 raise Prime3DolPatchError(f"Entry bootstrap field {name} exceeds the reserved range.")
-        for index, (first_name, first_start, first_size) in enumerate(occupied_ranges):
-            first_end = first_start + first_size
-            for second_name, second_start, second_size in occupied_ranges[index + 1 :]:
-                second_end = second_start + second_size
-                if first_start < second_end and second_start < first_end:
-                    raise Prime3DolPatchError(
-                        f"Entry bootstrap fields {first_name} and {second_name} overlap in the reserved range."
-                    )
+        _validate_non_overlapping_ranges(tuple((name, start, size) for name, start, size in occupied_ranges))
 
     def to_json_dict(self) -> dict[str, object]:
-        return {
-            "mode": self.mode,
-            "staging_address": self.staging_address,
-            "staging_save_area_offset": self.staging_save_area_offset,
-            "staging_save_area_size": self.staging_save_area_size,
-            "halt_loop_address": self.halt_loop_address,
-            "reserved_boundary": self.reserved_boundary,
-            "reserved_range_start": self.reserved_range_start,
-            "reserved_range_end": self.reserved_range_end,
-            "diagnostic_address": self.diagnostic_address,
-            "diagnostic_block_size": self.diagnostic_block_size,
-            "canary_address": self.canary_address,
-            "canary_size": self.canary_size,
-            "canary_sha256": self.canary_sha256,
-            "marker_address": self.marker_address,
-            "marker_value": self.marker_value,
-            "counter_address": self.counter_address,
-            "counter_size": self.counter_size,
-            "original_80000034_address": self.original_80000034_address,
-            "original_80003110_address": self.original_80003110_address,
-            "replacement_value_address": self.replacement_value_address,
-            "replacement_value": self.replacement_value,
-            "status_address": self.status_address,
-            "status_value": self.status_value,
-            "original_entry_instruction": self.original_entry_instruction,
-            "original_branch_target": self.original_branch_target,
-            "original_continuation_address": self.original_continuation_address,
-        }
+        return dataclasses.asdict(self)
 
     @classmethod
     def from_json_dict(cls, data: dict[str, object], *, payload_size: int) -> Prime3EntryBootstrapMetadata:
@@ -171,6 +177,147 @@ class Prime3EntryBootstrapMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3RelocatedRuntimeMetadata:
+    mode: str
+    low_bootstrap_address: int
+    low_bootstrap_size: int
+    low_bootstrap_sha256: str
+    embedded_runtime_blob_offset: int
+    embedded_runtime_blob_size: int
+    embedded_runtime_blob_sha256: str
+    runtime_destination_address: int
+    runtime_entry_address: int
+    runtime_code_start: int
+    runtime_code_end: int
+    runtime_state_start: int
+    runtime_state_end: int
+    required_source_alignment: int
+    required_destination_alignment: int
+    cache_line_size: int
+    cache_range_start: int
+    cache_range_size: int
+    runtime_canary_address: int
+    runtime_canary_size: int
+    runtime_canary_sha256: str
+    copy_complete_marker_address: int
+    copy_complete_marker_value: int
+    runtime_executed_marker_address: int
+    runtime_executed_marker_value: int
+    runtime_execution_counter_address: int
+    runtime_execution_counter_size: int
+    runtime_status_address: int
+    runtime_success_status_value: int
+    bootstrap_return_marker_address: int
+    bootstrap_return_marker_value: int
+
+    def validate(
+        self,
+        *,
+        payload_size: int,
+        reserved_range_start: int,
+        reserved_range_end: int,
+        bootstrap_diagnostic_start: int,
+        bootstrap_diagnostic_size: int,
+    ) -> None:
+        if self.mode not in PRIME3_RUNTIME_RELOCATED_MODES:
+            raise Prime3DolPatchError(f"Unsupported Prime 3 relocated runtime mode {self.mode!r}.")
+        if self.low_bootstrap_size <= 0 or self.low_bootstrap_size > payload_size:
+            raise Prime3DolPatchError("Low bootstrap size is outside the compound payload size.")
+        _validate_optional_range(
+            payload_size=payload_size,
+            field_name="embedded_runtime_blob_offset",
+            start=self.embedded_runtime_blob_offset,
+            size=self.embedded_runtime_blob_size,
+        )
+        if self.embedded_runtime_blob_offset < self.low_bootstrap_size:
+            raise Prime3DolPatchError("Embedded runtime blob overlaps the low bootstrap bytes.")
+        if self.required_source_alignment <= 0 or self.required_destination_alignment <= 0:
+            raise Prime3DolPatchError("Relocated runtime alignments must be positive.")
+        if self.embedded_runtime_blob_offset % self.required_source_alignment != 0:
+            raise Prime3DolPatchError("Embedded runtime blob offset does not meet source alignment.")
+        if self.runtime_destination_address % self.required_destination_alignment != 0:
+            raise Prime3DolPatchError("Runtime destination does not meet destination alignment.")
+        if self.runtime_destination_address < reserved_range_start:
+            raise Prime3DolPatchError("Runtime destination is below the reserved range.")
+        runtime_end = self.runtime_destination_address + self.embedded_runtime_blob_size
+        if runtime_end > reserved_range_end or runtime_end <= self.runtime_destination_address:
+            raise Prime3DolPatchError("Runtime destination range exceeds the reserved range.")
+        if not (self.runtime_code_start <= self.runtime_entry_address < self.runtime_code_end):
+            raise Prime3DolPatchError("Runtime entry address is outside the runtime code range.")
+        if self.runtime_code_start != self.runtime_destination_address:
+            raise Prime3DolPatchError("Runtime code must begin at the destination address.")
+        if self.runtime_code_end > runtime_end:
+            raise Prime3DolPatchError("Runtime code range exceeds the embedded runtime size.")
+        if not (self.runtime_code_end <= self.runtime_state_start <= self.runtime_state_end <= runtime_end):
+            raise Prime3DolPatchError("Runtime state range is invalid or overlaps runtime code.")
+
+        diagnostic_end = bootstrap_diagnostic_start + bootstrap_diagnostic_size
+        state_ranges = (
+            ("runtime_canary", self.runtime_canary_address, self.runtime_canary_size),
+            ("copy_complete_marker", self.copy_complete_marker_address, 4),
+            ("runtime_executed_marker", self.runtime_executed_marker_address, 4),
+            ("runtime_execution_counter", self.runtime_execution_counter_address, self.runtime_execution_counter_size),
+            ("runtime_status", self.runtime_status_address, 4),
+            ("bootstrap_return_marker", self.bootstrap_return_marker_address, 4),
+        )
+        for name, start, size in state_ranges:
+            if not (self.runtime_state_start <= start < self.runtime_state_end):
+                raise Prime3DolPatchError(f"Relocated runtime field {name} is outside the runtime state range.")
+            if start + size > self.runtime_state_end:
+                raise Prime3DolPatchError(f"Relocated runtime field {name} exceeds the runtime state range.")
+            if start < diagnostic_end and start + size > bootstrap_diagnostic_start:
+                raise Prime3DolPatchError(f"Relocated runtime field {name} overlaps the bootstrap diagnostic block.")
+        _validate_non_overlapping_ranges(state_ranges)
+
+        expected_cache_start, expected_cache_size = compute_cache_range(
+            address=self.runtime_destination_address,
+            size=self.embedded_runtime_blob_size,
+            cache_line_size=self.cache_line_size,
+        )
+        if self.cache_range_start != expected_cache_start or self.cache_range_size != expected_cache_size:
+            raise Prime3DolPatchError("Relocated runtime cache range does not match the aligned runtime destination.")
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RelocatedRuntimeMetadata:
+        return cls(
+            mode=_json_string(data, "mode"),
+            low_bootstrap_address=_json_int(data, "low_bootstrap_address"),
+            low_bootstrap_size=_json_int(data, "low_bootstrap_size"),
+            low_bootstrap_sha256=_json_string(data, "low_bootstrap_sha256"),
+            embedded_runtime_blob_offset=_json_int(data, "embedded_runtime_blob_offset"),
+            embedded_runtime_blob_size=_json_int(data, "embedded_runtime_blob_size"),
+            embedded_runtime_blob_sha256=_json_string(data, "embedded_runtime_blob_sha256"),
+            runtime_destination_address=_json_int(data, "runtime_destination_address"),
+            runtime_entry_address=_json_int(data, "runtime_entry_address"),
+            runtime_code_start=_json_int(data, "runtime_code_start"),
+            runtime_code_end=_json_int(data, "runtime_code_end"),
+            runtime_state_start=_json_int(data, "runtime_state_start"),
+            runtime_state_end=_json_int(data, "runtime_state_end"),
+            required_source_alignment=_json_int(data, "required_source_alignment"),
+            required_destination_alignment=_json_int(data, "required_destination_alignment"),
+            cache_line_size=_json_int(data, "cache_line_size"),
+            cache_range_start=_json_int(data, "cache_range_start"),
+            cache_range_size=_json_int(data, "cache_range_size"),
+            runtime_canary_address=_json_int(data, "runtime_canary_address"),
+            runtime_canary_size=_json_int(data, "runtime_canary_size"),
+            runtime_canary_sha256=_json_string(data, "runtime_canary_sha256"),
+            copy_complete_marker_address=_json_int(data, "copy_complete_marker_address"),
+            copy_complete_marker_value=_json_int(data, "copy_complete_marker_value"),
+            runtime_executed_marker_address=_json_int(data, "runtime_executed_marker_address"),
+            runtime_executed_marker_value=_json_int(data, "runtime_executed_marker_value"),
+            runtime_execution_counter_address=_json_int(data, "runtime_execution_counter_address"),
+            runtime_execution_counter_size=_json_int(data, "runtime_execution_counter_size"),
+            runtime_status_address=_json_int(data, "runtime_status_address"),
+            runtime_success_status_value=_json_int(data, "runtime_success_status_value"),
+            bootstrap_return_marker_address=_json_int(data, "bootstrap_return_marker_address"),
+            bootstrap_return_marker_value=_json_int(data, "bootstrap_return_marker_value"),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3RuntimePayloadManifest:
     schema_version: int
     target_architecture: str
@@ -195,6 +342,7 @@ class Prime3RuntimePayloadManifest:
     counter_offset: int | None = None
     counter_size: int | None = None
     entry_bootstrap: Prime3EntryBootstrapMetadata | None = None
+    relocated_runtime: Prime3RelocatedRuntimeMetadata | None = None
 
     def validate(self) -> None:
         if self.schema_version != PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION:
@@ -256,6 +404,21 @@ class Prime3RuntimePayloadManifest:
             self.entry_bootstrap.validate(payload_size=self.payload_size)
             if self.payload_mode != self.entry_bootstrap.mode:
                 raise Prime3DolPatchError("Payload mode does not match entry bootstrap metadata mode.")
+        if self.relocated_runtime is None and self.payload_mode in PRIME3_RUNTIME_RELOCATED_MODES:
+            raise Prime3DolPatchError("Relocated runtime payload mode requires relocated runtime metadata.")
+        if self.relocated_runtime is not None:
+            if self.entry_bootstrap is None:
+                raise Prime3DolPatchError("Relocated runtime metadata requires entry bootstrap metadata.")
+            self.relocated_runtime.validate(
+                payload_size=self.payload_size,
+                reserved_range_start=self.entry_bootstrap.reserved_range_start,
+                reserved_range_end=self.entry_bootstrap.reserved_range_end,
+                bootstrap_diagnostic_start=self.entry_bootstrap.diagnostic_address,
+                bootstrap_diagnostic_size=self.entry_bootstrap.diagnostic_block_size,
+            )
+            if self.payload_mode != self.relocated_runtime.mode:
+                raise Prime3DolPatchError("Payload mode does not match relocated runtime metadata mode.")
+
         Prime3PayloadArtifact.create(
             payload_bytes=b"\x00" * self.payload_size,
             load_address=0,
@@ -268,7 +431,7 @@ class Prime3RuntimePayloadManifest:
         )
 
     def to_json_dict(self) -> dict[str, object]:
-        result = {
+        result: dict[str, object] = {
             "compiler_identity": self.compiler_identity,
             "compiler_version": self.compiler_version,
             "dynamic_section_count": self.dynamic_section_count,
@@ -296,6 +459,8 @@ class Prime3RuntimePayloadManifest:
             result["counter_size"] = self.counter_size
         if self.entry_bootstrap is not None:
             result["entry_bootstrap"] = self.entry_bootstrap.to_json_dict()
+        if self.relocated_runtime is not None:
+            result["relocated_runtime"] = self.relocated_runtime.to_json_dict()
         return result
 
     def to_json_text(self) -> str:
@@ -327,11 +492,13 @@ class Prime3RuntimePayloadManifest:
             "counter_offset",
             "counter_size",
             "entry_bootstrap",
+            "relocated_runtime",
         }
         unknown_keys = set(data) - required_keys
         if unknown_keys:
             raise Prime3DolPatchError(f"Unknown Prime 3 runtime payload manifest keys: {sorted(unknown_keys)}")
 
+        payload_size = _json_int(data, "payload_size")
         manifest = cls(
             schema_version=_json_int(data, "schema_version"),
             target_architecture=_json_string(data, "target_architecture"),
@@ -342,7 +509,7 @@ class Prime3RuntimePayloadManifest:
             linker_identity=_json_string(data, "linker_identity"),
             linker_version=_json_string(data, "linker_version"),
             payload_sha256=_json_string(data, "payload_sha256"),
-            payload_size=_json_int(data, "payload_size"),
+            payload_size=payload_size,
             payload_mode=_json_string(data, "payload_mode"),
             required_alignment=_json_int(data, "required_alignment"),
             entry_symbol_name=_json_string(data, "entry_symbol_name"),
@@ -355,11 +522,8 @@ class Prime3RuntimePayloadManifest:
             canary_size=_json_optional_int(data, "canary_size"),
             counter_offset=_json_optional_int(data, "counter_offset"),
             counter_size=_json_optional_int(data, "counter_size"),
-            entry_bootstrap=_json_optional_entry_bootstrap(
-                data,
-                "entry_bootstrap",
-                payload_size=_json_int(data, "payload_size"),
-            ),
+            entry_bootstrap=_json_optional_entry_bootstrap(data, "entry_bootstrap", payload_size=payload_size),
+            relocated_runtime=_json_optional_relocated_runtime(data, "relocated_runtime"),
         )
         manifest.validate()
         return manifest
@@ -454,13 +618,16 @@ def _json_optional_entry_bootstrap(
     return Prime3EntryBootstrapMetadata.from_json_dict(value, payload_size=payload_size)
 
 
-def _json_optional_int(data: dict[str, object], key: str) -> int | None:
+def _json_optional_relocated_runtime(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RelocatedRuntimeMetadata | None:
     value = data.get(key)
     if value is None:
         return None
-    if not isinstance(value, int):
-        raise Prime3DolPatchError(f"Expected integer for Prime 3 runtime payload manifest field {key!r}.")
-    return value
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RelocatedRuntimeMetadata.from_json_dict(value)
 
 
 def _validate_optional_range(*, payload_size: int, field_name: str, start: int | None, size: int | None) -> None:
@@ -475,3 +642,12 @@ def _validate_optional_range(*, payload_size: int, field_name: str, start: int |
             f"Payload manifest field {field_name!r} range {start}..{start + size} "
             f"is outside payload size {payload_size}."
         )
+
+
+def _validate_non_overlapping_ranges(ranges: tuple[tuple[str, int, int], ...]) -> None:
+    for index, (first_name, first_start, first_size) in enumerate(ranges):
+        first_end = first_start + first_size
+        for second_name, second_start, second_size in ranges[index + 1 :]:
+            second_end = second_start + second_size
+            if first_start < second_end and second_start < first_end:
+                raise Prime3DolPatchError(f"Fields {first_name} and {second_name} overlap.")

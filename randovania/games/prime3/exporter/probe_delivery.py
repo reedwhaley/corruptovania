@@ -71,6 +71,7 @@ class ProbeDolBuildResult:
     probe_section: Prime3ProbeSection
     checkpoint_gate: CheckpointGateResult | None = None
     entry_bootstrap: EntryBootstrapInstallResult | None = None
+    relocated_runtime: RelocatedRuntimeInstallResult | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -134,6 +135,70 @@ class EntryBootstrapInstallResult:
             "reserved_range_end": self.reserved_range_end,
             "diagnostic_address": self.diagnostic_address,
             "diagnostic_block_size": self.diagnostic_block_size,
+            "hook_installed": self.hook_installed,
+            "normal_exporter_integration": self.normal_exporter_integration,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class RelocatedRuntimeInstallResult:
+    bootstrap_mode: str
+    entrypoint: int
+    original_entry_instruction: int
+    original_branch_target: int
+    original_continuation_address: int
+    bootstrap_address: int
+    halt_loop_address: int | None
+    bootstrap_size: int
+    compound_payload_sha256: str
+    replacement_instruction: int
+    reserved_high: int
+    original_observed_arena_high: int
+    reserved_range_start: int
+    reserved_range_end: int
+    diagnostic_address: int
+    diagnostic_block_size: int
+    runtime_blob_offset: int
+    runtime_blob_size: int
+    runtime_destination: int
+    runtime_entry: int
+    runtime_code_start: int
+    runtime_code_end: int
+    runtime_state_start: int
+    runtime_state_end: int
+    cache_range_start: int
+    cache_range_size: int
+    hook_installed: bool
+    normal_exporter_integration: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "bootstrap_mode": self.bootstrap_mode,
+            "entrypoint": self.entrypoint,
+            "original_entry_instruction": self.original_entry_instruction,
+            "original_branch_target": self.original_branch_target,
+            "original_continuation_address": self.original_continuation_address,
+            "bootstrap_address": self.bootstrap_address,
+            "halt_loop_address": self.halt_loop_address,
+            "bootstrap_size": self.bootstrap_size,
+            "compound_payload_sha256": self.compound_payload_sha256,
+            "replacement_instruction": self.replacement_instruction,
+            "reserved_high": self.reserved_high,
+            "original_observed_arena_high": self.original_observed_arena_high,
+            "reserved_range_start": self.reserved_range_start,
+            "reserved_range_end": self.reserved_range_end,
+            "diagnostic_address": self.diagnostic_address,
+            "diagnostic_block_size": self.diagnostic_block_size,
+            "runtime_blob_offset": self.runtime_blob_offset,
+            "runtime_blob_size": self.runtime_blob_size,
+            "runtime_destination": self.runtime_destination,
+            "runtime_entry": self.runtime_entry,
+            "runtime_code_start": self.runtime_code_start,
+            "runtime_code_end": self.runtime_code_end,
+            "runtime_state_start": self.runtime_state_start,
+            "runtime_state_end": self.runtime_state_end,
+            "cache_range_start": self.cache_range_start,
+            "cache_range_size": self.cache_range_size,
             "hook_installed": self.hook_installed,
             "normal_exporter_integration": self.normal_exporter_integration,
         }
@@ -207,6 +272,7 @@ class ProbeDeliveryVerification:
     probe_section: Prime3ProbeSection
     checkpoint_gate: CheckpointGateResult | None
     entry_bootstrap: EntryBootstrapInstallResult | None
+    relocated_runtime: RelocatedRuntimeInstallResult | None
     original_contains_probe_section: bool
     manifest_offsets_valid: bool
     comparisons: tuple[DolComparison, ...]
@@ -222,6 +288,7 @@ class ProbeDeliveryVerification:
             "probe_section": self.probe_section.to_json_dict(),
             "checkpoint_gate": None if self.checkpoint_gate is None else self.checkpoint_gate.to_json_dict(),
             "entry_bootstrap": None if self.entry_bootstrap is None else self.entry_bootstrap.to_json_dict(),
+            "relocated_runtime": None if self.relocated_runtime is None else self.relocated_runtime.to_json_dict(),
             "original_contains_probe_section": self.original_contains_probe_section,
             "manifest_offsets_valid": self.manifest_offsets_valid,
             "comparisons": [item.to_json_dict() for item in self.comparisons],
@@ -386,6 +453,83 @@ def install_entry_bootstrap_patch(
     )
 
 
+def install_relocated_runtime_patch(
+    dol_bytes: bytes,
+    *,
+    probe_section: Prime3ProbeSection,
+    manifest: Prime3RuntimePayloadManifest,
+    versions: Iterable[CorruptionDolVersionLike] | None = None,
+) -> tuple[bytes, RelocatedRuntimeInstallResult]:
+    identify_supported_corruption_version(dol_bytes, versions=versions)
+    entry_bootstrap = manifest.entry_bootstrap
+    relocated_runtime = manifest.relocated_runtime
+    if entry_bootstrap is None or relocated_runtime is None:
+        raise Prime3DolPatchError("Relocated runtime installation requires both bootstrap and relocated metadata.")
+    decoded = decode_entry_branch_plan(dol_bytes)
+    if decoded.instruction_word != entry_bootstrap.original_entry_instruction:
+        raise Prime3DolPatchError(
+            f"Unexpected retail entry instruction 0x{decoded.instruction_word:08x}; "
+            f"expected 0x{entry_bootstrap.original_entry_instruction:08x}."
+        )
+    if decoded.target_address != entry_bootstrap.original_branch_target:
+        raise Prime3DolPatchError(
+            f"Unexpected retail entry branch target 0x{decoded.target_address:08x}; "
+            f"expected 0x{entry_bootstrap.original_branch_target:08x}."
+        )
+    if decoded.continuation_address != entry_bootstrap.original_continuation_address:
+        raise Prime3DolPatchError(
+            f"Unexpected retail entry continuation 0x{decoded.continuation_address:08x}; "
+            f"expected 0x{entry_bootstrap.original_continuation_address:08x}."
+        )
+    if probe_section.virtual_address != entry_bootstrap.staging_address:
+        raise Prime3DolPatchError(
+            f"Relocated runtime staging address 0x{probe_section.virtual_address:08x} does not match manifest "
+            f"staging address 0x{entry_bootstrap.staging_address:08x}."
+        )
+
+    replacement_instruction = encode_ppc_unconditional_branch(
+        decoded.instruction_address,
+        probe_section.entry_address,
+        link=True,
+    )
+    patched_bytes, patch_result = patch_guarded_instruction_word(
+        dol_bytes,
+        address=decoded.instruction_address,
+        expected_original_word=decoded.instruction_word,
+        replacement_word=replacement_instruction,
+    )
+    return patched_bytes, RelocatedRuntimeInstallResult(
+        bootstrap_mode=entry_bootstrap.mode,
+        entrypoint=decoded.instruction_address,
+        original_entry_instruction=decoded.instruction_word,
+        original_branch_target=decoded.target_address,
+        original_continuation_address=decoded.continuation_address,
+        bootstrap_address=probe_section.entry_address,
+        halt_loop_address=entry_bootstrap.halt_loop_address,
+        bootstrap_size=probe_section.payload_size,
+        compound_payload_sha256=manifest.payload_sha256,
+        replacement_instruction=patch_result.replacement_word,
+        reserved_high=entry_bootstrap.reserved_boundary,
+        original_observed_arena_high=OBSERVED_ENTRY_ARENA_HIGH,
+        reserved_range_start=entry_bootstrap.reserved_range_start,
+        reserved_range_end=entry_bootstrap.reserved_range_end,
+        diagnostic_address=entry_bootstrap.diagnostic_address,
+        diagnostic_block_size=entry_bootstrap.diagnostic_block_size,
+        runtime_blob_offset=relocated_runtime.embedded_runtime_blob_offset,
+        runtime_blob_size=relocated_runtime.embedded_runtime_blob_size,
+        runtime_destination=relocated_runtime.runtime_destination_address,
+        runtime_entry=relocated_runtime.runtime_entry_address,
+        runtime_code_start=relocated_runtime.runtime_code_start,
+        runtime_code_end=relocated_runtime.runtime_code_end,
+        runtime_state_start=relocated_runtime.runtime_state_start,
+        runtime_state_end=relocated_runtime.runtime_state_end,
+        cache_range_start=relocated_runtime.cache_range_start,
+        cache_range_size=relocated_runtime.cache_range_size,
+        hook_installed=True,
+        normal_exporter_integration=False,
+    )
+
+
 def _checkpoint_gate_result_from_patch(
     header: DolHeader,
     patch_result: GuardedInstructionPatchResult,
@@ -417,6 +561,7 @@ def build_unhooked_probe_dol(
     checkpoint_name: str | None = None,
     halt_at_entry: bool = False,
     install_entry_bootstrap: bool = False,
+    install_relocated_runtime: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDolBuildResult:
     manifest.validate()
@@ -461,16 +606,26 @@ def build_unhooked_probe_dol(
     )
     checkpoint_gate = None
     entry_bootstrap = None
+    relocated_runtime = None
     checkpoint_spec = _resolve_checkpoint_gate(
         halt_at_address=halt_at_address,
         expected_halt_word=expected_halt_word,
         checkpoint_name=checkpoint_name,
         halt_at_entry=halt_at_entry,
     )
-    if install_entry_bootstrap and checkpoint_spec is not None:
-        raise Prime3DolPatchError("Entry bootstrap mode cannot be combined with a checkpoint gate.")
+    if (install_entry_bootstrap or install_relocated_runtime) and checkpoint_spec is not None:
+        raise Prime3DolPatchError("Bootstrap installation modes cannot be combined with a checkpoint gate.")
+    if install_entry_bootstrap and install_relocated_runtime:
+        raise Prime3DolPatchError("Use only one bootstrap installation mode at a time.")
     if install_entry_bootstrap:
         probe_dol_bytes, entry_bootstrap = install_entry_bootstrap_patch(
+            probe_dol_bytes,
+            probe_section=probe_section,
+            manifest=manifest,
+            versions=versions,
+        )
+    if install_relocated_runtime:
+        probe_dol_bytes, relocated_runtime = install_relocated_runtime_patch(
             probe_dol_bytes,
             probe_section=probe_section,
             manifest=manifest,
@@ -489,6 +644,7 @@ def build_unhooked_probe_dol(
         probe_section=probe_section,
         checkpoint_gate=checkpoint_gate,
         entry_bootstrap=entry_bootstrap,
+        relocated_runtime=relocated_runtime,
     )
 
 
@@ -505,6 +661,7 @@ def verify_probe_delivery(
     checkpoint_name: str | None = None,
     halt_at_entry: bool = False,
     install_entry_bootstrap: bool = False,
+    install_relocated_runtime: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDeliveryVerification:
     original_dol_bytes = original_dol_path.read_bytes()
@@ -524,6 +681,7 @@ def verify_probe_delivery(
         checkpoint_name=checkpoint_name,
         halt_at_entry=halt_at_entry,
         install_entry_bootstrap=install_entry_bootstrap,
+        install_relocated_runtime=install_relocated_runtime,
         versions=versions,
     )
     if build_result.probe_dol_bytes != probe_dol_bytes:
@@ -588,6 +746,9 @@ def verify_probe_delivery(
     if build_result.entry_bootstrap is not None:
         _verify_entry_bootstrap_word(probe_dol_bytes, probe_header, build_result.entry_bootstrap)
         _verify_entry_bootstrap_word(extracted_dol_bytes, extracted_header, build_result.entry_bootstrap)
+    if build_result.relocated_runtime is not None:
+        _verify_relocated_runtime_word(probe_dol_bytes, probe_header, build_result.relocated_runtime)
+        _verify_relocated_runtime_word(extracted_dol_bytes, extracted_header, build_result.relocated_runtime)
 
     return ProbeDeliveryVerification(
         original_dol=_file_identity("original", original_dol_path, original_dol_bytes),
@@ -598,6 +759,7 @@ def verify_probe_delivery(
         probe_section=probe_section,
         checkpoint_gate=build_result.checkpoint_gate,
         entry_bootstrap=build_result.entry_bootstrap,
+        relocated_runtime=build_result.relocated_runtime,
         original_contains_probe_section=original_contains_probe_section,
         manifest_offsets_valid=manifest_offsets_valid,
         comparisons=comparisons,
@@ -675,6 +837,24 @@ def _verify_entry_bootstrap_word(
         raise Prime3DolPatchError(
             f"DOL entry bootstrap word at 0x{entry_bootstrap.entrypoint:08x} was 0x{observed:08x}, "
             f"expected 0x{entry_bootstrap.replacement_instruction:08x}."
+        )
+
+
+def _verify_relocated_runtime_word(
+    dol_bytes: bytes,
+    header: DolHeader,
+    relocated_runtime: RelocatedRuntimeInstallResult,
+) -> None:
+    file_offset = header.offset_for_address(relocated_runtime.entrypoint)
+    if file_offset is None:
+        raise Prime3DolPatchError(
+            f"Relocated runtime bootstrap address 0x{relocated_runtime.entrypoint:08x} is not mapped."
+        )
+    observed = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
+    if observed != relocated_runtime.replacement_instruction:
+        raise Prime3DolPatchError(
+            f"DOL relocated runtime bootstrap word at 0x{relocated_runtime.entrypoint:08x} was 0x{observed:08x}, "
+            f"expected 0x{relocated_runtime.replacement_instruction:08x}."
         )
 
 

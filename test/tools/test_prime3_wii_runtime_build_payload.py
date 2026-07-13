@@ -20,6 +20,7 @@ def _load_build_module(module_name: str = "prime3_wii_runtime_build_payload_test
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -141,6 +142,57 @@ def test_build_prime3_runtime_bootstrap_continue_payload_reproducible(tmp_path: 
     ).read_text(encoding="utf-8")
     assert first_manifest.entry_bootstrap is not None
     assert first_manifest.entry_bootstrap.halt_loop_address is None
+
+
+@pytest.mark.parametrize(
+    ("payload_mode", "module_name", "expect_halt_loop"),
+    [
+        ("relocated_copy_halt", "prime3_wii_runtime_build_payload_relocated_copy_test", True),
+        ("relocated_return_halt", "prime3_wii_runtime_build_payload_relocated_return_test", True),
+        ("relocated_continue", "prime3_wii_runtime_build_payload_relocated_continue_test", False),
+    ],
+)
+def test_build_prime3_runtime_relocated_payload_reproducible(
+    tmp_path: Path,
+    payload_mode: str,
+    module_name: str,
+    expect_halt_loop: bool,
+) -> None:
+    module = _load_build_module(module_name)
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    first_dir = tmp_path.joinpath(f"first-{payload_mode}")
+    second_dir = tmp_path.joinpath(f"second-{payload_mode}")
+    first_manifest = module.build_prime3_runtime_payload(
+        first_dir,
+        payload_mode=payload_mode,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+    second_manifest = module.build_prime3_runtime_payload(
+        second_dir,
+        payload_mode=payload_mode,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert first_dir.joinpath("payload.bin").read_bytes() == second_dir.joinpath("payload.bin").read_bytes()
+    assert first_dir.joinpath("payload.elf").read_bytes() == second_dir.joinpath("payload.elf").read_bytes()
+    assert first_dir.joinpath("payload.json").read_text(encoding="utf-8") == second_dir.joinpath(
+        "payload.json"
+    ).read_text(encoding="utf-8")
+    assert first_manifest.entry_bootstrap is not None
+    assert first_manifest.relocated_runtime is not None
+    assert (first_manifest.entry_bootstrap.halt_loop_address is not None) is expect_halt_loop
+    assert first_manifest.relocated_runtime.runtime_destination_address == 0x817E1000
+    assert first_manifest.relocated_runtime.runtime_entry_address == 0x817E1000
+    assert (
+        first_manifest.relocated_runtime.embedded_runtime_blob_offset
+        == first_manifest.relocated_runtime.low_bootstrap_size
+    )
+    assert first_manifest.relocated_runtime.embedded_runtime_blob_size > 0
+    assert first_manifest.payload_sha256 == second_manifest.payload_sha256
 
 
 def test_direct_invocation_by_relative_path_works_from_repo_root() -> None:

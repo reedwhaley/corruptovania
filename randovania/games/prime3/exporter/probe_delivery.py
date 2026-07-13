@@ -26,6 +26,7 @@ ENTRY_GATE_ADDRESS = 0x80006320
 EXPECTED_ENTRYPOINT = 0x80006320
 EXPECTED_ENTRY_WORD = 0x4800016D
 ENTRY_GATE_WORD = 0x48000000
+ENTRY_CHECKPOINT_NAME = "entry"
 MEM1_START = 0x80000000
 MEM1_END = 0x81800000
 
@@ -64,24 +65,28 @@ class Prime3ProbeSection:
 class ProbeDolBuildResult:
     probe_dol_bytes: bytes
     probe_section: Prime3ProbeSection
-    entry_gate: EntryGateResult | None = None
+    checkpoint_gate: CheckpointGateResult | None = None
 
 
 @dataclasses.dataclass(frozen=True)
-class EntryGateResult:
+class CheckpointGateResult:
+    checkpoint_name: str
     gate_address: int
     original_instruction: int
     replacement_instruction: int
     entrypoint: int
     file_offset: int
+    text_section_name: str
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
+            "checkpoint_name": self.checkpoint_name,
             "gate_address": self.gate_address,
             "original_instruction": self.original_instruction,
             "replacement_instruction": self.replacement_instruction,
             "entrypoint": self.entrypoint,
             "file_offset": self.file_offset,
+            "text_section_name": self.text_section_name,
         }
 
 
@@ -151,7 +156,7 @@ class ProbeDeliveryVerification:
     payload_bin: FileIdentity
     payload_manifest: FileIdentity
     probe_section: Prime3ProbeSection
-    entry_gate: EntryGateResult | None
+    checkpoint_gate: CheckpointGateResult | None
     original_contains_probe_section: bool
     manifest_offsets_valid: bool
     comparisons: tuple[DolComparison, ...]
@@ -165,7 +170,7 @@ class ProbeDeliveryVerification:
             "payload_bin": self.payload_bin.to_json_dict(),
             "payload_manifest": self.payload_manifest.to_json_dict(),
             "probe_section": self.probe_section.to_json_dict(),
-            "entry_gate": None if self.entry_gate is None else self.entry_gate.to_json_dict(),
+            "checkpoint_gate": None if self.checkpoint_gate is None else self.checkpoint_gate.to_json_dict(),
             "original_contains_probe_section": self.original_contains_probe_section,
             "manifest_offsets_valid": self.manifest_offsets_valid,
             "comparisons": [item.to_json_dict() for item in self.comparisons],
@@ -198,36 +203,67 @@ def validate_probe_virtual_address(payload_virtual_address: int, payload_size: i
         )
 
 
+def install_checkpoint_gate(
+    dol_bytes: bytes,
+    *,
+    gate_address: int,
+    expected_original_word: int,
+    checkpoint_name: str,
+    versions: Iterable[CorruptionDolVersionLike] | None = None,
+) -> tuple[bytes, CheckpointGateResult]:
+    header = parse_dol_header(dol_bytes)
+    if gate_address % 4 != 0:
+        raise Prime3DolPatchError(f"Checkpoint gate address 0x{gate_address:08x} is not 4-byte aligned.")
+    patched_bytes, patch_result = patch_guarded_instruction_word(
+        dol_bytes,
+        address=gate_address,
+        expected_original_word=expected_original_word,
+        replacement_word=ENTRY_GATE_WORD,
+    )
+    identify_supported_corruption_version(dol_bytes, versions=versions)
+    return patched_bytes, _checkpoint_gate_result_from_patch(
+        header,
+        patch_result,
+        checkpoint_name=checkpoint_name,
+    )
+
+
 def install_entry_gate(
     dol_bytes: bytes,
     *,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
-) -> tuple[bytes, EntryGateResult]:
+) -> tuple[bytes, CheckpointGateResult]:
     header = parse_dol_header(dol_bytes)
     if header.entry_point != EXPECTED_ENTRYPOINT:
         raise Prime3DolPatchError(
             f"Unexpected Corruption DOL entrypoint 0x{header.entry_point:08x}; expected 0x{EXPECTED_ENTRYPOINT:08x}."
         )
-    patched_bytes, patch_result = patch_guarded_instruction_word(
+    return install_checkpoint_gate(
         dol_bytes,
-        address=ENTRY_GATE_ADDRESS,
+        gate_address=ENTRY_GATE_ADDRESS,
         expected_original_word=EXPECTED_ENTRY_WORD,
-        replacement_word=ENTRY_GATE_WORD,
+        checkpoint_name=ENTRY_CHECKPOINT_NAME,
+        versions=versions,
     )
-    identify_supported_corruption_version(dol_bytes, versions=versions)
-    return patched_bytes, _entry_gate_result_from_patch(header, patch_result)
 
 
-def _entry_gate_result_from_patch(
+def _checkpoint_gate_result_from_patch(
     header: DolHeader,
     patch_result: GuardedInstructionPatchResult,
-) -> EntryGateResult:
-    return EntryGateResult(
+    *,
+    checkpoint_name: str,
+) -> CheckpointGateResult:
+    section = header.section_for_address(patch_result.address)
+    if section is None:
+        raise Prime3DolPatchError(f"Checkpoint gate address 0x{patch_result.address:08x} is not mapped in the DOL.")
+    return CheckpointGateResult(
+        checkpoint_name=checkpoint_name,
         gate_address=patch_result.address,
         original_instruction=patch_result.original_word,
         replacement_instruction=patch_result.replacement_word,
         entrypoint=header.entry_point,
         file_offset=patch_result.file_offset,
+        text_section_name=section.name,
     )
 
 
@@ -237,6 +273,9 @@ def build_unhooked_probe_dol(
     manifest: Prime3RuntimePayloadManifest,
     *,
     payload_virtual_address: int | None = None,
+    halt_at_address: int | None = None,
+    expected_halt_word: int | None = None,
+    checkpoint_name: str | None = None,
     halt_at_entry: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDolBuildResult:
@@ -280,10 +319,26 @@ def build_unhooked_probe_dol(
         counter_size=manifest.counter_size,
         payload_sha256=manifest.payload_sha256,
     )
-    entry_gate = None
-    if halt_at_entry:
-        probe_dol_bytes, entry_gate = install_entry_gate(probe_dol_bytes, versions=versions)
-    return ProbeDolBuildResult(probe_dol_bytes=probe_dol_bytes, probe_section=probe_section, entry_gate=entry_gate)
+    checkpoint_gate = None
+    checkpoint_spec = _resolve_checkpoint_gate(
+        halt_at_address=halt_at_address,
+        expected_halt_word=expected_halt_word,
+        checkpoint_name=checkpoint_name,
+        halt_at_entry=halt_at_entry,
+    )
+    if checkpoint_spec is not None:
+        probe_dol_bytes, checkpoint_gate = install_checkpoint_gate(
+            probe_dol_bytes,
+            gate_address=checkpoint_spec.gate_address,
+            expected_original_word=checkpoint_spec.expected_original_word,
+            checkpoint_name=checkpoint_spec.checkpoint_name,
+            versions=versions,
+        )
+    return ProbeDolBuildResult(
+        probe_dol_bytes=probe_dol_bytes,
+        probe_section=probe_section,
+        checkpoint_gate=checkpoint_gate,
+    )
 
 
 def verify_probe_delivery(
@@ -294,6 +349,9 @@ def verify_probe_delivery(
     payload_bin_path: Path,
     payload_manifest_path: Path,
     payload_virtual_address: int | None = None,
+    halt_at_address: int | None = None,
+    expected_halt_word: int | None = None,
+    checkpoint_name: str | None = None,
     halt_at_entry: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDeliveryVerification:
@@ -309,6 +367,9 @@ def verify_probe_delivery(
         payload_bytes,
         manifest,
         payload_virtual_address=payload_virtual_address,
+        halt_at_address=halt_at_address,
+        expected_halt_word=expected_halt_word,
+        checkpoint_name=checkpoint_name,
         halt_at_entry=halt_at_entry,
         versions=versions,
     )
@@ -368,9 +429,9 @@ def verify_probe_delivery(
             extracted_header,
         ),
     )
-    if build_result.entry_gate is not None:
-        _verify_entry_gate_word(probe_dol_bytes, probe_header, build_result.entry_gate)
-        _verify_entry_gate_word(extracted_dol_bytes, extracted_header, build_result.entry_gate)
+    if build_result.checkpoint_gate is not None:
+        _verify_checkpoint_gate_word(probe_dol_bytes, probe_header, build_result.checkpoint_gate)
+        _verify_checkpoint_gate_word(extracted_dol_bytes, extracted_header, build_result.checkpoint_gate)
 
     return ProbeDeliveryVerification(
         original_dol=_file_identity("original", original_dol_path, original_dol_bytes),
@@ -379,7 +440,7 @@ def verify_probe_delivery(
         payload_bin=_file_identity("payload_bin", payload_bin_path, payload_bytes),
         payload_manifest=_file_identity("payload_manifest", payload_manifest_path, manifest_text.encode("utf-8")),
         probe_section=probe_section,
-        entry_gate=build_result.entry_gate,
+        checkpoint_gate=build_result.checkpoint_gate,
         original_contains_probe_section=original_contains_probe_section,
         manifest_offsets_valid=manifest_offsets_valid,
         comparisons=comparisons,
@@ -392,15 +453,55 @@ def verify_probe_delivery(
     )
 
 
-def _verify_entry_gate_word(dol_bytes: bytes, header: DolHeader, entry_gate: EntryGateResult) -> None:
-    file_offset = header.offset_for_address(entry_gate.gate_address)
+@dataclasses.dataclass(frozen=True)
+class CheckpointGateSpec:
+    gate_address: int
+    expected_original_word: int
+    checkpoint_name: str
+
+
+def _resolve_checkpoint_gate(
+    *,
+    halt_at_address: int | None,
+    expected_halt_word: int | None,
+    checkpoint_name: str | None,
+    halt_at_entry: bool,
+) -> CheckpointGateSpec | None:
+    if halt_at_entry:
+        if halt_at_address is not None or expected_halt_word is not None or checkpoint_name is not None:
+            raise Prime3DolPatchError("Use either --halt-at-entry or the explicit checkpoint gate arguments, not both.")
+        return CheckpointGateSpec(
+            gate_address=ENTRY_GATE_ADDRESS,
+            expected_original_word=EXPECTED_ENTRY_WORD,
+            checkpoint_name=ENTRY_CHECKPOINT_NAME,
+        )
+
+    if halt_at_address is None and expected_halt_word is None and checkpoint_name is None:
+        return None
+    if halt_at_address is None:
+        raise Prime3DolPatchError("Checkpoint gate requires an explicit halt address.")
+    if expected_halt_word is None:
+        raise Prime3DolPatchError("Checkpoint gate requires an explicit expected halt word.")
+    if checkpoint_name is None or not checkpoint_name.strip():
+        raise Prime3DolPatchError("Checkpoint gate requires a non-empty checkpoint name.")
+    return CheckpointGateSpec(
+        gate_address=halt_at_address,
+        expected_original_word=expected_halt_word,
+        checkpoint_name=checkpoint_name,
+    )
+
+
+def _verify_checkpoint_gate_word(dol_bytes: bytes, header: DolHeader, checkpoint_gate: CheckpointGateResult) -> None:
+    file_offset = header.offset_for_address(checkpoint_gate.gate_address)
     if file_offset is None:
-        raise Prime3DolPatchError(f"Entry gate address 0x{entry_gate.gate_address:08x} is not mapped in the DOL.")
-    observed = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
-    if observed != entry_gate.replacement_instruction:
         raise Prime3DolPatchError(
-            f"DOL entry gate word at 0x{entry_gate.gate_address:08x} was 0x{observed:08x}, "
-            f"expected 0x{entry_gate.replacement_instruction:08x}."
+            f"Checkpoint gate address 0x{checkpoint_gate.gate_address:08x} is not mapped in the DOL."
+        )
+    observed = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
+    if observed != checkpoint_gate.replacement_instruction:
+        raise Prime3DolPatchError(
+            f"DOL checkpoint gate word at 0x{checkpoint_gate.gate_address:08x} was 0x{observed:08x}, "
+            f"expected 0x{checkpoint_gate.replacement_instruction:08x}."
         )
 
 

@@ -132,7 +132,7 @@ def test_build_unhooked_probe_dol_gate_disabled_by_default() -> None:
 
     result = probe_delivery.build_unhooked_probe_dol(_entry_gate_original(), payload_bytes, manifest)
 
-    assert result.entry_gate is None
+    assert result.checkpoint_gate is None
 
 
 def test_build_unhooked_probe_dol_low_and_high_gated_output() -> None:
@@ -156,10 +156,30 @@ def test_build_unhooked_probe_dol_low_and_high_gated_output() -> None:
         versions=(_entry_gate_version(),),
     )
 
-    assert low.entry_gate is not None
+    assert low.checkpoint_gate is not None
     assert low.probe_section.virtual_address == 0x806843C0
-    assert high.entry_gate is not None
+    assert high.checkpoint_gate is not None
     assert high.probe_section.virtual_address == 0x817E0000
+
+
+def test_build_unhooked_probe_dol_supports_explicit_checkpoint_gate() -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+
+    result = probe_delivery.build_unhooked_probe_dol(
+        _entry_gate_original(),
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        halt_at_address=probe_delivery.ENTRY_GATE_ADDRESS,
+        expected_halt_word=probe_delivery.EXPECTED_ENTRY_WORD,
+        checkpoint_name="startup-entry",
+        versions=(_entry_gate_version(),),
+    )
+
+    assert result.checkpoint_gate is not None
+    assert result.checkpoint_gate.checkpoint_name == "startup-entry"
+    assert result.checkpoint_gate.text_section_name == "text0"
 
 
 def test_build_unhooked_probe_dol_rejects_high_address_outside_mem1() -> None:
@@ -185,15 +205,33 @@ def test_install_entry_gate_success() -> None:
     file_offset = header.offset_for_address(probe_delivery.ENTRY_GATE_ADDRESS)
     assert file_offset is not None
     assert patched[file_offset : file_offset + 4] == probe_delivery.ENTRY_GATE_WORD.to_bytes(4, "big")
+    assert result.checkpoint_name == probe_delivery.ENTRY_CHECKPOINT_NAME
     assert result.gate_address == probe_delivery.ENTRY_GATE_ADDRESS
     assert result.original_instruction == probe_delivery.EXPECTED_ENTRY_WORD
     assert result.replacement_instruction == probe_delivery.ENTRY_GATE_WORD
     assert result.entrypoint == probe_delivery.EXPECTED_ENTRYPOINT
+    assert result.text_section_name == "text0"
+
+
+def test_install_checkpoint_gate_success() -> None:
+    patched, result = probe_delivery.install_checkpoint_gate(
+        _entry_gate_original(),
+        gate_address=probe_delivery.ENTRY_GATE_ADDRESS,
+        expected_original_word=probe_delivery.EXPECTED_ENTRY_WORD,
+        checkpoint_name="startup-entry",
+        versions=(_entry_gate_version(),),
+    )
+
+    header = parse_dol_header(patched)
+    file_offset = header.offset_for_address(probe_delivery.ENTRY_GATE_ADDRESS)
+    assert file_offset is not None
+    assert patched[file_offset : file_offset + 4] == probe_delivery.ENTRY_GATE_WORD.to_bytes(4, "big")
+    assert result.checkpoint_name == "startup-entry"
 
 
 def test_install_entry_gate_rejects_wrong_entrypoint() -> None:
-        with pytest.raises(Prime3DolPatchError, match="Unexpected Corruption DOL entrypoint"):
-            probe_delivery.install_entry_gate(
+    with pytest.raises(Prime3DolPatchError, match="Unexpected Corruption DOL entrypoint"):
+        probe_delivery.install_entry_gate(
             _entry_gate_variant(entry_point=0x80004000),
             versions=(_entry_gate_version(),),
         )
@@ -212,6 +250,47 @@ def test_install_entry_gate_rejects_already_gated_instruction() -> None:
         probe_delivery.install_entry_gate(
             _entry_gate_variant(instruction_word=probe_delivery.ENTRY_GATE_WORD),
             versions=(_entry_gate_version(),),
+        )
+
+
+def test_install_checkpoint_gate_rejects_unaligned_address() -> None:
+    with pytest.raises(Prime3DolPatchError, match="not 4-byte aligned"):
+        probe_delivery.install_checkpoint_gate(
+            _entry_gate_original(),
+            gate_address=probe_delivery.ENTRY_GATE_ADDRESS + 2,
+            expected_original_word=probe_delivery.EXPECTED_ENTRY_WORD,
+            checkpoint_name="unaligned",
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_build_unhooked_probe_dol_rejects_incomplete_explicit_checkpoint_gate() -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+
+    with pytest.raises(Prime3DolPatchError, match="explicit expected halt word"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            halt_at_address=probe_delivery.ENTRY_GATE_ADDRESS,
+            checkpoint_name="missing-word",
+        )
+
+
+def test_build_unhooked_probe_dol_rejects_alias_and_explicit_checkpoint_mix() -> None:
+    payload_bytes = b"\xaa" * 0x40
+    manifest = _make_manifest(payload_bytes)
+
+    with pytest.raises(Prime3DolPatchError, match="either --halt-at-entry or the explicit checkpoint"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            halt_at_entry=True,
+            halt_at_address=probe_delivery.ENTRY_GATE_ADDRESS,
+            expected_halt_word=probe_delivery.EXPECTED_ENTRY_WORD,
+            checkpoint_name="mixed",
         )
 
 
@@ -293,8 +372,8 @@ def test_verify_probe_delivery_accepts_gated_probe_chain(tmp_path: Path) -> None
         versions=(_entry_gate_version(),),
     )
 
-    assert report.entry_gate is not None
-    assert report.entry_gate.replacement_instruction == probe_delivery.ENTRY_GATE_WORD
+    assert report.checkpoint_gate is not None
+    assert report.checkpoint_gate.replacement_instruction == probe_delivery.ENTRY_GATE_WORD
 
 
 def test_verify_probe_delivery_rejects_missing_appended_section(tmp_path: Path) -> None:
@@ -473,6 +552,8 @@ def test_build_probe_dol_script_writes_report(tmp_path: Path) -> None:
 
     assert output_dol.is_file()
     assert report_path.is_file()
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert "checkpoint_gate" not in payload
 
 
 def test_build_probe_dol_script_rejects_input_output_collision(tmp_path: Path) -> None:
@@ -494,4 +575,31 @@ def test_build_probe_dol_script_rejects_input_output_collision(tmp_path: Path) -
         str(report_path),
     ]
     with pytest.raises(RuntimeError, match="must differ"):
+        module.main()
+
+
+def test_build_probe_dol_script_rejects_partial_explicit_checkpoint_gate(tmp_path: Path) -> None:
+    module = _load_build_probe_module()
+    original_path, _probe_path, _extracted_path, payload_path, manifest_path = _write_inputs(tmp_path)
+    output_dol = tmp_path.joinpath("script-probe.dol")
+    report_path = tmp_path.joinpath("script-probe.json")
+
+    sys.argv = [
+        "build_probe_dol.py",
+        "--original-dol",
+        str(original_path),
+        "--output-dol",
+        str(output_dol),
+        "--payload-bin",
+        str(payload_path),
+        "--payload-manifest",
+        str(manifest_path),
+        "--report",
+        str(report_path),
+        "--halt-at-address",
+        hex(probe_delivery.ENTRY_GATE_ADDRESS),
+        "--checkpoint-name",
+        "missing-word",
+    ]
+    with pytest.raises(Prime3DolPatchError, match="explicit expected halt word"):
         module.main()

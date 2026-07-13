@@ -24,6 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--payload-manifest", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--payload-address")
+    parser.add_argument("--halt-at-address")
+    parser.add_argument("--expected-halt-word")
+    parser.add_argument("--checkpoint-name")
     parser.add_argument("--halt-at-entry", action="store_true")
     return parser.parse_args()
 
@@ -38,14 +41,17 @@ def main() -> None:
         args.payload_bin.read_bytes(),
         manifest,
         payload_virtual_address=None if args.payload_address is None else int(args.payload_address, 0),
+        halt_at_address=None if args.halt_at_address is None else int(args.halt_at_address, 0),
+        expected_halt_word=None if args.expected_halt_word is None else int(args.expected_halt_word, 0),
+        checkpoint_name=args.checkpoint_name,
         halt_at_entry=args.halt_at_entry,
     )
     args.output_dol.parent.mkdir(parents=True, exist_ok=True)
     args.output_dol.write_bytes(result.probe_dol_bytes)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     report = {"probe_section": result.probe_section.to_json_dict()}
-    if result.entry_gate is not None:
-        report["entry_gate"] = result.entry_gate.to_json_dict()
+    if result.checkpoint_gate is not None:
+        report["checkpoint_gate"] = result.checkpoint_gate.to_json_dict()
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

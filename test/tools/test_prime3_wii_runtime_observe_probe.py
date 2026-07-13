@@ -84,6 +84,9 @@ def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
 def _config(module, payload_address: int = 0x817F0000, startup_word: int = 0x38000000):
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + b"\x00" * 0x10 + b"\x00\x00\x00\x00"
     return module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
         expected_game_id=b"RM3E01",
         payload_address=payload_address,
         payload_bytes=payload_bytes,
@@ -119,6 +122,9 @@ def test_observe_probe_reads_complete_payload() -> None:
     assert result["payload_matches_expected"] is True
     assert result["counter"]["value"] == 0
     assert result["entry_gate_active"] is True
+    assert result["checkpoint_name"] == "entry"
+    assert result["halt_active"] is True
+    assert result["live_halt_word"] == 0x48000000
 
 
 def test_observe_probe_reports_wrong_startup_word() -> None:
@@ -129,6 +135,19 @@ def test_observe_probe_reports_wrong_startup_word() -> None:
     result = module.observe_probe_memory(backend, config)
 
     assert result["startup_words"]["0x8000633C"]["matches"] is False
+
+
+def test_observe_probe_reports_wrong_halt_word() -> None:
+    module = _load_module()
+    config = _config(module)
+    memory = _memory_for_config(module, config)
+    memory[0x80006320] = (0x60000000).to_bytes(4, "big")
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["halt_active"] is False
+    assert result["live_halt_word"] == 0x60000000
 
 
 def test_observe_probe_rejects_short_payload_read() -> None:
@@ -273,6 +292,12 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
             str(payload_path),
             "--payload-manifest",
             str(manifest_path),
+            "--checkpoint-name",
+            "entry",
+            "--halt-address",
+            "0x80006320",
+            "--expected-halt-word",
+            "0x48000000",
             "--report",
             str(report_path),
             "--startup-word",
@@ -292,4 +317,38 @@ def test_observe_probe_cli_writes_json_report(tmp_path: Path, monkeypatch: pytes
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["payload_matches_expected"] is True
+    assert payload["checkpoint_name"] == "entry"
     assert payload["iso_path"] == "X:\\probe.iso"
+
+
+def test_observe_probe_cli_requires_checkpoint_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_module()
+    config = _config(module)
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    report_path = tmp_path.joinpath("report.json")
+    payload_path.write_bytes(config.payload_bytes)
+    manifest_path.write_text(config.manifest.to_json_text(), encoding="utf-8")
+    monkeypatch.setattr(module, "dolphin_memory_engine", FakeBackend(_memory_for_config(module, config)))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "observe_probe.py",
+            "--payload-address",
+            hex(config.payload_address),
+            "--payload-bin",
+            str(payload_path),
+            "--payload-manifest",
+            str(manifest_path),
+            "--halt-address",
+            "0x80006320",
+            "--expected-halt-word",
+            "0x48000000",
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    with pytest.raises(module.ProbeObservationError, match="non-empty --checkpoint-name"):
+        module.main()

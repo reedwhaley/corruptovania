@@ -49,6 +49,9 @@ class StartupWordExpectation:
 
 @dataclasses.dataclass(frozen=True)
 class ProbeObservationConfig:
+    checkpoint_name: str | None
+    halt_address: int | None
+    expected_halt_word: int | None
     expected_game_id: bytes
     payload_address: int
     payload_bytes: bytes
@@ -86,6 +89,7 @@ class ProbeCounterObservation(TypedDict):
 class ProbeState(TypedDict):
     game_id: bytes
     startup_words: dict[str, StartupWordObservation]
+    live_halt_word: int | None
     payload_sha256: str
     payload_matches_expected: bool
     payload_all_zero: bool
@@ -102,6 +106,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--payload-address", type=_parse_int, required=True)
     parser.add_argument("--payload-bin", type=Path, required=True)
     parser.add_argument("--payload-manifest", type=Path, required=True)
+    parser.add_argument("--checkpoint-name")
+    parser.add_argument("--halt-address", type=_parse_int)
+    parser.add_argument("--expected-halt-word", type=_parse_int)
     parser.add_argument("--expected-game-id", default="RM3E01")
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--startup-word", action="append", default=[])
@@ -132,6 +139,11 @@ def observe_probe_memory(
         )
 
     result: dict[str, object] = {
+        "checkpoint_name": config.checkpoint_name,
+        "expected_halt_address": config.halt_address,
+        "expected_halt_word": config.expected_halt_word,
+        "live_halt_word": first_read["live_halt_word"],
+        "halt_active": _halt_active(first_read, config),
         "game_id": game_id.decode("ascii", errors="replace"),
         "entrypoint_address": config.startup_words[0].address if config.startup_words else None,
         "startup_words": first_read["startup_words"],
@@ -180,6 +192,12 @@ def _read_probe_state(
             "observed": observed,
             "matches": observed == item.expected_word,
         }
+    live_halt_word = None
+    if config.halt_address is not None:
+        live_halt_word = int.from_bytes(
+            _read_exact(backend, config.halt_address, 4, f"halt word 0x{config.halt_address:08x}"),
+            "big",
+        )
 
     payload_bytes = _read_exact(backend, config.payload_address, config.manifest.payload_size, "payload bytes")
     payload_sha256 = hashlib.sha256(payload_bytes).hexdigest()
@@ -227,6 +245,7 @@ def _read_probe_state(
     return {
         "game_id": game_id,
         "startup_words": startup_words,
+        "live_halt_word": live_halt_word,
         "payload_sha256": payload_sha256,
         "payload_matches_expected": payload_bytes == config.payload_bytes,
         "payload_all_zero": all(item == 0 for item in payload_bytes),
@@ -247,6 +266,17 @@ def _classify_payload(payload_bytes: bytes, expected_payload_bytes: bytes) -> st
     if all(item == 0 for item in payload_bytes):
         return "all zero"
     return "payload present but altered"
+
+
+def _halt_active(first_read: ProbeState, config: ProbeObservationConfig) -> bool | None:
+    if config.halt_address is None:
+        return None
+    startup_key = f"0x{config.halt_address:08X}"
+    if startup_key in first_read["startup_words"]:
+        return first_read["startup_words"][startup_key]["matches"]
+    if config.expected_halt_word is None or first_read["live_halt_word"] is None:
+        return None
+    return first_read["live_halt_word"] == config.expected_halt_word
 
 
 def _ensure_connected(backend: DolphinReadOnlyBackend) -> None:
@@ -277,9 +307,22 @@ def _parse_startup_word(value: str) -> StartupWordExpectation:
 
 def main() -> None:
     args = parse_args()
+    if args.checkpoint_name is None and args.halt_address is None and args.expected_halt_word is None:
+        checkpoint_name = None
+    else:
+        if args.checkpoint_name is None or not args.checkpoint_name.strip():
+            raise ProbeObservationError("Checkpoint observation requires a non-empty --checkpoint-name.")
+        if args.halt_address is None:
+            raise ProbeObservationError("Checkpoint observation requires --halt-address.")
+        if args.expected_halt_word is None:
+            raise ProbeObservationError("Checkpoint observation requires --expected-halt-word.")
+        checkpoint_name = args.checkpoint_name
     manifest = Prime3RuntimePayloadManifest.from_json_text(args.payload_manifest.read_text(encoding="utf-8"))
     payload_bytes = args.payload_bin.read_bytes()
     config = ProbeObservationConfig(
+        checkpoint_name=checkpoint_name,
+        halt_address=args.halt_address,
+        expected_halt_word=args.expected_halt_word,
         expected_game_id=args.expected_game_id.encode("ascii"),
         payload_address=args.payload_address,
         payload_bytes=payload_bytes,

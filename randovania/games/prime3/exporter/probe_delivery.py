@@ -691,6 +691,7 @@ def build_unhooked_probe_dol(
     install_entry_bootstrap: bool = False,
     install_relocated_runtime: bool = False,
     install_recurring_poll_hook: bool = False,
+    enable_ios_udp_diagnostic: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDolBuildResult:
     manifest.validate()
@@ -747,6 +748,14 @@ def build_unhooked_probe_dol(
         install_entry_bootstrap or install_relocated_runtime or install_recurring_poll_hook
     ) and checkpoint_spec is not None:
         raise Prime3DolPatchError("Bootstrap installation modes cannot be combined with a checkpoint gate.")
+    if enable_ios_udp_diagnostic:
+        if not install_recurring_poll_hook:
+            raise Prime3DolPatchError("IOS UDP diagnostic transport requires recurring poll hook installation.")
+        relocated_runtime_metadata = manifest.relocated_runtime
+        if relocated_runtime_metadata is None:
+            raise Prime3DolPatchError("IOS UDP diagnostic transport requires relocated runtime metadata.")
+        if not relocated_runtime_metadata.ios_udp_diagnostic_enabled or relocated_runtime_metadata.transport is None:
+            raise Prime3DolPatchError("Manifest does not enable the IOS UDP diagnostic transport.")
     if sum((install_entry_bootstrap, install_relocated_runtime, install_recurring_poll_hook)) > 1:
         raise Prime3DolPatchError("Use only one bootstrap installation mode at a time.")
     if install_entry_bootstrap:
@@ -803,6 +812,7 @@ def verify_probe_delivery(
     install_entry_bootstrap: bool = False,
     install_relocated_runtime: bool = False,
     install_recurring_poll_hook: bool = False,
+    enable_ios_udp_diagnostic: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDeliveryVerification:
     original_dol_bytes = original_dol_path.read_bytes()
@@ -824,6 +834,7 @@ def verify_probe_delivery(
         install_entry_bootstrap=install_entry_bootstrap,
         install_relocated_runtime=install_relocated_runtime,
         install_recurring_poll_hook=install_recurring_poll_hook,
+        enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
         versions=versions,
     )
     if build_result.probe_dol_bytes != probe_dol_bytes:

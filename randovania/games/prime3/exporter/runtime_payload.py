@@ -12,7 +12,7 @@ from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, Pr
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION = 2
+PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION = 3
 PRIME3_RUNTIME_TARGET_ARCHITECTURE = "powerpc"
 PRIME3_RUNTIME_TARGET_ENDIANNESS = "big"
 PRIME3_RUNTIME_TARGET_ABI = "eabi"
@@ -177,6 +177,419 @@ class Prime3EntryBootstrapMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3RuntimeTransportMetadata:
+    phase_address: int
+    phase_size: int
+    last_error_address: int
+    last_error_size: int
+    last_ios_result_address: int
+    last_ios_result_size: int
+    pending_operation_address: int
+    pending_operation_size: int
+    pending_generation_address: int
+    pending_generation_size: int
+    callback_generation_address: int
+    callback_generation_size: int
+    callback_count_address: int
+    callback_count_size: int
+    callback_pending_address: int
+    callback_pending_size: int
+    kd_fd_address: int
+    kd_fd_size: int
+    ip_fd_address: int
+    ip_fd_size: int
+    socket_fd_address: int
+    socket_fd_size: int
+    host_id_address: int
+    host_id_size: int
+    bound_port_address: int
+    bound_port_size: int
+    receive_count_address: int
+    receive_count_size: int
+    receive_bytes_address: int
+    receive_bytes_size: int
+    send_count_address: int
+    send_count_size: int
+    send_bytes_address: int
+    send_bytes_size: int
+    last_receive_length_address: int
+    last_receive_length_size: int
+    last_send_length_address: int
+    last_send_length_size: int
+    last_peer_ipv4_address: int
+    last_peer_ipv4_size: int
+    last_peer_port_address: int
+    last_peer_port_size: int
+    last_peer_family_address: int
+    last_peer_family_size: int
+    last_poll_action_address: int
+    last_poll_action_size: int
+    last_submit_result_address: int
+    last_submit_result_size: int
+    last_receive_preview_address: int
+    last_receive_preview_size: int
+    last_send_preview_address: int
+    last_send_preview_size: int
+
+    def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
+        ranges = (
+            ("transport_phase", self.phase_address, self.phase_size),
+            ("transport_last_error", self.last_error_address, self.last_error_size),
+            ("transport_last_ios_result", self.last_ios_result_address, self.last_ios_result_size),
+            ("transport_pending_operation", self.pending_operation_address, self.pending_operation_size),
+            ("transport_pending_generation", self.pending_generation_address, self.pending_generation_size),
+            ("transport_callback_generation", self.callback_generation_address, self.callback_generation_size),
+            ("transport_callback_count", self.callback_count_address, self.callback_count_size),
+            ("transport_callback_pending", self.callback_pending_address, self.callback_pending_size),
+            ("transport_kd_fd", self.kd_fd_address, self.kd_fd_size),
+            ("transport_ip_fd", self.ip_fd_address, self.ip_fd_size),
+            ("transport_socket_fd", self.socket_fd_address, self.socket_fd_size),
+            ("transport_host_id", self.host_id_address, self.host_id_size),
+            ("transport_bound_port", self.bound_port_address, self.bound_port_size),
+            ("transport_receive_count", self.receive_count_address, self.receive_count_size),
+            ("transport_receive_bytes", self.receive_bytes_address, self.receive_bytes_size),
+            ("transport_send_count", self.send_count_address, self.send_count_size),
+            ("transport_send_bytes", self.send_bytes_address, self.send_bytes_size),
+            ("transport_last_receive_length", self.last_receive_length_address, self.last_receive_length_size),
+            ("transport_last_send_length", self.last_send_length_address, self.last_send_length_size),
+            ("transport_last_peer_ipv4", self.last_peer_ipv4_address, self.last_peer_ipv4_size),
+            ("transport_last_peer_port", self.last_peer_port_address, self.last_peer_port_size),
+            ("transport_last_peer_family", self.last_peer_family_address, self.last_peer_family_size),
+            ("transport_last_poll_action", self.last_poll_action_address, self.last_poll_action_size),
+            ("transport_last_submit_result", self.last_submit_result_address, self.last_submit_result_size),
+            ("transport_last_receive_preview", self.last_receive_preview_address, self.last_receive_preview_size),
+            ("transport_last_send_preview", self.last_send_preview_address, self.last_send_preview_size),
+        )
+        for name, start, size in ranges:
+            if size <= 0:
+                raise Prime3DolPatchError(f"Relocated runtime transport field {name} size must be positive.")
+            if not (runtime_state_start <= start < runtime_state_end):
+                raise Prime3DolPatchError(
+                    f"Relocated runtime transport field {name} is outside the runtime state range."
+                )
+            if start + size > runtime_state_end:
+                raise Prime3DolPatchError(f"Relocated runtime transport field {name} exceeds the runtime state range.")
+        _validate_non_overlapping_ranges(ranges)
+        return ranges
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeTransportMetadata:
+        return cls(
+            phase_address=_json_int(data, "phase_address"),
+            phase_size=_json_int(data, "phase_size"),
+            last_error_address=_json_int(data, "last_error_address"),
+            last_error_size=_json_int(data, "last_error_size"),
+            last_ios_result_address=_json_int(data, "last_ios_result_address"),
+            last_ios_result_size=_json_int(data, "last_ios_result_size"),
+            pending_operation_address=_json_int(data, "pending_operation_address"),
+            pending_operation_size=_json_int(data, "pending_operation_size"),
+            pending_generation_address=_json_int(data, "pending_generation_address"),
+            pending_generation_size=_json_int(data, "pending_generation_size"),
+            callback_generation_address=_json_int(data, "callback_generation_address"),
+            callback_generation_size=_json_int(data, "callback_generation_size"),
+            callback_count_address=_json_int(data, "callback_count_address"),
+            callback_count_size=_json_int(data, "callback_count_size"),
+            callback_pending_address=_json_int(data, "callback_pending_address"),
+            callback_pending_size=_json_int(data, "callback_pending_size"),
+            kd_fd_address=_json_int(data, "kd_fd_address"),
+            kd_fd_size=_json_int(data, "kd_fd_size"),
+            ip_fd_address=_json_int(data, "ip_fd_address"),
+            ip_fd_size=_json_int(data, "ip_fd_size"),
+            socket_fd_address=_json_int(data, "socket_fd_address"),
+            socket_fd_size=_json_int(data, "socket_fd_size"),
+            host_id_address=_json_int(data, "host_id_address"),
+            host_id_size=_json_int(data, "host_id_size"),
+            bound_port_address=_json_int(data, "bound_port_address"),
+            bound_port_size=_json_int(data, "bound_port_size"),
+            receive_count_address=_json_int(data, "receive_count_address"),
+            receive_count_size=_json_int(data, "receive_count_size"),
+            receive_bytes_address=_json_int(data, "receive_bytes_address"),
+            receive_bytes_size=_json_int(data, "receive_bytes_size"),
+            send_count_address=_json_int(data, "send_count_address"),
+            send_count_size=_json_int(data, "send_count_size"),
+            send_bytes_address=_json_int(data, "send_bytes_address"),
+            send_bytes_size=_json_int(data, "send_bytes_size"),
+            last_receive_length_address=_json_int(data, "last_receive_length_address"),
+            last_receive_length_size=_json_int(data, "last_receive_length_size"),
+            last_send_length_address=_json_int(data, "last_send_length_address"),
+            last_send_length_size=_json_int(data, "last_send_length_size"),
+            last_peer_ipv4_address=_json_int(data, "last_peer_ipv4_address"),
+            last_peer_ipv4_size=_json_int(data, "last_peer_ipv4_size"),
+            last_peer_port_address=_json_int(data, "last_peer_port_address"),
+            last_peer_port_size=_json_int(data, "last_peer_port_size"),
+            last_peer_family_address=_json_int(data, "last_peer_family_address"),
+            last_peer_family_size=_json_int(data, "last_peer_family_size"),
+            last_poll_action_address=_json_int(data, "last_poll_action_address"),
+            last_poll_action_size=_json_int(data, "last_poll_action_size"),
+            last_submit_result_address=_json_int(data, "last_submit_result_address"),
+            last_submit_result_size=_json_int(data, "last_submit_result_size"),
+            last_receive_preview_address=_json_int(data, "last_receive_preview_address"),
+            last_receive_preview_size=_json_int(data, "last_receive_preview_size"),
+            last_send_preview_address=_json_int(data, "last_send_preview_address"),
+            last_send_preview_size=_json_int(data, "last_send_preview_size"),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class Prime3RetailIosWrapperMetadata:
+    supported_dol_sha256: str
+    open_async_address: int
+    open_address: int
+    close_async_address: int
+    close_address: int
+    ioctl_async_address: int
+    ioctl_address: int
+    ioctlv_async_address: int
+    ioctlv_address: int
+    open_async_guard_words: tuple[int, ...]
+    callback_signature: str
+    preserved_registers: tuple[str, ...]
+    submit_helper_address: int
+    request_allocator_address: int
+    evidence_source: str
+    confidence: str
+
+    def validate(self) -> None:
+        if len(self.supported_dol_sha256) != 64:
+            raise Prime3DolPatchError("Retail IOS wrapper metadata requires a SHA-256 DOL fingerprint.")
+        addresses = (
+            self.open_async_address,
+            self.open_address,
+            self.close_async_address,
+            self.close_address,
+            self.ioctl_async_address,
+            self.ioctl_address,
+            self.ioctlv_async_address,
+            self.ioctlv_address,
+            self.submit_helper_address,
+            self.request_allocator_address,
+        )
+        for address in addresses:
+            if address <= 0 or address > 0xFFFFFFFF:
+                raise Prime3DolPatchError(f"Retail IOS wrapper address is outside the 32-bit range: {address!r}")
+        if len(self.open_async_guard_words) < 2:
+            raise Prime3DolPatchError("Retail IOS wrapper metadata requires at least two guarded entry words.")
+        if self.callback_signature != "s32 callback(s32 result, void *userdata)":
+            raise Prime3DolPatchError("Retail IOS wrapper callback signature metadata is unexpected.")
+        if tuple(self.preserved_registers) != ("r2", "r13"):
+            raise Prime3DolPatchError("Retail IOS wrapper metadata must document preserved game SDA registers.")
+        if not self.evidence_source:
+            raise Prime3DolPatchError("Retail IOS wrapper metadata requires an evidence source.")
+        if self.confidence not in {"candidate", "verified"}:
+            raise Prime3DolPatchError(f"Unsupported retail IOS wrapper confidence {self.confidence!r}.")
+
+    def to_json_dict(self) -> dict[str, object]:
+        return {
+            **dataclasses.asdict(self),
+            "open_async_guard_words": list(self.open_async_guard_words),
+            "preserved_registers": list(self.preserved_registers),
+        }
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RetailIosWrapperMetadata:
+        metadata = cls(
+            supported_dol_sha256=_json_string(data, "supported_dol_sha256"),
+            open_async_address=_json_int(data, "open_async_address"),
+            open_address=_json_int(data, "open_address"),
+            close_async_address=_json_int(data, "close_async_address"),
+            close_address=_json_int(data, "close_address"),
+            ioctl_async_address=_json_int(data, "ioctl_async_address"),
+            ioctl_address=_json_int(data, "ioctl_address"),
+            ioctlv_async_address=_json_int(data, "ioctlv_async_address"),
+            ioctlv_address=_json_int(data, "ioctlv_address"),
+            open_async_guard_words=tuple(_json_int_list(data, "open_async_guard_words")),
+            callback_signature=_json_string(data, "callback_signature"),
+            preserved_registers=tuple(_json_string_list(data, "preserved_registers")),
+            submit_helper_address=_json_int(data, "submit_helper_address"),
+            request_allocator_address=_json_int(data, "request_allocator_address"),
+            evidence_source=_json_string(data, "evidence_source"),
+            confidence=_json_string(data, "confidence"),
+        )
+        metadata.validate()
+        return metadata
+
+
+@dataclasses.dataclass(frozen=True)
+class Prime3RuntimeDiagnosticMetadata:
+    mode: str
+    hook_wrapper_entry_count_address: int
+    hook_wrapper_entry_count_size: int
+    hook_wrapper_before_poll_count_address: int
+    hook_wrapper_before_poll_count_size: int
+    runtime_poll_entry_count_address: int
+    runtime_poll_entry_count_size: int
+    runtime_poll_exit_count_address: int
+    runtime_poll_exit_count_size: int
+    state_machine_entry_count_address: int
+    state_machine_entry_count_size: int
+    state_machine_exit_count_address: int
+    state_machine_exit_count_size: int
+    c_before_veneer_call_count_address: int
+    c_before_veneer_call_count_size: int
+    retail_veneer_entry_count_address: int
+    retail_veneer_entry_count_size: int
+    retail_target_return_count_address: int
+    retail_target_return_count_size: int
+    retail_veneer_exit_count_address: int
+    retail_veneer_exit_count_size: int
+    c_after_veneer_call_count_address: int
+    c_after_veneer_call_count_size: int
+    ios_submit_attempt_count_address: int
+    ios_submit_attempt_count_size: int
+    ios_submit_return_count_address: int
+    ios_submit_return_count_size: int
+    ios_submit_return_value_address: int
+    ios_submit_return_value_size: int
+    callback_entry_count_address: int
+    callback_entry_count_size: int
+    callback_exit_count_address: int
+    callback_exit_count_size: int
+    hook_wrapper_after_poll_count_address: int
+    hook_wrapper_after_poll_count_size: int
+    hook_wrapper_exit_count_address: int
+    hook_wrapper_exit_count_size: int
+    last_execution_marker_address: int
+    last_execution_marker_size: int
+    last_transport_phase_before_step_address: int
+    last_transport_phase_before_step_size: int
+    last_transport_phase_after_step_address: int
+    last_transport_phase_after_step_size: int
+    callback_result_address: int
+    callback_result_size: int
+
+    def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
+        ranges = (
+            ("hook_wrapper_entry_count", self.hook_wrapper_entry_count_address, self.hook_wrapper_entry_count_size),
+            (
+                "hook_wrapper_before_poll_count",
+                self.hook_wrapper_before_poll_count_address,
+                self.hook_wrapper_before_poll_count_size,
+            ),
+            ("runtime_poll_entry_count", self.runtime_poll_entry_count_address, self.runtime_poll_entry_count_size),
+            ("runtime_poll_exit_count", self.runtime_poll_exit_count_address, self.runtime_poll_exit_count_size),
+            ("state_machine_entry_count", self.state_machine_entry_count_address, self.state_machine_entry_count_size),
+            ("state_machine_exit_count", self.state_machine_exit_count_address, self.state_machine_exit_count_size),
+            (
+                "c_before_veneer_call_count",
+                self.c_before_veneer_call_count_address,
+                self.c_before_veneer_call_count_size,
+            ),
+            (
+                "retail_veneer_entry_count",
+                self.retail_veneer_entry_count_address,
+                self.retail_veneer_entry_count_size,
+            ),
+            (
+                "retail_target_return_count",
+                self.retail_target_return_count_address,
+                self.retail_target_return_count_size,
+            ),
+            (
+                "retail_veneer_exit_count",
+                self.retail_veneer_exit_count_address,
+                self.retail_veneer_exit_count_size,
+            ),
+            (
+                "c_after_veneer_call_count",
+                self.c_after_veneer_call_count_address,
+                self.c_after_veneer_call_count_size,
+            ),
+            ("ios_submit_attempt_count", self.ios_submit_attempt_count_address, self.ios_submit_attempt_count_size),
+            ("ios_submit_return_count", self.ios_submit_return_count_address, self.ios_submit_return_count_size),
+            ("ios_submit_return_value", self.ios_submit_return_value_address, self.ios_submit_return_value_size),
+            ("callback_entry_count", self.callback_entry_count_address, self.callback_entry_count_size),
+            ("callback_exit_count", self.callback_exit_count_address, self.callback_exit_count_size),
+            (
+                "hook_wrapper_after_poll_count",
+                self.hook_wrapper_after_poll_count_address,
+                self.hook_wrapper_after_poll_count_size,
+            ),
+            ("hook_wrapper_exit_count", self.hook_wrapper_exit_count_address, self.hook_wrapper_exit_count_size),
+            ("last_execution_marker", self.last_execution_marker_address, self.last_execution_marker_size),
+            (
+                "last_transport_phase_before_step",
+                self.last_transport_phase_before_step_address,
+                self.last_transport_phase_before_step_size,
+            ),
+            (
+                "last_transport_phase_after_step",
+                self.last_transport_phase_after_step_address,
+                self.last_transport_phase_after_step_size,
+            ),
+            ("callback_result", self.callback_result_address, self.callback_result_size),
+        )
+        for name, start, size in ranges:
+            if size <= 0:
+                raise Prime3DolPatchError(f"Relocated runtime diagnostic field {name} size must be positive.")
+            if not (runtime_state_start <= start < runtime_state_end):
+                raise Prime3DolPatchError(
+                    f"Relocated runtime diagnostic field {name} is outside the runtime state range."
+                )
+            if start + size > runtime_state_end:
+                raise Prime3DolPatchError(
+                    f"Relocated runtime diagnostic field {name} exceeds the runtime state range."
+                )
+        _validate_non_overlapping_ranges(ranges)
+        return ranges
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeDiagnosticMetadata:
+        return cls(
+            mode=_json_string(data, "mode"),
+            hook_wrapper_entry_count_address=_json_int(data, "hook_wrapper_entry_count_address"),
+            hook_wrapper_entry_count_size=_json_int(data, "hook_wrapper_entry_count_size"),
+            hook_wrapper_before_poll_count_address=_json_int(data, "hook_wrapper_before_poll_count_address"),
+            hook_wrapper_before_poll_count_size=_json_int(data, "hook_wrapper_before_poll_count_size"),
+            runtime_poll_entry_count_address=_json_int(data, "runtime_poll_entry_count_address"),
+            runtime_poll_entry_count_size=_json_int(data, "runtime_poll_entry_count_size"),
+            runtime_poll_exit_count_address=_json_int(data, "runtime_poll_exit_count_address"),
+            runtime_poll_exit_count_size=_json_int(data, "runtime_poll_exit_count_size"),
+            state_machine_entry_count_address=_json_int(data, "state_machine_entry_count_address"),
+            state_machine_entry_count_size=_json_int(data, "state_machine_entry_count_size"),
+            state_machine_exit_count_address=_json_int(data, "state_machine_exit_count_address"),
+            state_machine_exit_count_size=_json_int(data, "state_machine_exit_count_size"),
+            c_before_veneer_call_count_address=_json_int(data, "c_before_veneer_call_count_address"),
+            c_before_veneer_call_count_size=_json_int(data, "c_before_veneer_call_count_size"),
+            retail_veneer_entry_count_address=_json_int(data, "retail_veneer_entry_count_address"),
+            retail_veneer_entry_count_size=_json_int(data, "retail_veneer_entry_count_size"),
+            retail_target_return_count_address=_json_int(data, "retail_target_return_count_address"),
+            retail_target_return_count_size=_json_int(data, "retail_target_return_count_size"),
+            retail_veneer_exit_count_address=_json_int(data, "retail_veneer_exit_count_address"),
+            retail_veneer_exit_count_size=_json_int(data, "retail_veneer_exit_count_size"),
+            c_after_veneer_call_count_address=_json_int(data, "c_after_veneer_call_count_address"),
+            c_after_veneer_call_count_size=_json_int(data, "c_after_veneer_call_count_size"),
+            ios_submit_attempt_count_address=_json_int(data, "ios_submit_attempt_count_address"),
+            ios_submit_attempt_count_size=_json_int(data, "ios_submit_attempt_count_size"),
+            ios_submit_return_count_address=_json_int(data, "ios_submit_return_count_address"),
+            ios_submit_return_count_size=_json_int(data, "ios_submit_return_count_size"),
+            ios_submit_return_value_address=_json_int(data, "ios_submit_return_value_address"),
+            ios_submit_return_value_size=_json_int(data, "ios_submit_return_value_size"),
+            callback_entry_count_address=_json_int(data, "callback_entry_count_address"),
+            callback_entry_count_size=_json_int(data, "callback_entry_count_size"),
+            callback_exit_count_address=_json_int(data, "callback_exit_count_address"),
+            callback_exit_count_size=_json_int(data, "callback_exit_count_size"),
+            hook_wrapper_after_poll_count_address=_json_int(data, "hook_wrapper_after_poll_count_address"),
+            hook_wrapper_after_poll_count_size=_json_int(data, "hook_wrapper_after_poll_count_size"),
+            hook_wrapper_exit_count_address=_json_int(data, "hook_wrapper_exit_count_address"),
+            hook_wrapper_exit_count_size=_json_int(data, "hook_wrapper_exit_count_size"),
+            last_execution_marker_address=_json_int(data, "last_execution_marker_address"),
+            last_execution_marker_size=_json_int(data, "last_execution_marker_size"),
+            last_transport_phase_before_step_address=_json_int(data, "last_transport_phase_before_step_address"),
+            last_transport_phase_before_step_size=_json_int(data, "last_transport_phase_before_step_size"),
+            last_transport_phase_after_step_address=_json_int(data, "last_transport_phase_after_step_address"),
+            last_transport_phase_after_step_size=_json_int(data, "last_transport_phase_after_step_size"),
+            callback_result_address=_json_int(data, "callback_result_address"),
+            callback_result_size=_json_int(data, "callback_result_size"),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3RelocatedRuntimeMetadata:
     mode: str
     low_bootstrap_address: int
@@ -219,6 +632,39 @@ class Prime3RelocatedRuntimeMetadata:
     runtime_poll_heartbeat_size: int
     runtime_poll_last_sequence_address: int
     runtime_poll_last_sequence_size: int
+    diagnostics: Prime3RuntimeDiagnosticMetadata | None = None
+    ios_udp_diagnostic_enabled: bool = False
+    transport: Prime3RuntimeTransportMetadata | None = None
+    retail_ios_wrapper: Prime3RetailIosWrapperMetadata | None = None
+
+    def _validate_diagnostic_configuration(self) -> tuple[tuple[str, int, int], ...]:
+        if self.diagnostics is None:
+            return ()
+        return self.diagnostics.validate(
+            runtime_state_start=self.runtime_state_start,
+            runtime_state_end=self.runtime_state_end,
+        )
+
+    def _validate_transport_configuration(self) -> tuple[tuple[str, int, int], ...]:
+        if self.ios_udp_diagnostic_enabled:
+            if self.mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
+                raise Prime3DolPatchError("IOS UDP diagnostic transport requires relocated_continue mode.")
+            if self.transport is None:
+                raise Prime3DolPatchError("IOS UDP diagnostic transport metadata is missing.")
+        elif self.transport is not None:
+            raise Prime3DolPatchError("Relocated runtime transport metadata requires ios_udp_diagnostic_enabled.")
+
+        if self.transport is None:
+            return ()
+        return self.transport.validate(
+            runtime_state_start=self.runtime_state_start,
+            runtime_state_end=self.runtime_state_end,
+        )
+
+    def _validate_retail_wrapper_configuration(self) -> None:
+        if self.retail_ios_wrapper is None:
+            return
+        self.retail_ios_wrapper.validate()
 
     def validate(
         self,
@@ -292,6 +738,9 @@ class Prime3RelocatedRuntimeMetadata:
                 self.runtime_poll_last_sequence_size,
             ),
         )
+        diagnostic_ranges = self._validate_diagnostic_configuration()
+        transport_ranges = self._validate_transport_configuration()
+        self._validate_retail_wrapper_configuration()
         for name, start, size in state_ranges:
             if not (self.runtime_state_start <= start < self.runtime_state_end):
                 raise Prime3DolPatchError(f"Relocated runtime field {name} is outside the runtime state range.")
@@ -299,7 +748,7 @@ class Prime3RelocatedRuntimeMetadata:
                 raise Prime3DolPatchError(f"Relocated runtime field {name} exceeds the runtime state range.")
             if start < diagnostic_end and start + size > bootstrap_diagnostic_start:
                 raise Prime3DolPatchError(f"Relocated runtime field {name} overlaps the bootstrap diagnostic block.")
-        _validate_non_overlapping_ranges(state_ranges)
+        _validate_non_overlapping_ranges(state_ranges + diagnostic_ranges + transport_ranges)
 
         expected_cache_start, expected_cache_size = compute_cache_range(
             address=self.runtime_destination_address,
@@ -356,6 +805,10 @@ class Prime3RelocatedRuntimeMetadata:
             runtime_poll_heartbeat_size=_json_int(data, "runtime_poll_heartbeat_size"),
             runtime_poll_last_sequence_address=_json_int(data, "runtime_poll_last_sequence_address"),
             runtime_poll_last_sequence_size=_json_int(data, "runtime_poll_last_sequence_size"),
+            diagnostics=_json_optional_runtime_diagnostics(data, "diagnostics"),
+            ios_udp_diagnostic_enabled=_json_optional_bool(data, "ios_udp_diagnostic_enabled") or False,
+            transport=_json_optional_runtime_transport(data, "transport"),
+            retail_ios_wrapper=_json_optional_retail_ios_wrapper(data, "retail_ios_wrapper"),
         )
 
 
@@ -637,12 +1090,39 @@ def _json_string(data: dict[str, object], key: str) -> str:
     return value
 
 
+def _json_int_list(data: dict[str, object], key: str) -> list[int]:
+    value = data.get(key)
+    if not isinstance(value, (list, tuple)) or not all(isinstance(item, int) for item in value):
+        raise Prime3DolPatchError(
+            f"Prime 3 runtime payload manifest field {key!r} must be a list or tuple of integers."
+        )
+    return list(value)
+
+
+def _json_string_list(data: dict[str, object], key: str) -> list[str]:
+    value = data.get(key)
+    if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
+        raise Prime3DolPatchError(
+            f"Prime 3 runtime payload manifest field {key!r} must be a list or tuple of strings."
+        )
+    return list(value)
+
+
 def _json_optional_int(data: dict[str, object], key: str) -> int | None:
     value = data.get(key)
     if value is None:
         return None
     if not isinstance(value, int):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an integer when present.")
+    return value
+
+
+def _json_optional_bool(data: dict[str, object], key: str) -> bool | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a bool when present.")
     return value
 
 
@@ -670,6 +1150,42 @@ def _json_optional_relocated_runtime(
     if not isinstance(value, dict):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
     return Prime3RelocatedRuntimeMetadata.from_json_dict(value)
+
+
+def _json_optional_runtime_transport(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RuntimeTransportMetadata | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RuntimeTransportMetadata.from_json_dict(value)
+
+
+def _json_optional_runtime_diagnostics(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RuntimeDiagnosticMetadata | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RuntimeDiagnosticMetadata.from_json_dict(value)
+
+
+def _json_optional_retail_ios_wrapper(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RetailIosWrapperMetadata | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RetailIosWrapperMetadata.from_json_dict(value)
 
 
 def _validate_optional_range(*, payload_size: int, field_name: str, start: int | None, size: int | None) -> None:

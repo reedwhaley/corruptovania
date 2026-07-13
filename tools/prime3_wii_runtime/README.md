@@ -6,18 +6,21 @@ Current scope:
 
 - `payload.S` exports `payload_entry`
 - direct payload builds support normal, probe, entry-bootstrap, and relocated-runtime proof modes
-- `relocated_runtime.S` builds a separate high-MEM1 runtime blob for the relocation proof
+- `relocated_runtime.S` plus `relocated_runtime.c` build a separate high-MEM1 runtime blob for the relocation proof
 - `build_probe_dol.py` and `verify_probe_delivery.py` support static DOL patch/verify runs for the generated payload artifacts
 - `observe_probe.py` remains read-only and reports live payload/bootstrap state from Dolphin memory
 - recurring poll hook installation is supported for the validated Wii NTSC retail DOL accessor at `0x800BB71C`
-- no Prime 3 Wii networking, direct IOS transport, or normal exporter integration is included yet
+- the relocated runtime now includes a developer-only retail-wrapper IOS-open diagnostic path plus the bounded transport state machine scaffolding behind it
+- no CP3W parser, mailbox, memory read/write surface, or normal exporter integration is included
 
 Transport recon status:
 
 - Skyward Sword source evidence now confirms that its Wii UDP support is a custom direct-IOS transport, not a libogc `net_*` call path
 - the relevant provenance is documented in `docs/prime3_wii_skyward_sword_transport_recon.md`
-- that transport still uses dynamic IOS-heap allocation, alarms, and an unbounded receive loop, so it is not a safe drop-in for the current Prime 3 bounded-poll runtime
-- any Prime 3 networking milestone must keep a project-owned, fixed-storage, developer-only transport design on top of the proven IOS command set
+- that transport still uses dynamic IOS-heap allocation, alarms, and an unbounded receive loop, so it was not a safe drop-in for the current Prime 3 bounded-poll runtime
+- the earlier raw direct-submit `IOS_OpenAsync` experiment is no longer treated as functional
+- the current Prime 3 runtime now calls Prime 3 NTSC's own retail IOS wrapper cluster, starting with verified `IOS_OpenAsync` at `0x80504668`
+- the retail-wrapper metadata is guarded to the NTSC `main.dol` SHA-256 `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
 
 ## Supported local toolchain
 
@@ -56,6 +59,7 @@ python tools/prime3_wii_runtime/build_payload.py --bootstrap-halt --reserved-hig
 python tools/prime3_wii_runtime/build_payload.py --relocated-copy-halt --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-return-halt --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-open-via-retail-wrapper-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 ```
 
 Artifacts are written to `build/prime3_wii_runtime/` or the requested `--output-dir`:
@@ -75,6 +79,12 @@ python tools/prime3_wii_runtime/build_probe_dol.py --original-dol <main.dol> --o
 python tools/prime3_wii_runtime/verify_probe_delivery.py --original-dol <main.dol> --probe-dol <probe.dol> --extracted-final-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <verify-report.json> --payload-address 0x806843C0 --install-relocated-runtime
 python tools/prime3_wii_runtime/build_probe_dol.py --original-dol <main.dol> --output-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <probe-report.json> --payload-address 0x806843C0 --install-recurring-poll-hook
 python tools/prime3_wii_runtime/verify_probe_delivery.py --original-dol <main.dol> --probe-dol <probe.dol> --extracted-final-dol <probe.dol> --payload-bin <payload.bin> --payload-manifest <payload.json> --report <verify-report.json> --payload-address 0x806843C0 --install-recurring-poll-hook
+```
+
+Retail IOS wrapper recon helper:
+
+```powershell
+python tools/prime3_wii_runtime/analyze_ios_wrappers.py E:\ROMS\Corruption Extract\DATA\sys\main.dol
 ```
 
 ## Manifest contract

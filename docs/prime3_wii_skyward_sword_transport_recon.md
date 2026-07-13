@@ -6,6 +6,12 @@ This document records the source-backed Wii UDP transport evidence gathered from
 
 This recon is transport-focused only. It does not justify copying Skyward Sword gameplay protocol commands, write-memory behavior, item delivery, mailbox behavior, or normal exporter integration into Prime 3.
 
+Prime 3 correction:
+
+- Skyward Sword remains structural provenance only
+- Prime 3 NTSC must call its own retail IOS wrapper cluster rather than a project-owned raw submit path
+- the currently verified Prime 3 NTSC retail `IOS_OpenAsync` candidate is `0x80504668`, with neighboring `IOS_Open`, `IOS_CloseAsync`, `IOS_Close`, `IOS_IoctlAsync`, `IOS_Ioctl`, `IOS_IoctlvAsync`, and `IOS_Ioctlv` wrappers forming a coherent cluster
+
 ## External repositories and revisions inspected
 
 Repositories:

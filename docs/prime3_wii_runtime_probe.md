@@ -16,7 +16,7 @@ It does not install a hook, reserve arena space, or claim any runtime-safe paylo
 Networking note:
 
 - the current probe workflow still validates relocation and recurring-poll delivery only
-- no Prime 3 direct-IOS UDP diagnostic has been integrated into the runtime yet
+- the runtime now carries developer-only retail-wrapper metadata and one-shot retail `IOS_OpenAsync` diagnostics, but probe delivery remains separate from normal exporter behavior
 - Skyward Sword transport provenance is now documented separately in [`docs/prime3_wii_skyward_sword_transport_recon.md`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/docs/prime3_wii_skyward_sword_transport_recon.md:1)
 - any future network probe must remain developer-only, fixed-storage, and bounded to one receive or send step per recurring poll
 

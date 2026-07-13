@@ -73,7 +73,12 @@ def _make_bootstrap_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payl
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
-def _make_relocated_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payload.Prime3RuntimePayloadManifest:
+def _make_relocated_manifest(
+    payload_bytes: bytes,
+    *,
+    mode: str,
+    enable_ios_udp_diagnostic: bool = False,
+) -> runtime_payload.Prime3RuntimePayloadManifest:
     raw = _make_manifest(payload_bytes).to_json_dict()
     raw["payload_mode"] = mode
     raw["entry_bootstrap"] = {
@@ -114,8 +119,8 @@ def _make_relocated_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payl
         "low_bootstrap_size": 0x60,
         "low_bootstrap_sha256": probe_delivery._sha256_bytes(payload_bytes[:0x60]),
         "embedded_runtime_blob_offset": 0x60,
-        "embedded_runtime_blob_size": 0x60,
-        "embedded_runtime_blob_sha256": probe_delivery._sha256_bytes(payload_bytes[0x60:0x80]),
+        "embedded_runtime_blob_size": 0x140,
+        "embedded_runtime_blob_sha256": probe_delivery._sha256_bytes(payload_bytes[0x60:0x1A0]),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
         "runtime_poll_entry_address": 0x817E1004,
@@ -123,14 +128,14 @@ def _make_relocated_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payl
         "runtime_code_start": 0x817E1000,
         "runtime_code_end": 0x817E102C,
         "runtime_state_start": 0x817E1030,
-        "runtime_state_end": 0x817E1054,
+        "runtime_state_end": 0x817E1130,
         "runtime_stack_start": None,
         "runtime_stack_end": None,
         "required_source_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
         "required_destination_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
-        "cache_range_size": 0x60,
+        "cache_range_size": 0x140,
         "runtime_canary_address": 0x817E1030,
         "runtime_canary_size": 0x04,
         "runtime_canary_sha256": probe_delivery._sha256_bytes(payload_bytes[0x70:0x74]),
@@ -150,6 +155,61 @@ def _make_relocated_manifest(payload_bytes: bytes, *, mode: str) -> runtime_payl
         "runtime_poll_heartbeat_size": 4,
         "runtime_poll_last_sequence_address": 0x817E1050,
         "runtime_poll_last_sequence_size": 4,
+        "ios_udp_diagnostic_enabled": enable_ios_udp_diagnostic,
+        "transport": {
+            "phase_address": 0x817E1054,
+            "phase_size": 4,
+            "last_error_address": 0x817E1058,
+            "last_error_size": 4,
+            "last_ios_result_address": 0x817E105C,
+            "last_ios_result_size": 4,
+            "pending_operation_address": 0x817E1060,
+            "pending_operation_size": 4,
+            "pending_generation_address": 0x817E1064,
+            "pending_generation_size": 4,
+            "callback_generation_address": 0x817E1068,
+            "callback_generation_size": 4,
+            "callback_count_address": 0x817E106C,
+            "callback_count_size": 4,
+            "callback_pending_address": 0x817E1070,
+            "callback_pending_size": 4,
+            "kd_fd_address": 0x817E1074,
+            "kd_fd_size": 4,
+            "ip_fd_address": 0x817E1078,
+            "ip_fd_size": 4,
+            "socket_fd_address": 0x817E107C,
+            "socket_fd_size": 4,
+            "host_id_address": 0x817E1080,
+            "host_id_size": 4,
+            "bound_port_address": 0x817E1084,
+            "bound_port_size": 4,
+            "receive_count_address": 0x817E1088,
+            "receive_count_size": 4,
+            "receive_bytes_address": 0x817E108C,
+            "receive_bytes_size": 4,
+            "send_count_address": 0x817E1090,
+            "send_count_size": 4,
+            "send_bytes_address": 0x817E1094,
+            "send_bytes_size": 4,
+            "last_receive_length_address": 0x817E1098,
+            "last_receive_length_size": 4,
+            "last_send_length_address": 0x817E109C,
+            "last_send_length_size": 4,
+            "last_peer_ipv4_address": 0x817E10A0,
+            "last_peer_ipv4_size": 4,
+            "last_peer_port_address": 0x817E10A4,
+            "last_peer_port_size": 4,
+            "last_peer_family_address": 0x817E10A8,
+            "last_peer_family_size": 4,
+            "last_poll_action_address": 0x817E10AC,
+            "last_poll_action_size": 4,
+            "last_submit_result_address": 0x817E10B0,
+            "last_submit_result_size": 4,
+            "last_receive_preview_address": 0x817E10C0,
+            "last_receive_preview_size": 16,
+            "last_send_preview_address": 0x817E10D0,
+            "last_send_preview_size": 16,
+        } if enable_ios_udp_diagnostic else None,
     }
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
@@ -356,7 +416,7 @@ def test_build_unhooked_probe_dol_supports_entry_bootstrap_install() -> None:
 
 
 def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -376,13 +436,13 @@ def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
     assert result.relocated_runtime.runtime_destination == 0x817E1000
     assert result.relocated_runtime.runtime_entry == 0x817E1000
     assert result.relocated_runtime.runtime_blob_offset == 0x60
-    assert result.relocated_runtime.runtime_blob_size == 0x60
+    assert result.relocated_runtime.runtime_blob_size == 0x140
     assert result.relocated_runtime.cache_range_start == 0x817E1000
-    assert result.relocated_runtime.cache_range_size == 0x60
+    assert result.relocated_runtime.cache_range_size == 0x140
 
 
 def test_build_unhooked_probe_dol_supports_recurring_poll_hook_install() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -403,6 +463,66 @@ def test_build_unhooked_probe_dol_supports_recurring_poll_hook_install() -> None
     assert result.recurring_poll_hook.wrapper_address == 0x817E1014
     assert result.recurring_poll_hook.poll_entry_address == 0x817E1004
     assert result.recurring_poll_hook.return_address == probe_delivery.RECURRING_POLL_HOOK_CONTINUATION_ADDRESS
+
+
+def test_build_unhooked_probe_dol_accepts_explicit_ios_udp_transport_enable() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+        enable_ios_udp_diagnostic=True,
+    )
+
+    result = probe_delivery.build_unhooked_probe_dol(
+        _recurring_hook_original(),
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        install_recurring_poll_hook=True,
+        enable_ios_udp_diagnostic=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert result.recurring_poll_hook is not None
+
+
+def test_build_unhooked_probe_dol_rejects_ios_udp_transport_without_recurring_hook() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+        enable_ios_udp_diagnostic=True,
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="requires recurring poll hook installation"):
+        probe_delivery.build_unhooked_probe_dol(
+            _entry_gate_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x806843C0,
+            install_relocated_runtime=True,
+            enable_ios_udp_diagnostic=True,
+            versions=(_entry_gate_version(),),
+        )
+
+
+def test_build_unhooked_probe_dol_rejects_ios_udp_transport_when_manifest_disabled() -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="Manifest does not enable the IOS UDP diagnostic transport"):
+        probe_delivery.build_unhooked_probe_dol(
+            _recurring_hook_original(),
+            payload_bytes,
+            manifest,
+            payload_virtual_address=0x806843C0,
+            install_recurring_poll_hook=True,
+            enable_ios_udp_diagnostic=True,
+            versions=(_entry_gate_version(),),
+        )
 
 
 def test_build_unhooked_probe_dol_rejects_high_address_outside_mem1() -> None:
@@ -537,7 +657,7 @@ def test_build_unhooked_probe_dol_rejects_entry_bootstrap_with_checkpoint_gate()
 
 
 def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -556,7 +676,7 @@ def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate
 
 
 def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -575,7 +695,7 @@ def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None
 
 
 def test_build_unhooked_probe_dol_rejects_recurring_hook_with_checkpoint_gate() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -594,7 +714,7 @@ def test_build_unhooked_probe_dol_rejects_recurring_hook_with_checkpoint_gate() 
 
 
 def test_build_unhooked_probe_dol_rejects_recurring_hook_with_other_bootstrap_mode() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -736,7 +856,7 @@ def test_verify_probe_delivery_accepts_entry_bootstrap_chain(tmp_path: Path) -> 
 
 
 def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -779,7 +899,7 @@ def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -
 
 
 def test_verify_probe_delivery_accepts_recurring_poll_hook_chain(tmp_path: Path) -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -818,6 +938,49 @@ def test_verify_probe_delivery_accepts_recurring_poll_hook_chain(tmp_path: Path)
     assert report.recurring_poll_hook is not None
     assert report.recurring_poll_hook.wrapper_address == 0x817E1014
     assert report.recurring_poll_hook.hook_replacement_instruction != probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD
+
+
+def test_verify_probe_delivery_accepts_explicit_ios_udp_transport_chain(tmp_path: Path) -> None:
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+        enable_ios_udp_diagnostic=True,
+    )
+    original_bytes = _recurring_hook_original()
+    built = probe_delivery.build_unhooked_probe_dol(
+        original_bytes,
+        payload_bytes,
+        manifest,
+        payload_virtual_address=0x806843C0,
+        install_recurring_poll_hook=True,
+        enable_ios_udp_diagnostic=True,
+        versions=(_entry_gate_version(),),
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    probe_path = tmp_path.joinpath("probe.dol")
+    extracted_path = tmp_path.joinpath("extracted.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    original_path.write_bytes(original_bytes)
+    probe_path.write_bytes(built.probe_dol_bytes)
+    extracted_path.write_bytes(built.probe_dol_bytes)
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+
+    report = probe_delivery.verify_probe_delivery(
+        original_dol_path=original_path,
+        probe_dol_path=probe_path,
+        extracted_final_dol_path=extracted_path,
+        payload_bin_path=payload_path,
+        payload_manifest_path=manifest_path,
+        payload_virtual_address=0x806843C0,
+        install_recurring_poll_hook=True,
+        enable_ios_udp_diagnostic=True,
+        versions=(_entry_gate_version(),),
+    )
+
+    assert report.recurring_poll_hook is not None
 
 
 def test_verify_probe_delivery_rejects_missing_appended_section(tmp_path: Path) -> None:
@@ -1096,7 +1259,7 @@ def test_build_probe_dol_script_writes_entry_bootstrap_report(tmp_path: Path) ->
 
 def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) -> None:
     module = _load_build_probe_module()
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -1137,12 +1300,12 @@ def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) 
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["relocated_runtime"]["runtime_destination"] == 0x817E1000
-    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x60
+    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x140
 
 
 def test_build_probe_dol_script_writes_recurring_poll_hook_report(tmp_path: Path) -> None:
     module = _load_build_probe_module()
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x60
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -1184,3 +1347,50 @@ def test_build_probe_dol_script_writes_recurring_poll_hook_report(tmp_path: Path
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["recurring_poll_hook"]["hook_address"] == probe_delivery.RECURRING_POLL_HOOK_ADDRESS
     assert payload["recurring_poll_hook"]["wrapper_address"] == 0x817E1014
+
+
+def test_build_probe_dol_script_reports_explicit_ios_udp_transport_enable(tmp_path: Path) -> None:
+    module = _load_build_probe_module()
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    manifest = _make_relocated_manifest(
+        payload_bytes,
+        mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+        enable_ios_udp_diagnostic=True,
+    )
+    original_path = tmp_path.joinpath("original.dol")
+    output_dol = tmp_path.joinpath("transport-probe.dol")
+    payload_path = tmp_path.joinpath("payload.bin")
+    manifest_path = tmp_path.joinpath("payload.json")
+    report_path = tmp_path.joinpath("transport-probe.json")
+    original_path.write_bytes(_recurring_hook_original())
+    payload_path.write_bytes(payload_bytes)
+    manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
+    original_build_unhooked_probe_dol = module.build_unhooked_probe_dol
+
+    def _patched_build_unhooked_probe_dol(*args, **kwargs):
+        kwargs.setdefault("versions", (_entry_gate_version(),))
+        return original_build_unhooked_probe_dol(*args, **kwargs)
+
+    module.build_unhooked_probe_dol = _patched_build_unhooked_probe_dol
+
+    sys.argv = [
+        "build_probe_dol.py",
+        "--original-dol",
+        str(original_path),
+        "--output-dol",
+        str(output_dol),
+        "--payload-bin",
+        str(payload_path),
+        "--payload-manifest",
+        str(manifest_path),
+        "--report",
+        str(report_path),
+        "--payload-address",
+        "0x806843C0",
+        "--install-recurring-poll-hook",
+        "--enable-ios-udp-diagnostic",
+    ]
+    module.main()
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["ios_udp_diagnostic_enabled"] is True

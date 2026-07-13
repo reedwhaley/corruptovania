@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--install-entry-bootstrap", action="store_true")
     parser.add_argument("--install-relocated-runtime", action="store_true")
     parser.add_argument("--install-recurring-poll-hook", action="store_true")
+    parser.add_argument("--enable-ios-udp-diagnostic", action="store_true")
     return parser.parse_args()
 
 
@@ -51,11 +52,12 @@ def main() -> None:
         install_entry_bootstrap=args.install_entry_bootstrap,
         install_relocated_runtime=args.install_relocated_runtime,
         install_recurring_poll_hook=args.install_recurring_poll_hook,
+        enable_ios_udp_diagnostic=args.enable_ios_udp_diagnostic,
     )
     args.output_dol.parent.mkdir(parents=True, exist_ok=True)
     args.output_dol.write_bytes(result.probe_dol_bytes)
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    report = {"probe_section": result.probe_section.to_json_dict()}
+    report: dict[str, object] = {"probe_section": result.probe_section.to_json_dict()}
     if result.checkpoint_gate is not None:
         report["checkpoint_gate"] = result.checkpoint_gate.to_json_dict()
     if result.entry_bootstrap is not None:
@@ -64,6 +66,8 @@ def main() -> None:
         report["relocated_runtime"] = result.relocated_runtime.to_json_dict()
     if result.recurring_poll_hook is not None:
         report["recurring_poll_hook"] = result.recurring_poll_hook.to_json_dict()
+    if args.enable_ios_udp_diagnostic:
+        report["ios_udp_diagnostic_enabled"] = True
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

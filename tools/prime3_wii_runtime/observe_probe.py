@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Protocol, TypedDict
+from typing import Protocol, TypedDict, cast
 
 if __package__ in {None, ""}:
     _repository_root = Path(__file__).resolve().parents[2]
@@ -29,6 +29,21 @@ LOW_MEMORY_WORDS = (
 )
 MEM1_START = 0x80000000
 MEM1_END = 0x81800000
+DIAGNOSTIC_MARKER_NAMES = {
+    0xC0DE0001: "hook_wrapper_entered",
+    0xC0DE0002: "poll_entry",
+    0xC0DE0003: "state_machine_entry",
+    0xC0DE0004: "c_before_veneer_call",
+    0xC0DE0005: "retail_veneer_entered",
+    0xC0DE0006: "retail_before_target",
+    0xC0DE0007: "retail_target_returned",
+    0xC0DE0008: "retail_before_lr_restore",
+    0xC0DE0009: "retail_before_veneer_blr",
+    0xC0DE000A: "c_after_veneer_call",
+    0xC0DE000B: "poll_returning",
+    0xC0DE000C: "wrapper_restoring_state",
+    0xC0DE000D: "wrapper_returning_to_game",
+}
 
 
 class DolphinReadOnlyBackend(Protocol):
@@ -125,6 +140,9 @@ class RelocatedRuntimeObservation(TypedDict):
     runtime_poll_counter_value: int
     runtime_poll_heartbeat_value: int
     runtime_poll_last_sequence_value: int
+    diagnostics: dict[str, object] | None
+    transport: dict[str, object] | None
+    retail_ios_wrapper: dict[str, object] | None
 
 
 class ProbeState(TypedDict):
@@ -231,30 +249,37 @@ def observe_probe_memory(
     if first_read["bootstrap_diagnostic"] is not None:
         result["bootstrap_diagnostic"] = first_read["bootstrap_diagnostic"]
     if first_read["relocated_runtime"] is not None:
-        result["relocated_runtime"] = first_read["relocated_runtime"]
-        result["state_checksum"] = first_read["relocated_runtime"]["state_sha256"]
-        result["second_state_checksum"] = second_read["relocated_runtime"]["state_sha256"]
+        first_runtime = first_read["relocated_runtime"]
+        second_runtime = second_read["relocated_runtime"]
+        assert first_runtime is not None
+        assert second_runtime is not None
+        result["relocated_runtime"] = first_runtime
+        result["state_checksum"] = first_runtime["state_sha256"]
+        result["second_state_checksum"] = second_runtime["state_sha256"]
         result["poll_counter_delta"] = (
-            second_read["relocated_runtime"]["runtime_poll_counter_value"]
-            - first_read["relocated_runtime"]["runtime_poll_counter_value"]
+            second_runtime["runtime_poll_counter_value"] - first_runtime["runtime_poll_counter_value"]
         )
         result["poll_counter_monotonic"] = (
-            second_read["relocated_runtime"]["runtime_poll_counter_value"]
-            >= first_read["relocated_runtime"]["runtime_poll_counter_value"]
+            second_runtime["runtime_poll_counter_value"] >= first_runtime["runtime_poll_counter_value"]
         )
         result["heartbeat_updated"] = (
-            second_read["relocated_runtime"]["runtime_poll_heartbeat_value"]
-            != first_read["relocated_runtime"]["runtime_poll_heartbeat_value"]
+            second_runtime["runtime_poll_heartbeat_value"] != first_runtime["runtime_poll_heartbeat_value"]
         )
         result["approximate_calls_per_second"] = (
             None
             if config.repeat_delay_seconds <= 0
-            else (
-                second_read["relocated_runtime"]["runtime_poll_counter_value"]
-                - first_read["relocated_runtime"]["runtime_poll_counter_value"]
-            )
+            else (second_runtime["runtime_poll_counter_value"] - first_runtime["runtime_poll_counter_value"])
             / config.repeat_delay_seconds
         )
+        diagnostics = first_runtime["diagnostics"]
+        if diagnostics is not None:
+            recurring_execution_continuing = cast("int", result["poll_counter_delta"]) > 0
+            result["recurring_execution_continuing"] = recurring_execution_continuing
+            result["probable_stop_boundary"] = _diagnostic_stop_boundary(
+                diagnostics=diagnostics,
+                transport=first_runtime["transport"],
+                recurring_execution_continuing=recurring_execution_continuing,
+            )
     if first_read["boot_info_plus_8"] is not None:
         result["boot_info_plus_8"] = first_read["boot_info_plus_8"]
     if first_read["invalid_boot_info_pointer"] is not None:
@@ -371,31 +396,47 @@ def _read_probe_state(
 
     relocated_runtime: RelocatedRuntimeObservation | None = None
     if config.manifest.relocated_runtime is not None:
-        metadata = config.manifest.relocated_runtime
-        start = metadata.embedded_runtime_blob_offset
-        end = start + metadata.embedded_runtime_blob_size
+        runtime_metadata = config.manifest.relocated_runtime
+        start = runtime_metadata.embedded_runtime_blob_offset
+        end = start + runtime_metadata.embedded_runtime_blob_size
         expected_runtime_bytes = config.payload_bytes[start:end]
         runtime_bytes = _read_exact(
             backend,
-            metadata.runtime_destination_address,
-            metadata.embedded_runtime_blob_size,
-            f"relocated runtime bytes 0x{metadata.runtime_destination_address:08x}",
+            runtime_metadata.runtime_destination_address,
+            runtime_metadata.embedded_runtime_blob_size,
+            f"relocated runtime bytes 0x{runtime_metadata.runtime_destination_address:08x}",
         )
-        runtime_code_offset = metadata.runtime_code_start - metadata.runtime_destination_address
-        runtime_code_end_offset = metadata.runtime_code_end - metadata.runtime_destination_address
-        runtime_state_offset = metadata.runtime_state_start - metadata.runtime_destination_address
-        runtime_state_end_offset = metadata.runtime_state_end - metadata.runtime_destination_address
-        runtime_executed_marker_offset = metadata.runtime_executed_marker_address - metadata.runtime_destination_address
-        copy_complete_marker_offset = metadata.copy_complete_marker_address - metadata.runtime_destination_address
-        counter_offset = metadata.runtime_execution_counter_address - metadata.runtime_destination_address
-        status_offset = metadata.runtime_status_address - metadata.runtime_destination_address
-        bootstrap_return_offset = metadata.bootstrap_return_marker_address - metadata.runtime_destination_address
-        poll_counter_offset = metadata.runtime_poll_counter_address - metadata.runtime_destination_address
-        poll_heartbeat_offset = metadata.runtime_poll_heartbeat_address - metadata.runtime_destination_address
-        poll_last_sequence_offset = metadata.runtime_poll_last_sequence_address - metadata.runtime_destination_address
-        relocated_runtime = {
-            "address": metadata.runtime_destination_address,
-            "size": metadata.embedded_runtime_blob_size,
+        runtime_code_offset = runtime_metadata.runtime_code_start - runtime_metadata.runtime_destination_address
+        runtime_code_end_offset = runtime_metadata.runtime_code_end - runtime_metadata.runtime_destination_address
+        runtime_state_offset = runtime_metadata.runtime_state_start - runtime_metadata.runtime_destination_address
+        runtime_state_end_offset = runtime_metadata.runtime_state_end - runtime_metadata.runtime_destination_address
+        runtime_executed_marker_offset = (
+            runtime_metadata.runtime_executed_marker_address - runtime_metadata.runtime_destination_address
+        )
+        copy_complete_marker_offset = (
+            runtime_metadata.copy_complete_marker_address - runtime_metadata.runtime_destination_address
+        )
+        counter_offset = (
+            runtime_metadata.runtime_execution_counter_address - runtime_metadata.runtime_destination_address
+        )
+        status_offset = runtime_metadata.runtime_status_address - runtime_metadata.runtime_destination_address
+        bootstrap_return_offset = (
+            runtime_metadata.bootstrap_return_marker_address - runtime_metadata.runtime_destination_address
+        )
+        poll_counter_offset = (
+            runtime_metadata.runtime_poll_counter_address - runtime_metadata.runtime_destination_address
+        )
+        poll_heartbeat_offset = (
+            runtime_metadata.runtime_poll_heartbeat_address - runtime_metadata.runtime_destination_address
+        )
+        poll_last_sequence_offset = (
+            runtime_metadata.runtime_poll_last_sequence_address - runtime_metadata.runtime_destination_address
+        )
+        relocated_runtime = cast(
+            "RelocatedRuntimeObservation",
+            {
+            "address": runtime_metadata.runtime_destination_address,
+            "size": runtime_metadata.embedded_runtime_blob_size,
             "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
             "code_sha256": hashlib.sha256(runtime_bytes[runtime_code_offset:runtime_code_end_offset]).hexdigest(),
             "state_sha256": hashlib.sha256(runtime_bytes[runtime_state_offset:runtime_state_end_offset]).hexdigest(),
@@ -410,7 +451,7 @@ def _read_probe_state(
                 runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
                 "big",
             )
-            == metadata.copy_complete_marker_value,
+            == runtime_metadata.copy_complete_marker_value,
             "runtime_executed_marker_value": int.from_bytes(
                 runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
                 "big",
@@ -419,14 +460,14 @@ def _read_probe_state(
                 runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
                 "big",
             )
-            == metadata.runtime_executed_marker_value,
+            == runtime_metadata.runtime_executed_marker_value,
             "runtime_execution_counter_value": int.from_bytes(
                 runtime_bytes[counter_offset : counter_offset + 4],
                 "big",
             ),
             "runtime_status_value": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big"),
             "runtime_status_matches_expected": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big")
-            == metadata.runtime_success_status_value,
+            == runtime_metadata.runtime_success_status_value,
             "bootstrap_return_marker_value": int.from_bytes(
                 runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
                 "big",
@@ -435,7 +476,7 @@ def _read_probe_state(
                 runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
                 "big",
             )
-            == metadata.bootstrap_return_marker_value,
+            == runtime_metadata.bootstrap_return_marker_value,
             "runtime_poll_counter_value": int.from_bytes(
                 runtime_bytes[poll_counter_offset : poll_counter_offset + 4],
                 "big",
@@ -448,7 +489,145 @@ def _read_probe_state(
                 runtime_bytes[poll_last_sequence_offset : poll_last_sequence_offset + 4],
                 "big",
             ),
-        }
+            "diagnostics": None,
+            "transport": None,
+            "retail_ios_wrapper": None,
+            },
+        )
+
+        def _runtime_u32(address: int) -> int:
+            start = address - runtime_metadata.runtime_destination_address
+            return int.from_bytes(runtime_bytes[start : start + 4], "big")
+
+        def _runtime_s32(address: int) -> int:
+            start = address - runtime_metadata.runtime_destination_address
+            return int.from_bytes(runtime_bytes[start : start + 4], "big", signed=True)
+
+        if runtime_metadata.diagnostics is not None:
+            diagnostics = runtime_metadata.diagnostics
+            marker_value = _runtime_u32(diagnostics.last_execution_marker_address)
+            relocated_runtime["diagnostics"] = {
+                "ios_call_mechanism": (
+                    "disabled"
+                    if diagnostics.mode == "transport_disabled"
+                    else "dry_run"
+                    if diagnostics.mode == "dry_run"
+                    else "retail_wrapper"
+                ),
+                "mode": diagnostics.mode,
+                "hook_wrapper_entry_count": _runtime_u32(diagnostics.hook_wrapper_entry_count_address),
+                "hook_wrapper_before_poll_count": _runtime_u32(diagnostics.hook_wrapper_before_poll_count_address),
+                "runtime_poll_entry_count": _runtime_u32(diagnostics.runtime_poll_entry_count_address),
+                "runtime_poll_exit_count": _runtime_u32(diagnostics.runtime_poll_exit_count_address),
+                "state_machine_entry_count": _runtime_u32(diagnostics.state_machine_entry_count_address),
+                "state_machine_exit_count": _runtime_u32(diagnostics.state_machine_exit_count_address),
+                "c_before_veneer_call_count": _runtime_u32(diagnostics.c_before_veneer_call_count_address),
+                "retail_veneer_entry_count": _runtime_u32(diagnostics.retail_veneer_entry_count_address),
+                "retail_target_return_count": _runtime_u32(diagnostics.retail_target_return_count_address),
+                "retail_veneer_exit_count": _runtime_u32(diagnostics.retail_veneer_exit_count_address),
+                "c_after_veneer_call_count": _runtime_u32(diagnostics.c_after_veneer_call_count_address),
+                "ios_submit_attempt_count": _runtime_u32(diagnostics.ios_submit_attempt_count_address),
+                "ios_submit_return_count": _runtime_u32(diagnostics.ios_submit_return_count_address),
+                "ios_submit_return_value": _runtime_s32(diagnostics.ios_submit_return_value_address),
+                "callback_entry_count": _runtime_u32(diagnostics.callback_entry_count_address),
+                "callback_exit_count": _runtime_u32(diagnostics.callback_exit_count_address),
+                "hook_wrapper_after_poll_count": _runtime_u32(diagnostics.hook_wrapper_after_poll_count_address),
+                "hook_wrapper_exit_count": _runtime_u32(diagnostics.hook_wrapper_exit_count_address),
+                "last_execution_marker": marker_value,
+                "last_execution_marker_name": _marker_name(marker_value),
+                "last_transport_phase_before_step": _runtime_u32(diagnostics.last_transport_phase_before_step_address),
+                "last_transport_phase_after_step": _runtime_u32(diagnostics.last_transport_phase_after_step_address),
+                "callback_result": _runtime_s32(diagnostics.callback_result_address),
+                "wrapper_counts_balanced": (
+                    _runtime_u32(diagnostics.hook_wrapper_entry_count_address)
+                    == _runtime_u32(diagnostics.hook_wrapper_exit_count_address)
+                )
+                and (
+                    _runtime_u32(diagnostics.hook_wrapper_before_poll_count_address)
+                    == _runtime_u32(diagnostics.hook_wrapper_after_poll_count_address)
+                ),
+                "poll_counts_balanced": (
+                    _runtime_u32(diagnostics.runtime_poll_entry_count_address)
+                    == _runtime_u32(diagnostics.runtime_poll_exit_count_address)
+                ),
+                "state_machine_counts_balanced": (
+                    _runtime_u32(diagnostics.state_machine_entry_count_address)
+                    == _runtime_u32(diagnostics.state_machine_exit_count_address)
+                ),
+                "ios_submission_attempted": _runtime_u32(diagnostics.ios_submit_attempt_count_address) > 0,
+                "ios_submission_returned": _runtime_u32(diagnostics.ios_submit_return_count_address) > 0,
+                "callback_observed": _runtime_u32(diagnostics.callback_entry_count_address) > 0,
+                "counter_consistency": _diagnostic_counter_consistency(
+                    hook_wrapper_entry_count=_runtime_u32(diagnostics.hook_wrapper_entry_count_address),
+                    hook_wrapper_before_poll_count=_runtime_u32(diagnostics.hook_wrapper_before_poll_count_address),
+                    runtime_poll_entry_count=_runtime_u32(diagnostics.runtime_poll_entry_count_address),
+                    runtime_poll_exit_count=_runtime_u32(diagnostics.runtime_poll_exit_count_address),
+                    state_machine_entry_count=_runtime_u32(diagnostics.state_machine_entry_count_address),
+                    state_machine_exit_count=_runtime_u32(diagnostics.state_machine_exit_count_address),
+                    c_before_veneer_call_count=_runtime_u32(diagnostics.c_before_veneer_call_count_address),
+                    retail_veneer_entry_count=_runtime_u32(diagnostics.retail_veneer_entry_count_address),
+                    retail_target_return_count=_runtime_u32(diagnostics.retail_target_return_count_address),
+                    retail_veneer_exit_count=_runtime_u32(diagnostics.retail_veneer_exit_count_address),
+                    c_after_veneer_call_count=_runtime_u32(diagnostics.c_after_veneer_call_count_address),
+                    ios_submit_attempt_count=_runtime_u32(diagnostics.ios_submit_attempt_count_address),
+                    ios_submit_return_count=_runtime_u32(diagnostics.ios_submit_return_count_address),
+                    callback_entry_count=_runtime_u32(diagnostics.callback_entry_count_address),
+                    callback_exit_count=_runtime_u32(diagnostics.callback_exit_count_address),
+                    hook_wrapper_after_poll_count=_runtime_u32(diagnostics.hook_wrapper_after_poll_count_address),
+                    hook_wrapper_exit_count=_runtime_u32(diagnostics.hook_wrapper_exit_count_address),
+                ),
+            }
+        if runtime_metadata.retail_ios_wrapper is not None:
+            wrapper = runtime_metadata.retail_ios_wrapper
+            relocated_runtime["retail_ios_wrapper"] = {
+                "supported_dol_sha256": wrapper.supported_dol_sha256,
+                "open_async_address": wrapper.open_async_address,
+                "open_async_guard_words": list(wrapper.open_async_guard_words),
+                "callback_signature": wrapper.callback_signature,
+                "preserved_registers": list(wrapper.preserved_registers),
+                "submit_helper_address": wrapper.submit_helper_address,
+                "request_allocator_address": wrapper.request_allocator_address,
+                "confidence": wrapper.confidence,
+            }
+        if runtime_metadata.transport is not None:
+            transport = runtime_metadata.transport
+
+            receive_preview_offset = (
+                transport.last_receive_preview_address - runtime_metadata.runtime_destination_address
+            )
+            send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
+            relocated_runtime["transport"] = {
+                "phase": _runtime_u32(transport.phase_address),
+                "last_error": _runtime_s32(transport.last_error_address),
+                "last_ios_result": _runtime_s32(transport.last_ios_result_address),
+                "pending_operation": _runtime_u32(transport.pending_operation_address),
+                "pending_generation": _runtime_u32(transport.pending_generation_address),
+                "callback_generation": _runtime_u32(transport.callback_generation_address),
+                "callback_count": _runtime_u32(transport.callback_count_address),
+                "callback_pending": _runtime_u32(transport.callback_pending_address),
+                "kd_fd": _runtime_s32(transport.kd_fd_address),
+                "ip_fd": _runtime_s32(transport.ip_fd_address),
+                "socket_fd": _runtime_s32(transport.socket_fd_address),
+                "host_id": _runtime_u32(transport.host_id_address),
+                "bound_port": _runtime_u32(transport.bound_port_address),
+                "receive_count": _runtime_u32(transport.receive_count_address),
+                "receive_bytes": _runtime_u32(transport.receive_bytes_address),
+                "send_count": _runtime_u32(transport.send_count_address),
+                "send_bytes": _runtime_u32(transport.send_bytes_address),
+                "last_receive_length": _runtime_u32(transport.last_receive_length_address),
+                "last_send_length": _runtime_u32(transport.last_send_length_address),
+                "last_peer_ipv4": _runtime_u32(transport.last_peer_ipv4_address),
+                "last_peer_port": _runtime_u32(transport.last_peer_port_address),
+                "last_peer_family": _runtime_u32(transport.last_peer_family_address),
+                "last_poll_action": _runtime_u32(transport.last_poll_action_address),
+                "last_submit_result": _runtime_s32(transport.last_submit_result_address),
+                "last_receive_preview_hex": runtime_bytes[
+                    receive_preview_offset : receive_preview_offset + transport.last_receive_preview_size
+                ].hex(),
+                "last_send_preview_hex": runtime_bytes[
+                    send_preview_offset : send_preview_offset + transport.last_send_preview_size
+                ].hex(),
+            }
 
     boot_info_pointer = low_memory_words["0x800000F4"]
     boot_info_plus_8 = None
@@ -489,6 +668,114 @@ def _classify_payload(payload_bytes: bytes, expected_payload_bytes: bytes) -> st
     if all(item == 0 for item in payload_bytes):
         return "all zero"
     return "payload present but altered"
+
+
+def _marker_name(value: int) -> str:
+    return DIAGNOSTIC_MARKER_NAMES.get(value, f"unknown_0x{value:08X}")
+
+
+def _diagnostic_counter_consistency(**counts: int) -> str:
+    if counts["hook_wrapper_before_poll_count"] > counts["hook_wrapper_entry_count"]:
+        return "contradictory"
+    if counts["runtime_poll_entry_count"] > counts["hook_wrapper_before_poll_count"]:
+        return "contradictory"
+    if counts["runtime_poll_exit_count"] > counts["runtime_poll_entry_count"]:
+        return "contradictory"
+    if counts["state_machine_exit_count"] > counts["state_machine_entry_count"]:
+        return "contradictory"
+    if counts["retail_veneer_entry_count"] > counts["c_before_veneer_call_count"]:
+        return "contradictory"
+    if counts["retail_target_return_count"] > counts["retail_veneer_entry_count"]:
+        return "contradictory"
+    if counts["retail_veneer_exit_count"] > counts["retail_target_return_count"]:
+        return "contradictory"
+    if counts["c_after_veneer_call_count"] > counts["retail_veneer_exit_count"]:
+        return "contradictory"
+    if counts["ios_submit_return_count"] > counts["ios_submit_attempt_count"]:
+        return "contradictory"
+    if counts["callback_exit_count"] > counts["callback_entry_count"]:
+        return "contradictory"
+    if counts["hook_wrapper_after_poll_count"] > counts["runtime_poll_exit_count"]:
+        return "contradictory"
+    if counts["hook_wrapper_exit_count"] > counts["hook_wrapper_after_poll_count"]:
+        return "contradictory"
+    return "consistent"
+
+
+def _object_as_int(value: object) -> int:
+    return cast("int", value)
+
+
+def _diagnostic_stop_boundary(
+    *,
+    diagnostics: dict[str, object],
+    transport: dict[str, object] | None,
+    recurring_execution_continuing: bool,
+) -> str:
+    if diagnostics.get("counter_consistency") == "contradictory":
+        return "contradictory_counters"
+    if recurring_execution_continuing:
+        return "recurring_execution_continues"
+    if _object_as_int(diagnostics["c_before_veneer_call_count"]) > _object_as_int(
+        diagnostics["retail_veneer_entry_count"]
+    ):
+        return "before_veneer"
+    if _object_as_int(diagnostics["retail_veneer_entry_count"]) > _object_as_int(
+        diagnostics["retail_target_return_count"]
+    ):
+        marker_name = str(diagnostics["last_execution_marker_name"])
+        if marker_name == "retail_veneer_entered":
+            return "inside_veneer_before_target"
+        return "inside_retail_target"
+    if _object_as_int(diagnostics["retail_target_return_count"]) > _object_as_int(
+        diagnostics["retail_veneer_exit_count"]
+    ):
+        return "target_returned_veneer_stuck"
+    if _object_as_int(diagnostics["retail_veneer_exit_count"]) > _object_as_int(
+        diagnostics["c_after_veneer_call_count"]
+    ):
+        return "veneer_returned_c_stuck"
+    if _object_as_int(diagnostics["callback_entry_count"]) > _object_as_int(diagnostics["callback_exit_count"]):
+        return "inside_callback"
+    if _object_as_int(diagnostics["runtime_poll_entry_count"]) > _object_as_int(diagnostics["runtime_poll_exit_count"]):
+        if _object_as_int(diagnostics["state_machine_entry_count"]) > _object_as_int(
+            diagnostics["state_machine_exit_count"]
+        ):
+            return "inside_state_machine"
+        return "inside_runtime_poll"
+    if _object_as_int(diagnostics["hook_wrapper_entry_count"]) > _object_as_int(diagnostics["hook_wrapper_exit_count"]):
+        return "inside_hook_wrapper"
+    if (
+        transport is not None
+        and _object_as_int(diagnostics["ios_submit_return_count"]) > 0
+        and _object_as_int(transport["pending_operation"]) != 0
+    ):
+        if _object_as_int(diagnostics["callback_entry_count"]) == 0:
+            return "callback_pending"
+    marker_name = str(diagnostics["last_execution_marker_name"])
+    if marker_name == "c_before_veneer_call":
+        return "before_veneer"
+    if marker_name == "retail_veneer_entered":
+        return "inside_veneer_before_target"
+    if marker_name == "retail_before_target":
+        return "inside_retail_target"
+    if marker_name == "retail_target_returned":
+        return "target_returned_veneer_stuck"
+    if marker_name == "retail_before_lr_restore":
+        return "target_returned_veneer_stuck"
+    if marker_name == "retail_before_veneer_blr":
+        return "veneer_returned_c_stuck"
+    if marker_name == "c_after_veneer_call":
+        if transport is not None and _object_as_int(transport["pending_operation"]) != 0:
+            return "callback_pending"
+        return marker_name
+    if marker_name == "poll_returning":
+        return "poll_returned_before_wrapper_exit"
+    if marker_name == "wrapper_restoring_state":
+        return "wrapper_restoring_state"
+    if marker_name == "wrapper_returning_to_game":
+        return "wrapper_returned_to_game"
+    return marker_name
 
 
 def _halt_active(first_read: ProbeState, config: ProbeObservationConfig) -> bool | None:

@@ -10,6 +10,9 @@ Transport recon update:
 - the detailed provenance report lives in [`docs/prime3_wii_skyward_sword_transport_recon.md`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/docs/prime3_wii_skyward_sword_transport_recon.md:1)
 - that source evidence removes the earlier "unknown transport plumbing" blocker, but it does not make the Skyward Sword runtime code a safe drop-in for Prime 3
 - the active Skyward Sword transport still relies on `IOS_HEAP` allocation, alarms, and an unbounded receive loop, which conflicts with the current Prime 3 requirement of fixed storage plus one bounded network step per recurring poll
+- the earlier Prime 3 raw direct-submit `IOS_OpenAsync` experiment was incorrect and is now demoted to failed diagnostic history
+- Prime 3 NTSC's own retail IOS wrapper cluster is now identified in the retail `main.dol`, with `IOS_OpenAsync` at `0x80504668`
+- the runtime payload now carries guarded retail-wrapper metadata for NTSC `main.dol` SHA-256 `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
 
 Selected transport direction after recon:
 

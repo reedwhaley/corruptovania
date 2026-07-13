@@ -252,6 +252,8 @@ For the bounded Wii transport proof, the expected initialization-only terminal s
 
 For `--ios-nwc24-via-retail-ioctl-once`, the narrower terminal state is `NWC24_COMPLETE` (`0xFE`): `/dev/net/kd/request` remains open, exactly one command-6 ioctl has been submitted via `0x80504FE0`, and no close, IP, socket, receive, or send operation is submitted. The wrapper ABI is `r3..r10 = fd, command, input, input_length, output, output_length, callback, userdata`; `0x80504A08` remains classified as async read.
 
+For `--ios-close-kd-once`, the sequence extends only through `KD_CLOSED` (`0xFE`). The verified async close wrapper is `0x805048A0..0x80504960`, operation `2`, with `r3=fd`, `r4=completion`, and `r5=userdata`. The retail dispatcher owns the lower request; the relocated close context remains allocated until its callback. The successful local proof returned `0` synchronously and through one callback, then retained `kd_fd=-1`, `kd_closed=true`, and zero IP/receive/send submissions.
+
 ## Cleanup
 
 - remove repository-local build artifacts

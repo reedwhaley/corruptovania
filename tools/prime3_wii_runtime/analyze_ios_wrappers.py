@@ -60,6 +60,17 @@ class RetailWrapperSpec:
 
 PRIME3_NTSC_RETAIL_WRAPPER_SPECS = (
     RetailWrapperSpec(
+        "close_async",
+        0x805048A0,
+        0x80504960,
+        2,
+        "s32 close_async(s32 fd, completion_fn completion, void *userdata)",
+        ("r3=fd", "r4=completion", "r5=userdata"),
+        (),
+        (("fd", 0x08, "r3"), ("completion", 0x20, "r4"), ("completion_userdata", 0x24, "r5")),
+        "cad7a4b8950241515a9399d51c69d5680bba41fe060c37f5b6953effcdcb1288",
+    ),
+    RetailWrapperSpec(
         "read_async",
         0x80504A08,
         0x80504B08,

@@ -457,6 +457,15 @@ def _prime3_ntsc_retail_ios_wrapper_metadata() -> Prime3RetailIosWrapperMetadata
         open_address=PRIME3_NTSC_IOS_OPEN_ADDRESS,
         close_async_address=PRIME3_NTSC_IOS_CLOSE_ASYNC_ADDRESS,
         close_address=PRIME3_NTSC_IOS_CLOSE_ADDRESS,
+        async_close_address=PRIME3_NTSC_IOS_CLOSE_ASYNC_ADDRESS,
+        async_close_extent="0x805048A0..0x80504960",
+        async_close_argument_count=3,
+        async_close_stack_argument_count=0,
+        async_close_operation=2,
+        async_close_fingerprint_sha256="cad7a4b8950241515a9399d51c69d5680bba41fe060c37f5b6953effcdcb1288",
+        async_close_prototype="s32 close_async(s32 fd, completion_fn completion, void *userdata)",
+        async_close_register_arguments=("r3=fd", "r4=completion", "r5=userdata"),
+        async_close_confidence="verified",
         read_async_address=PRIME3_NTSC_IOS_READ_ASYNC_ADDRESS,
         read_sync_address=PRIME3_NTSC_IOS_READ_SYNC_ADDRESS,
         write_async_address=PRIME3_NTSC_IOS_WRITE_ASYNC_ADDRESS,
@@ -552,6 +561,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "dry_run",
         "retail_wrapper_open_kd_once",
         "retail_wrapper_nwc24_startup_once",
+        "retail_wrapper_nwc24_close_kd_once",
         "retail_wrapper_close_kd_once",
         "retail_wrapper_open_ip_once",
         "retail_wrapper_startup_once",
@@ -915,6 +925,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         transport_metadata = None
         if enable_ios_udp_diagnostic:
             nwc24_ioctl_once = ios_udp_mode == "retail_wrapper_nwc24_startup_once"
+            nwc24_close_once = ios_udp_mode == "retail_wrapper_nwc24_close_kd_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
@@ -924,8 +935,12 @@ def build_prime3_runtime_payload(  # noqa: C901
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
                 socket_close_on_success=False,
-                terminal_phase_value=0xFE if nwc24_ioctl_once else 0x11,
-                terminal_phase_name="NWC24_COMPLETE" if nwc24_ioctl_once else "BOUND_NO_RECV",
+                terminal_phase_value=0xFE if nwc24_ioctl_once or nwc24_close_once else 0x11,
+                terminal_phase_name=(
+                    "NWC24_COMPLETE"
+                    if nwc24_ioctl_once
+                    else "KD_CLOSED" if nwc24_close_once else "BOUND_NO_RECV"
+                ),
                 phase_address=relocated_runtime.transport_phase_address,
                 phase_size=4,
                 last_error_address=relocated_runtime.transport_last_error_address,
@@ -1209,6 +1224,7 @@ def _build_relocated_runtime(
                 "dry_run": "1",
                 "retail_wrapper_open_kd_once": "2",
                 "retail_wrapper_nwc24_startup_once": "3",
+                "retail_wrapper_nwc24_close_kd_once": "11",
                 "retail_wrapper_close_kd_once": "4",
                 "retail_wrapper_open_ip_once": "5",
                 "retail_wrapper_startup_once": "6",
@@ -2154,7 +2170,7 @@ def main() -> None:
     elif args.ios_nwc24_once or args.ios_nwc24_via_retail_ioctl_once:
         ios_udp_mode = "retail_wrapper_nwc24_startup_once"
     elif args.ios_close_kd_once:
-        ios_udp_mode = "retail_wrapper_close_kd_once"
+        ios_udp_mode = "retail_wrapper_nwc24_close_kd_once"
     elif args.ios_open_ip_once:
         ios_udp_mode = "retail_wrapper_open_ip_once"
     elif args.ios_startup_once:

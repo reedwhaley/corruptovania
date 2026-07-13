@@ -370,6 +370,7 @@ class Prime3RuntimeTransportMetadata:
         if not self.nwc24_startup_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
         is_nwc24_ioctl_once = self.mode == "retail_wrapper_nwc24_startup_once"
+        is_nwc24_close_once = self.mode == "retail_wrapper_nwc24_close_kd_once"
         if is_nwc24_ioctl_once:
             if self.kd_close_enabled:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must not enable kd close.")
@@ -377,6 +378,10 @@ class Prime3RuntimeTransportMetadata:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must use the terminal diagnostic phase.")
         elif not self.kd_close_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable kd close.")
+        if is_nwc24_close_once and (
+            self.terminal_phase_value != 0xFE or self.terminal_phase_name != "KD_CLOSED"
+        ):
+            raise Prime3DolPatchError("NWC24 close-once metadata must use the KD_CLOSED terminal phase.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -860,6 +865,15 @@ class Prime3RetailIosWrapperMetadata:
     open_address: int
     close_async_address: int
     close_address: int
+    async_close_address: int
+    async_close_extent: str
+    async_close_argument_count: int
+    async_close_stack_argument_count: int
+    async_close_operation: int
+    async_close_fingerprint_sha256: str
+    async_close_prototype: str
+    async_close_register_arguments: tuple[str, ...]
+    async_close_confidence: str
     read_async_address: int
     read_sync_address: int
     write_async_address: int
@@ -889,7 +903,7 @@ class Prime3RetailIosWrapperMetadata:
     evidence_source: str
     confidence: str
 
-    def validate(self) -> None:
+    def validate(self) -> None:  # noqa: C901
         if len(self.supported_dol_sha256) != 64:
             raise Prime3DolPatchError("Retail IOS wrapper metadata requires a SHA-256 DOL fingerprint.")
         addresses = (
@@ -897,6 +911,7 @@ class Prime3RetailIosWrapperMetadata:
             self.open_address,
             self.close_async_address,
             self.close_address,
+            self.async_close_address,
             self.read_async_address,
             self.read_sync_address,
             self.write_async_address,
@@ -920,6 +935,20 @@ class Prime3RetailIosWrapperMetadata:
             raise Prime3DolPatchError("Retail IOS wrapper callback signature metadata is unexpected.")
         if tuple(self.preserved_registers) != ("r2", "r13"):
             raise Prime3DolPatchError("Retail IOS wrapper metadata must document preserved game SDA registers.")
+        if self.async_close_address != 0x805048A0 or self.async_close_address != self.close_async_address:
+            raise Prime3DolPatchError("Retail IOS metadata must identify the verified async close wrapper.")
+        if self.async_close_extent != "0x805048A0..0x80504960":
+            raise Prime3DolPatchError("Retail IOS async close metadata has an unexpected extent.")
+        if self.async_close_argument_count != 3 or self.async_close_stack_argument_count != 0:
+            raise Prime3DolPatchError("Retail IOS async close metadata has an unexpected ABI arity.")
+        if self.async_close_operation != 2 or self.async_close_confidence != "verified":
+            raise Prime3DolPatchError("Retail IOS async close metadata is not verified for operation 2.")
+        if self.async_close_fingerprint_sha256 != "cad7a4b8950241515a9399d51c69d5680bba41fe060c37f5b6953effcdcb1288":
+            raise Prime3DolPatchError("Retail IOS async close metadata has an unexpected function fingerprint.")
+        if self.async_close_prototype != "s32 close_async(s32 fd, completion_fn completion, void *userdata)":
+            raise Prime3DolPatchError("Retail IOS async close metadata has an unexpected prototype.")
+        if self.async_close_register_arguments != ("r3=fd", "r4=completion", "r5=userdata"):
+            raise Prime3DolPatchError("Retail IOS async close metadata has unexpected register argument placement.")
         expected_ioctl_async_fingerprint = (
             "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
         )
@@ -1002,6 +1031,15 @@ class Prime3RetailIosWrapperMetadata:
             open_address=_json_int(data, "open_address"),
             close_async_address=_json_int(data, "close_async_address"),
             close_address=_json_int(data, "close_address"),
+            async_close_address=_json_int(data, "async_close_address"),
+            async_close_extent=_json_string(data, "async_close_extent"),
+            async_close_argument_count=_json_int(data, "async_close_argument_count"),
+            async_close_stack_argument_count=_json_int(data, "async_close_stack_argument_count"),
+            async_close_operation=_json_int(data, "async_close_operation"),
+            async_close_fingerprint_sha256=_json_string(data, "async_close_fingerprint_sha256"),
+            async_close_prototype=_json_string(data, "async_close_prototype"),
+            async_close_register_arguments=tuple(_json_string_list(data, "async_close_register_arguments")),
+            async_close_confidence=_json_string(data, "async_close_confidence"),
             read_async_address=_json_int(data, "read_async_address"),
             read_sync_address=_json_int(data, "read_sync_address"),
             write_async_address=_json_int(data, "write_async_address"),

@@ -943,6 +943,25 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 return "waiting_nwc24_callback"
             return "inside_nwc24_call"
         if phase == 0xFE:
+            if transport.get("mode") == "retail_wrapper_nwc24_close_kd_once":
+                if (
+                    _object_as_int(transport["open_kd_callback_count"]) == 1
+                    and _object_as_int(transport["nwc24_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_submit_result"]) == 0
+                    and _object_as_int(transport["kd_close_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_callback_result"]) == 0
+                    and _object_as_int(transport["kd_close_submit_generation"])
+                    == _object_as_int(transport["kd_close_callback_generation"])
+                    and _object_as_int(transport["kd_fd"]) == -1
+                    and _object_as_int(transport["kd_closed"]) != 0
+                    and _object_as_int(transport["pending_operation"]) == 0
+                    and _object_as_int(transport["open_ip_submit_count"]) == 0
+                    and _object_as_int(transport["receive_submit_count"]) == 0
+                    and _object_as_int(transport["send_submit_count"]) == 0
+                    and recurring_execution_continuing
+                ):
+                    return "kd_closed"
+                return "close_kd_callback_failed"
             if (
                 _object_as_int(transport["open_kd_callback_count"]) == 1
                 and _object_as_int(transport["kd_fd"]) >= 0

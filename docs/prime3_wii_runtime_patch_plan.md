@@ -323,6 +323,36 @@ What is not verified:
 - that a retail DOL patched with an appended high-memory probe section actually maps that section into live emulated memory
 - that the current `0x8000633c` hook candidate reaches that payload in the retail title
 
+## Static probe delivery-chain result
+
+The unhooked probe-section image path is now verified structurally.
+
+Observed temporary-image result:
+
+- original retail `main.dol` SHA-256: `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
+- intended probe `main.dol` SHA-256: `bc3aec3bf0ea27cc6fbd7d7fb07dc15c06480da63a8f523df706197cfe53a2b2`
+- re-extracted final `main.dol` SHA-256: `bc3aec3bf0ea27cc6fbd7d7fb07dc15c06480da63a8f523df706197cfe53a2b2`
+- rebuilt probe ISO SHA-256: `6b726f78cc072d21b213c9660d7368b5e4b630f6315acf14c0e5872a87d29621`
+- probe payload SHA-256: `aad91d2d09ecb59f1f86dba8c6b806640e687ce57d53c96a336708e969d821c2`
+
+Verified appended section metadata:
+
+- text slot: `text2`
+- virtual address: `0x806843c0`
+- file offset: `0x005c46e0`
+- payload size: `148`
+- entry address: `0x806843c0`
+- canary address: `0x80684440`
+- counter address: `0x80684450`
+
+Static pass result:
+
+- the intended probe DOL, the temporary-root DOL, and the re-extracted final DOL were byte-identical
+- the only original-to-probe DOL changes were the new text-section header entry and the appended payload bytes
+- no hook instruction or arena-reservation patch was installed in this image
+
+Therefore the image-build and ISO-delivery path is now proven for an unhooked probe section. The remaining uncertainty is in live memory, not in DOL or ISO construction.
+
 ## Verified hook status
 
 No Corruption hook metadata was added to production code.
@@ -337,14 +367,38 @@ The minimum proof bar is still unmet because there is no candidate that simultan
 
 ## Harmless executable validation result
 
-Temporary source-built probe DOL copies were generated outside the repository for analysis, but no runtime execution claim is made.
+Temporary source-built probe DOL copies and rebuilt ISO images were generated outside the repository for analysis, but no runtime execution claim is made.
 
 Observed result:
 
-- the temporary DOL diff shape matched the expected section-table growth, appended payload bytes, and optional single hook change
-- the temporary Dolphin boot did not show the appended payload bytes or patched startup words in live emulated memory at the expected addresses
+- the static delivery chain now passes byte-identically from intended probe DOL through rebuilt ISO and re-extracted final DOL
+- a Dolphin launch using the exact rebuilt ISO path preserved the original startup word at `0x8000633c`
+- the post-boot payload read at `0x806843c0` did not match the appended probe payload bytes
+- that entire `148`-byte payload range read back as zeroes in the observed post-boot session
+- the post-boot canary therefore did not match and the counter remained `0`
 
-Therefore the current probe workflow is structural only, not a verified runtime execution path.
+Therefore the current probe workflow is proven through ISO delivery but still not a verified runtime execution path.
+
+## Live probe observation result
+
+What is verified from the exact rebuilt probe ISO:
+
+- Dolphin was launched with the exact absolute probe ISO path
+- the running Dolphin process command line still referenced that exact path
+- the live game ID at `0x80000000` was `RM3E01`
+- the observed startup word at `0x8000633c` remained the original retail `0x38000000`
+- `0x800000f4` pointed to `0x817fc3a0`
+- `*(0x817fc3a8)` was `0`
+- at the observed post-boot checkpoint:
+  - `0x80000034 = 0x817fe3a0`
+  - `0x80003110 = 0x817fe3a0`
+
+What is not verified:
+
+- payload presence before the entry instruction at `0x80006320`
+- whether the loader copied the appended section before entry and a later writer zeroed it
+- the writer PC that produced the zeroed payload range
+- the writer PCs for `0x80000034` and `0x80003110`
 
 ## CI and packaging implications
 
@@ -364,9 +418,9 @@ What is still missing from repository-wide support:
 
 ## Exact remaining blockers before a harmless executable hook test
 
-1. Identify the exact Corruption arena or heap boundary mechanism that actually executes on the retail Wii NTSC boot path.
-2. Prove that a lowered boundary survives startup and remains excluded from later heap and REL allocation.
-3. Upgrade at least one hook candidate from low-confidence evidence to version-specific verified metadata with understood calling context.
-4. Only then combine the existing DOL patch primitives with the source-built payload artifact in a temporary, unreferenced, harmless DOL validation.
+1. Halt the exact rebuilt probe ISO before the entry instruction at `0x80006320` and verify whether the appended payload bytes are present there.
+2. If the payload is present at entry, capture the earliest checkpoint where that range becomes zero and record the writer PC.
+3. Capture the actual writer PCs for `0x80000034` and `0x80003110` on the active retail boot path.
+4. Only after those live-writer facts are known should arena-reservation candidates or a harmless hook be revisited.
 
 Until those four steps are complete, the project should stop at source-built artifact generation and validation rather than pretending runtime execution is ready.

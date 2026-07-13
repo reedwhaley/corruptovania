@@ -4,6 +4,20 @@
 
 This milestone establishes a source-backed Wii PowerPC payload build path and a validated payload artifact contract. It does not enable runtime networking, install a production hook, or claim that any Corruption runtime memory reservation is safe.
 
+Transport recon update:
+
+- Skyward Sword's console UDP implementation has now been traced to a direct-IOS transport layer rather than libogc `net_*` wrappers
+- the detailed provenance report lives in [`docs/prime3_wii_skyward_sword_transport_recon.md`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/docs/prime3_wii_skyward_sword_transport_recon.md:1)
+- that source evidence removes the earlier "unknown transport plumbing" blocker, but it does not make the Skyward Sword runtime code a safe drop-in for Prime 3
+- the active Skyward Sword transport still relies on `IOS_HEAP` allocation, alarms, and an unbounded receive loop, which conflicts with the current Prime 3 requirement of fixed storage plus one bounded network step per recurring poll
+
+Selected transport direction after recon:
+
+- keep the existing CP3W host protocol and executor
+- reuse Skyward Sword only as MIT-licensed IOS transport provenance and structure reference
+- do not import Skyward Sword's gameplay protocol, write-memory behavior, or loop structure
+- implement any future Prime 3 transport as a project-owned direct-IOS state machine on port `43674`
+
 Implemented code now covers:
 
 - executable DOL section insertion and guarded patch primitives in [`randovania/games/prime3/exporter/dol_patcher.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/dol_patcher.py:1)
@@ -63,6 +77,14 @@ The current source-backed runtime payload project is:
 - [`tools/prime3_wii_runtime/payload.ld`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_wii_runtime/payload.ld:1)
 - [`tools/prime3_wii_runtime/build_payload.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_wii_runtime/build_payload.py:1)
 - [`tools/prime3_wii_runtime/README.md`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_wii_runtime/README.md:1)
+
+Additional transport evidence now documented:
+
+- device paths `/dev/net/kd/request` and `/dev/net/ip/top`
+- request command `6` for `IOCTL_NWC24_STARTUP`
+- socket commands `31`, `16`, `15`, `2`, `12`, `13`, and `3` for startup, host IP, socket create, bind, receive, send, and close
+- aligned `sockaddr`-compatible request layout and big-endian peer encoding
+- direct `IOS_OpenAsync`, `IOS_IoctlAsync`, and `IOS_IoctlvAsync` usage without libogc `net_*`
 
 The minimal payload:
 

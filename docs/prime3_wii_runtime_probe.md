@@ -13,6 +13,13 @@ This workflow verifies only the developer-only probe delivery chain:
 
 It does not install a hook, reserve arena space, or claim any runtime-safe payload address.
 
+Networking note:
+
+- the current probe workflow still validates relocation and recurring-poll delivery only
+- no Prime 3 direct-IOS UDP diagnostic has been integrated into the runtime yet
+- Skyward Sword transport provenance is now documented separately in [`docs/prime3_wii_skyward_sword_transport_recon.md`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/docs/prime3_wii_skyward_sword_transport_recon.md:1)
+- any future network probe must remain developer-only, fixed-storage, and bounded to one receive or send step per recurring poll
+
 ## Expected Probe Values
 
 For the current developer probe build:

@@ -10,7 +10,14 @@ Current scope:
 - `build_probe_dol.py` and `verify_probe_delivery.py` support static DOL patch/verify runs for the generated payload artifacts
 - `observe_probe.py` remains read-only and reports live payload/bootstrap state from Dolphin memory
 - recurring poll hook installation is supported for the validated Wii NTSC retail DOL accessor at `0x800BB71C`
-- no networking, IOS, or normal exporter integration is included
+- no Prime 3 Wii networking, direct IOS transport, or normal exporter integration is included yet
+
+Transport recon status:
+
+- Skyward Sword source evidence now confirms that its Wii UDP support is a custom direct-IOS transport, not a libogc `net_*` call path
+- the relevant provenance is documented in `docs/prime3_wii_skyward_sword_transport_recon.md`
+- that transport still uses dynamic IOS-heap allocation, alarms, and an unbounded receive loop, so it is not a safe drop-in for the current Prime 3 bounded-poll runtime
+- any Prime 3 networking milestone must keep a project-owned, fixed-storage, developer-only transport design on top of the proven IOS command set
 
 ## Supported local toolchain
 

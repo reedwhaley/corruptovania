@@ -156,6 +156,19 @@ class BranchPatch:
 
 
 @dataclasses.dataclass(frozen=True)
+class DecodedBranchInstruction:
+    instruction_address: int
+    instruction_word: int
+    target_address: int
+    absolute: bool
+    link: bool
+
+    @property
+    def continuation_address(self) -> int:
+        return checked_add_u32(self.instruction_address, 4, "branch continuation address")
+
+
+@dataclasses.dataclass(frozen=True)
 class TrampolinePlan:
     hook_patch: BranchPatch
     trampoline_address: int
@@ -614,6 +627,26 @@ def encode_ppc_unconditional_branch(
         li_field = displacement & 0x03FFFFFC
 
     return (_PPC_BRANCH_OPCODE << 26) | li_field | (int(absolute) << 1) | int(link)
+
+
+def decode_ppc_unconditional_branch(instruction_word: int, instruction_address: int) -> DecodedBranchInstruction | None:
+    opcode = instruction_word >> 26
+    if opcode != _PPC_BRANCH_OPCODE:
+        return None
+
+    li_field = instruction_word & 0x03FFFFFC
+    if li_field & 0x02000000:
+        li_field -= 0x04000000
+    absolute = bool(instruction_word & 0x2)
+    link = bool(instruction_word & 0x1)
+    target_address = li_field if absolute else instruction_address + li_field
+    return DecodedBranchInstruction(
+        instruction_address=instruction_address,
+        instruction_word=instruction_word,
+        target_address=target_address,
+        absolute=absolute,
+        link=link,
+    )
 
 
 def patch_guarded_instruction_word(

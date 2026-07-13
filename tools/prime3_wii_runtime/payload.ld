@@ -3,7 +3,7 @@ ENTRY(payload_entry)
 
 SECTIONS
 {
-    . = 0;
+    . = DEFINED(__payload_link_address) ? __payload_link_address : 0;
 
     .text : ALIGN(4)
     {

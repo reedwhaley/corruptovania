@@ -205,11 +205,17 @@ Evidence quality today:
   - `0x80003110`, which Wii low-memory maps document as MEM1 arena end
 - later OS init code at `0x804de1d8..0x804de278` reads `0x80003110`, `0x80003124`, and `0x80003128` and copies those values into internal allocator globals
 - no later direct store to `0x80000034` or `0x80003110` was found in the retail DOL text sections
+- a live Dolphin observation on a temporary hooked ISO found:
+  - `0x800000f4 = 0x817fc3a0`
+  - the word at `0x817fc3a8` was `0`
+  - therefore the observed control flow takes the `beq 0x80006434` path and skips the later `0x80006410..0x8000642c` store sequence entirely
+  - `0x80000034` read as `0x817fec60`
+  - `0x80003110` read as `0x81800000`
 
 What this proves:
 
 - adding a DOL section above current BSS does not by itself reserve that range from later MEM1 allocation
-- if a static MEM1 payload region is ever reserved structurally, the boundary class to change is the MEM1 high boundary represented by `0x80000034` and `0x80003110`
+- the presence of the `0x80006410..0x8000642c` writes in the retail DOL is not enough to treat them as the active retail MEM1 reservation path
 
 What this still does not prove:
 
@@ -240,12 +246,14 @@ Because those survival and ownership questions are still open, no production all
 
 ### 3. Reserve memory by reducing an arena boundary
 
-- current status: best-supported candidate class, but not verified for production
-- exact candidate boundary:
-  - startup code at `0x80006410..0x8000642c` stores the aligned boundary value to `0x80000034` and `0x80003110`
-- remaining blockers:
-  - no proof yet that lowering that boundary by payload size leaves Corruption stable through later heap, REL, and gameplay startup
-  - no proof yet for the smallest safe reserved span or whether it must also be mirrored into later internal allocator state deliberately
+- current status: rejected for the observed retail boot path
+- reason:
+  - the observed boot-info structure leaves `*(0x800000f4 + 0x08) == 0`
+  - the retail startup path therefore branches to `0x80006434` and skips the suspected `ArenaHi` store sequence
+- consequence:
+  - patching the `addi r15, r6, 4` source instruction does not establish a verified live reservation path for this title
+- remaining blocker:
+  - a version-specific MEM1 reservation point that actually executes on the retail boot path still has not been identified
 
 ### 4. Runtime allocation from a known executable-capable arena
 
@@ -296,6 +304,25 @@ Candidate:
 
 An earlier startup address, `0x80006320`, is also exact and easy to identify, but its original instruction is `0x4800016d` (`bl 0x8000648c`), which is a control-flow instruction and therefore rejected by the current conservative single-instruction trampoline builder.
 
+## Probe payload status
+
+The source-backed payload project now supports a developer-only probe build mode.
+
+Verified probe-artifact properties:
+
+- deterministic `payload.bin`, `payload.elf`, and `payload.json`
+- optional manifest metadata for:
+  - canary start offset
+  - canary size
+  - execution-counter offset
+  - execution-counter size
+- an explicit assembly wrapper that preserves startup state, reproduces the displaced `li r0, 0`, and returns
+
+What is not verified:
+
+- that a retail DOL patched with an appended high-memory probe section actually maps that section into live emulated memory
+- that the current `0x8000633c` hook candidate reaches that payload in the retail title
+
 ## Verified hook status
 
 No Corruption hook metadata was added to production code.
@@ -310,15 +337,14 @@ The minimum proof bar is still unmet because there is no candidate that simultan
 
 ## Harmless executable validation result
 
-This milestone did not create a temporary source-built payload DOL copy.
+Temporary source-built probe DOL copies were generated outside the repository for analysis, but no runtime execution claim is made.
 
-Reason:
+Observed result:
 
-- the source-built return-only payload is now valid as an artifact
-- the DOL patcher can insert it structurally
-- but no safe reserved runtime range has been verified yet
+- the temporary DOL diff shape matched the expected section-table growth, appended payload bytes, and optional single hook change
+- the temporary Dolphin boot did not show the appended payload bytes or patched startup words in live emulated memory at the expected addresses
 
-Without a proven reservation, even an unreferenced source-built payload section would encourage the wrong conclusion about runtime safety.
+Therefore the current probe workflow is structural only, not a verified runtime execution path.
 
 ## CI and packaging implications
 
@@ -338,8 +364,8 @@ What is still missing from repository-wide support:
 
 ## Exact remaining blockers before a harmless executable hook test
 
-1. Identify the exact Corruption arena or heap boundary mechanism that can reserve a payload range explicitly.
-2. Prove that a lowered `0x80000034` / `0x80003110` boundary survives startup and remains excluded from later heap and REL allocation.
+1. Identify the exact Corruption arena or heap boundary mechanism that actually executes on the retail Wii NTSC boot path.
+2. Prove that a lowered boundary survives startup and remains excluded from later heap and REL allocation.
 3. Upgrade at least one hook candidate from low-confidence evidence to version-specific verified metadata with understood calling context.
 4. Only then combine the existing DOL patch primitives with the source-built payload artifact in a temporary, unreferenced, harmless DOL validation.
 

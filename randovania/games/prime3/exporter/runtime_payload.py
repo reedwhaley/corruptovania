@@ -39,6 +39,10 @@ class Prime3RuntimePayloadManifest:
     protocol_artifact_version: int
     unresolved_relocation_count: int
     dynamic_section_count: int
+    canary_start_offset: int | None = None
+    canary_size: int | None = None
+    counter_offset: int | None = None
+    counter_size: int | None = None
 
     def validate(self) -> None:
         if self.schema_version != PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION:
@@ -76,6 +80,18 @@ class Prime3RuntimePayloadManifest:
             raise Prime3DolPatchError(
                 f"Payload protocol version {self.protocol_artifact_version!r} does not match {PROTOCOL_VERSION!r}."
             )
+        _validate_optional_range(
+            payload_size=self.payload_size,
+            field_name="canary_start_offset",
+            start=self.canary_start_offset,
+            size=self.canary_size,
+        )
+        _validate_optional_range(
+            payload_size=self.payload_size,
+            field_name="counter_offset",
+            start=self.counter_offset,
+            size=self.counter_size,
+        )
         Prime3PayloadArtifact.create(
             payload_bytes=b"\x00" * self.payload_size,
             load_address=0,
@@ -88,7 +104,7 @@ class Prime3RuntimePayloadManifest:
         )
 
     def to_json_dict(self) -> dict[str, object]:
-        return {
+        result = {
             "compiler_identity": self.compiler_identity,
             "compiler_version": self.compiler_version,
             "dynamic_section_count": self.dynamic_section_count,
@@ -107,6 +123,13 @@ class Prime3RuntimePayloadManifest:
             "target_endianness": self.target_endianness,
             "unresolved_relocation_count": self.unresolved_relocation_count,
         }
+        if self.canary_start_offset is not None:
+            result["canary_start_offset"] = self.canary_start_offset
+            result["canary_size"] = self.canary_size
+        if self.counter_offset is not None:
+            result["counter_offset"] = self.counter_offset
+            result["counter_size"] = self.counter_size
+        return result
 
     def to_json_text(self) -> str:
         return json.dumps(self.to_json_dict(), indent=2, sort_keys=True) + "\n"
@@ -131,6 +154,10 @@ class Prime3RuntimePayloadManifest:
             "target_architecture",
             "target_endianness",
             "unresolved_relocation_count",
+            "canary_start_offset",
+            "canary_size",
+            "counter_offset",
+            "counter_size",
         }
         unknown_keys = set(data) - required_keys
         if unknown_keys:
@@ -154,6 +181,10 @@ class Prime3RuntimePayloadManifest:
             protocol_artifact_version=_json_int(data, "protocol_artifact_version"),
             unresolved_relocation_count=_json_int(data, "unresolved_relocation_count"),
             dynamic_section_count=_json_int(data, "dynamic_section_count"),
+            canary_start_offset=_json_optional_int(data, "canary_start_offset"),
+            canary_size=_json_optional_int(data, "canary_size"),
+            counter_offset=_json_optional_int(data, "counter_offset"),
+            counter_size=_json_optional_int(data, "counter_size"),
         )
         manifest.validate()
         return manifest
@@ -223,3 +254,26 @@ def _json_string(data: dict[str, object], key: str) -> str:
     if not isinstance(value, str):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a string.")
     return value
+
+
+def _json_optional_int(data: dict[str, object], key: str) -> int | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an integer when present.")
+    return value
+
+
+def _validate_optional_range(*, payload_size: int, field_name: str, start: int | None, size: int | None) -> None:
+    if start is None and size is None:
+        return
+    if start is None or size is None:
+        raise Prime3DolPatchError(f"Payload manifest must provide both {field_name} and its size together.")
+    if size <= 0:
+        raise Prime3DolPatchError(f"Payload manifest field {field_name!r} size must be positive, got {size}.")
+    if start < 0 or start + size > payload_size:
+        raise Prime3DolPatchError(
+            f"Payload manifest field {field_name!r} range {start}..{start + size} "
+            f"is outside payload size {payload_size}."
+        )

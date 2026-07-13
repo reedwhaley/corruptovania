@@ -34,15 +34,19 @@ SOURCE_FILES = (
     Path("payload.ld"),
     Path("build_payload.py"),
 )
+PROBE_CANARY_START_SYMBOL = "payload_canary_start"
+PROBE_CANARY_END_SYMBOL = "payload_canary_end"
+PROBE_COUNTER_SYMBOL = "payload_execution_counter"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--probe", action="store_true")
     return parser.parse_args()
 
 
-def build_prime3_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManifest:
+def build_prime3_runtime_payload(output_dir: Path, *, probe: bool = False) -> Prime3RuntimePayloadManifest:
     toolchain = resolve_prime3_runtime_toolchain()
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -56,6 +60,7 @@ def build_prime3_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManife
         [
             os.fspath(toolchain.compiler_path),
             *toolchain.required_machine_flags,
+            *(["-DPRIME3_RUNTIME_PROBE_MODE=1"] if probe else []),
             "-x",
             "assembler-with-cpp",
             "-c",
@@ -92,14 +97,23 @@ def build_prime3_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManife
     payload_bytes = binary_path.read_bytes()
     payload_sha256 = hashlib.sha256(payload_bytes).hexdigest()
     readelf_header = _run([os.fspath(toolchain.readelf_path), "-h", os.fspath(elf_path)])
-    readelf_symbols = _run([os.fspath(toolchain.readelf_path), "-s", os.fspath(elf_path)])
+    readelf_symbols = _run([os.fspath(toolchain.readelf_path), "-s", "--wide", os.fspath(elf_path)])
     readelf_relocations = _run([os.fspath(toolchain.readelf_path), "-r", os.fspath(elf_path)])
     readelf_dynamic = _run([os.fspath(toolchain.readelf_path), "-d", os.fspath(elf_path)], allow_failure=True)
 
     entry_offset = _extract_entry_offset(readelf_symbols, PRIME3_RUNTIME_ENTRY_SYMBOL)
+    canary_start_offset = _extract_optional_symbol_offset(readelf_symbols, PROBE_CANARY_START_SYMBOL)
+    canary_end_offset = _extract_optional_symbol_offset(readelf_symbols, PROBE_CANARY_END_SYMBOL)
+    counter_offset = _extract_optional_symbol_offset(readelf_symbols, PROBE_COUNTER_SYMBOL)
     unresolved_relocation_count = _count_relocations(readelf_relocations)
     dynamic_section_count = _count_dynamic_sections(readelf_dynamic)
     _validate_readelf_header(readelf_header)
+
+    canary_size = None
+    if canary_start_offset is not None or canary_end_offset is not None:
+        if canary_start_offset is None or canary_end_offset is None or canary_end_offset <= canary_start_offset:
+            raise RuntimeError("Probe payload canary symbols are malformed.")
+        canary_size = canary_end_offset - canary_start_offset
 
     manifest = Prime3RuntimePayloadManifest(
         schema_version=PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION,
@@ -119,6 +133,10 @@ def build_prime3_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManife
         protocol_artifact_version=PROTOCOL_VERSION,
         unresolved_relocation_count=unresolved_relocation_count,
         dynamic_section_count=dynamic_section_count,
+        canary_start_offset=canary_start_offset,
+        canary_size=canary_size,
+        counter_offset=counter_offset,
+        counter_size=4 if counter_offset is not None else None,
     )
     manifest.validate()
     if manifest.protocol_artifact_version != PROTOCOL_VERSION:
@@ -158,6 +176,14 @@ def _extract_entry_offset(symbol_output: str, entry_symbol: str) -> int:
     raise RuntimeError(f"Unable to locate entry symbol {entry_symbol!r} in readelf symbol output.")
 
 
+def _extract_optional_symbol_offset(symbol_output: str, symbol_name: str) -> int | None:
+    for line in symbol_output.splitlines():
+        if line.strip().endswith(f" {symbol_name}"):
+            value = line.split()[1]
+            return int(value, 16)
+    return None
+
+
 def _count_relocations(relocation_output: str) -> int:
     count = 0
     for line in relocation_output.splitlines():
@@ -184,7 +210,7 @@ def _count_dynamic_sections(dynamic_output: str) -> int:
 
 def main() -> None:
     args = parse_args()
-    build_prime3_runtime_payload(Path(args.output_dir))
+    build_prime3_runtime_payload(Path(args.output_dir), probe=args.probe)
 
 
 if __name__ == "__main__":

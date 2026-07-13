@@ -111,3 +111,28 @@ def test_compute_source_digest_changes_with_source(tmp_path: Path) -> None:
     tmp_path.joinpath("b.txt").write_text("gamma", encoding="utf-8")
     second = runtime_payload.compute_source_digest(tmp_path, ("a.txt", "b.txt"))
     assert first != second
+
+
+def test_runtime_payload_manifest_accepts_optional_probe_metadata() -> None:
+    manifest = _make_manifest(b"\x4e\x80\x00\x20" * 16)
+    raw = manifest.to_json_dict()
+    raw["canary_start_offset"] = 0x10
+    raw["canary_size"] = 0x10
+    raw["counter_offset"] = 0x20
+    raw["counter_size"] = 4
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.canary_start_offset == 0x10
+    assert parsed.canary_size == 0x10
+    assert parsed.counter_offset == 0x20
+    assert parsed.counter_size == 4
+
+
+def test_runtime_payload_manifest_rejects_partial_probe_metadata() -> None:
+    manifest = _make_manifest(b"\x4e\x80\x00\x20" * 16)
+    raw = manifest.to_json_dict()
+    raw["canary_start_offset"] = 0x10
+
+    with pytest.raises(Prime3DolPatchError, match="provide both canary_start_offset"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)

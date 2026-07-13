@@ -66,6 +66,24 @@ def test_build_prime3_runtime_payload_reproducible(tmp_path: Path) -> None:
     assert first_manifest.payload_sha256 == second_manifest.payload_sha256
 
 
+def test_build_prime3_runtime_probe_payload_reproducible(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_probe_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    first_dir = tmp_path.joinpath("first-probe")
+    second_dir = tmp_path.joinpath("second-probe")
+    first_manifest = module.build_prime3_runtime_payload(first_dir, probe=True)
+    second_manifest = module.build_prime3_runtime_payload(second_dir, probe=True)
+
+    assert first_dir.joinpath("payload.bin").read_bytes() == second_dir.joinpath("payload.bin").read_bytes()
+    assert first_dir.joinpath("payload.elf").read_bytes() == second_dir.joinpath("payload.elf").read_bytes()
+    assert first_manifest.canary_start_offset is not None
+    assert first_manifest.canary_size == second_manifest.canary_size
+    assert first_manifest.counter_offset is not None
+    assert first_manifest.counter_size == 4
+
+
 def test_direct_invocation_by_relative_path_works_from_repo_root() -> None:
     if not _devkitppc_is_available():
         pytest.skip("devkitPPC is not available in this environment")

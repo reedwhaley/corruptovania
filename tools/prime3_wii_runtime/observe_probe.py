@@ -86,6 +86,22 @@ class ProbeCounterObservation(TypedDict):
     value: int
 
 
+class BootstrapDiagnosticObservation(TypedDict):
+    address: int
+    size: int
+    sha256: str
+    canary_matches_expected: bool
+    marker_value: int
+    marker_matches_expected: bool
+    counter_value: int
+    original_80000034: int
+    original_80003110: int
+    replacement_value: int
+    replacement_matches_expected: bool
+    status_value: int
+    status_matches_expected: bool
+
+
 class ProbeState(TypedDict):
     game_id: bytes
     startup_words: dict[str, StartupWordObservation]
@@ -97,6 +113,7 @@ class ProbeState(TypedDict):
     low_memory_words: dict[str, int]
     canary: ProbeCanaryObservation | None
     counter: ProbeCounterObservation | None
+    bootstrap_diagnostic: BootstrapDiagnosticObservation | None
     boot_info_plus_8: int | None
     invalid_boot_info_pointer: int | None
 
@@ -161,11 +178,20 @@ def observe_probe_memory(
         else False,
         "low_memory_words": first_read["low_memory_words"],
     }
+    if config.manifest.entry_bootstrap is not None:
+        result["bootstrap_staging_address"] = config.manifest.entry_bootstrap.staging_address
+        result["bootstrap_halt_loop_address"] = config.manifest.entry_bootstrap.halt_loop_address
+        result["reserved_boundary"] = config.manifest.entry_bootstrap.reserved_boundary
+        result["reserved_range_start"] = config.manifest.entry_bootstrap.reserved_range_start
+        result["reserved_range_end"] = config.manifest.entry_bootstrap.reserved_range_end
+        result["diagnostic_address"] = config.manifest.entry_bootstrap.diagnostic_address
 
     if first_read["canary"] is not None:
         result["canary"] = first_read["canary"]
     if first_read["counter"] is not None:
         result["counter"] = first_read["counter"]
+    if first_read["bootstrap_diagnostic"] is not None:
+        result["bootstrap_diagnostic"] = first_read["bootstrap_diagnostic"]
     if first_read["boot_info_plus_8"] is not None:
         result["boot_info_plus_8"] = first_read["boot_info_plus_8"]
     if first_read["invalid_boot_info_pointer"] is not None:
@@ -230,6 +256,50 @@ def _read_probe_state(
             "value": int.from_bytes(payload_bytes[start:end], "big"),
         }
 
+    bootstrap_diagnostic: BootstrapDiagnosticObservation | None = None
+    if config.manifest.entry_bootstrap is not None:
+        metadata = config.manifest.entry_bootstrap
+        diagnostic_bytes = _read_exact(
+            backend,
+            metadata.diagnostic_address,
+            metadata.diagnostic_block_size,
+            f"bootstrap diagnostic block 0x{metadata.diagnostic_address:08x}",
+        )
+        canary_start = metadata.canary_address - metadata.diagnostic_address
+        canary_end = canary_start + metadata.canary_size
+        canary_bytes = diagnostic_bytes[canary_start:canary_end]
+        marker_start = metadata.marker_address - metadata.diagnostic_address
+        counter_start = metadata.counter_address - metadata.diagnostic_address
+        original_34_start = metadata.original_80000034_address - metadata.diagnostic_address
+        original_3110_start = metadata.original_80003110_address - metadata.diagnostic_address
+        replacement_start = metadata.replacement_value_address - metadata.diagnostic_address
+        status_start = metadata.status_address - metadata.diagnostic_address
+        marker_value = int.from_bytes(diagnostic_bytes[marker_start : marker_start + 4], "big")
+        counter_value = int.from_bytes(
+            diagnostic_bytes[counter_start : counter_start + metadata.counter_size],
+            "big",
+        )
+        replacement_value = int.from_bytes(diagnostic_bytes[replacement_start : replacement_start + 4], "big")
+        status_value = int.from_bytes(diagnostic_bytes[status_start : status_start + 4], "big")
+        bootstrap_diagnostic = {
+            "address": metadata.diagnostic_address,
+            "size": metadata.diagnostic_block_size,
+            "sha256": hashlib.sha256(diagnostic_bytes).hexdigest(),
+            "canary_matches_expected": hashlib.sha256(canary_bytes).hexdigest() == metadata.canary_sha256,
+            "marker_value": marker_value,
+            "marker_matches_expected": marker_value == metadata.marker_value,
+            "counter_value": counter_value,
+            "original_80000034": int.from_bytes(diagnostic_bytes[original_34_start : original_34_start + 4], "big"),
+            "original_80003110": int.from_bytes(
+                diagnostic_bytes[original_3110_start : original_3110_start + 4],
+                "big",
+            ),
+            "replacement_value": replacement_value,
+            "replacement_matches_expected": replacement_value == metadata.replacement_value,
+            "status_value": status_value,
+            "status_matches_expected": status_value == metadata.status_value,
+        }
+
     boot_info_pointer = low_memory_words["0x800000F4"]
     boot_info_plus_8 = None
     invalid_boot_info_pointer = None
@@ -253,6 +323,7 @@ def _read_probe_state(
         "low_memory_words": low_memory_words,
         "canary": canary,
         "counter": counter,
+        "bootstrap_diagnostic": bootstrap_diagnostic,
         "boot_info_plus_8": boot_info_plus_8,
         "invalid_boot_info_pointer": invalid_boot_info_pointer,
     }

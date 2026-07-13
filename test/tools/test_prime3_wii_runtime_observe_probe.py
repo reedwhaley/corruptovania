@@ -81,6 +81,40 @@ def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
     )
 
 
+def _bootstrap_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
+    raw = _manifest(payload_bytes).to_json_dict()
+    raw["payload_mode"] = "entry_bootstrap_halt"
+    raw["entry_bootstrap"] = {
+        "mode": "entry_bootstrap_halt",
+        "staging_address": 0x806843C0,
+        "staging_save_area_offset": 0x20,
+        "staging_save_area_size": 0x10,
+        "halt_loop_address": 0x806843D8,
+        "reserved_boundary": 0x817E0000,
+        "reserved_range_start": 0x817E0000,
+        "reserved_range_end": 0x817FE3A0,
+        "diagnostic_address": 0x817E0100,
+        "diagnostic_block_size": 0x40,
+        "canary_address": 0x817E0100,
+        "canary_size": 0x10,
+        "canary_sha256": __import__("hashlib").sha256(b"P3BOOTSTRAPCANRY").hexdigest(),
+        "marker_address": 0x817E0114,
+        "marker_value": 0x50334254,
+        "counter_address": 0x817E0118,
+        "counter_size": 4,
+        "original_80000034_address": 0x817E011C,
+        "original_80003110_address": 0x817E0120,
+        "replacement_value_address": 0x817E0124,
+        "replacement_value": 0x817E0000,
+        "status_address": 0x817E0128,
+        "status_value": 0xB0070001,
+        "original_entry_instruction": 0x4800016D,
+        "original_branch_target": 0x8000648C,
+        "original_continuation_address": 0x80006324,
+    }
+    return Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def _config(module, payload_address: int = 0x817F0000, startup_word: int = 0x38000000):
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + b"\x00" * 0x10 + b"\x00\x00\x00\x00"
     return module.ProbeObservationConfig(
@@ -148,6 +182,46 @@ def test_observe_probe_reports_wrong_halt_word() -> None:
 
     assert result["halt_active"] is False
     assert result["live_halt_word"] == 0x60000000
+
+
+def test_observe_probe_reads_bootstrap_diagnostic_block() -> None:
+    module = _load_module()
+    base_config = _config(module, payload_address=0x806843C0)
+    config = module.ProbeObservationConfig(
+        checkpoint_name=base_config.checkpoint_name,
+        halt_address=base_config.halt_address,
+        expected_halt_word=base_config.expected_halt_word,
+        expected_game_id=base_config.expected_game_id,
+        payload_address=base_config.payload_address,
+        payload_bytes=base_config.payload_bytes,
+        manifest=_bootstrap_manifest(base_config.payload_bytes),
+        startup_words=base_config.startup_words,
+        repeat_delay_seconds=base_config.repeat_delay_seconds,
+        iso_path=base_config.iso_path,
+        iso_sha256=base_config.iso_sha256,
+        dolphin_command_line=base_config.dolphin_command_line,
+    )
+    memory = _memory_for_config(module, config)
+    diagnostic = bytearray(b"\x00" * 0x40)
+    diagnostic[0x00:0x10] = b"P3BOOTSTRAPCANRY"
+    diagnostic[0x14:0x18] = (0x50334254).to_bytes(4, "big")
+    diagnostic[0x18:0x1C] = (1).to_bytes(4, "big")
+    diagnostic[0x1C:0x20] = (0x817FE3A0).to_bytes(4, "big")
+    diagnostic[0x20:0x24] = (0x817FE3A0).to_bytes(4, "big")
+    diagnostic[0x24:0x28] = (0x817E0000).to_bytes(4, "big")
+    diagnostic[0x28:0x2C] = (0xB0070001).to_bytes(4, "big")
+    memory[0x817E0100] = bytes(diagnostic)
+    memory[0x80000034] = (0x817E0000).to_bytes(4, "big")
+    memory[0x80003110] = (0x817E0000).to_bytes(4, "big")
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["bootstrap_diagnostic"]["canary_matches_expected"] is True
+    assert result["bootstrap_diagnostic"]["marker_matches_expected"] is True
+    assert result["bootstrap_halt_loop_address"] == 0x806843D8
+    assert result["bootstrap_diagnostic"]["counter_value"] == 1
+    assert result["bootstrap_diagnostic"]["replacement_matches_expected"] is True
 
 
 def test_observe_probe_rejects_short_payload_read() -> None:

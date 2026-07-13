@@ -84,6 +84,65 @@ def test_build_prime3_runtime_probe_payload_reproducible(tmp_path: Path) -> None
     assert first_manifest.counter_size == 4
 
 
+def test_build_prime3_runtime_bootstrap_halt_payload_reproducible(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_bootstrap_halt_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    first_dir = tmp_path.joinpath("first-bootstrap-halt")
+    second_dir = tmp_path.joinpath("second-bootstrap-halt")
+    first_manifest = module.build_prime3_runtime_payload(
+        first_dir,
+        payload_mode="entry_bootstrap_halt",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+    module.build_prime3_runtime_payload(
+        second_dir,
+        payload_mode="entry_bootstrap_halt",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert first_dir.joinpath("payload.bin").read_bytes() == second_dir.joinpath("payload.bin").read_bytes()
+    assert first_dir.joinpath("payload.elf").read_bytes() == second_dir.joinpath("payload.elf").read_bytes()
+    assert first_dir.joinpath("payload.json").read_text(encoding="utf-8") == second_dir.joinpath(
+        "payload.json"
+    ).read_text(encoding="utf-8")
+    assert first_manifest.entry_bootstrap is not None
+    assert first_manifest.entry_bootstrap.original_branch_target == 0x8000648C
+    assert first_manifest.entry_bootstrap.halt_loop_address is not None
+
+
+def test_build_prime3_runtime_bootstrap_continue_payload_reproducible(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_bootstrap_continue_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    first_dir = tmp_path.joinpath("first-bootstrap-continue")
+    second_dir = tmp_path.joinpath("second-bootstrap-continue")
+    first_manifest = module.build_prime3_runtime_payload(
+        first_dir,
+        payload_mode="entry_bootstrap_continue",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+    module.build_prime3_runtime_payload(
+        second_dir,
+        payload_mode="entry_bootstrap_continue",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert first_dir.joinpath("payload.bin").read_bytes() == second_dir.joinpath("payload.bin").read_bytes()
+    assert first_dir.joinpath("payload.elf").read_bytes() == second_dir.joinpath("payload.elf").read_bytes()
+    assert first_dir.joinpath("payload.json").read_text(encoding="utf-8") == second_dir.joinpath(
+        "payload.json"
+    ).read_text(encoding="utf-8")
+    assert first_manifest.entry_bootstrap is not None
+    assert first_manifest.entry_bootstrap.halt_loop_address is None
+
+
 def test_direct_invocation_by_relative_path_works_from_repo_root() -> None:
     if not _devkitppc_is_available():
         pytest.skip("devkitPPC is not available in this environment")

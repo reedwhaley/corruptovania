@@ -7,11 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 from randovania.games.prime3.exporter.dol_patcher import (
     CorruptionDolVersionLike,
+    DecodedBranchInstruction,
     DolHeader,
     GuardedInstructionPatchResult,
     Prime3DolPatchError,
     align_up,
     append_executable_text_section,
+    decode_ppc_unconditional_branch,
+    encode_ppc_unconditional_branch,
     identify_supported_corruption_version,
     parse_dol_header,
     patch_guarded_instruction_word,
@@ -29,6 +32,7 @@ ENTRY_GATE_WORD = 0x48000000
 ENTRY_CHECKPOINT_NAME = "entry"
 MEM1_START = 0x80000000
 MEM1_END = 0x81800000
+OBSERVED_ENTRY_ARENA_HIGH = 0x817FE3A0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,6 +70,7 @@ class ProbeDolBuildResult:
     probe_dol_bytes: bytes
     probe_section: Prime3ProbeSection
     checkpoint_gate: CheckpointGateResult | None = None
+    entry_bootstrap: EntryBootstrapInstallResult | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -87,6 +92,50 @@ class CheckpointGateResult:
             "entrypoint": self.entrypoint,
             "file_offset": self.file_offset,
             "text_section_name": self.text_section_name,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class EntryBootstrapInstallResult:
+    bootstrap_mode: str
+    entrypoint: int
+    original_entry_instruction: int
+    original_branch_target: int
+    original_continuation_address: int
+    bootstrap_address: int
+    halt_loop_address: int | None
+    bootstrap_size: int
+    bootstrap_sha256: str
+    replacement_instruction: int
+    reserved_high: int
+    original_observed_arena_high: int
+    reserved_range_start: int
+    reserved_range_end: int
+    diagnostic_address: int
+    diagnostic_block_size: int
+    hook_installed: bool
+    normal_exporter_integration: bool
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "bootstrap_mode": self.bootstrap_mode,
+            "entrypoint": self.entrypoint,
+            "original_entry_instruction": self.original_entry_instruction,
+            "original_branch_target": self.original_branch_target,
+            "original_continuation_address": self.original_continuation_address,
+            "bootstrap_address": self.bootstrap_address,
+            "halt_loop_address": self.halt_loop_address,
+            "bootstrap_size": self.bootstrap_size,
+            "bootstrap_sha256": self.bootstrap_sha256,
+            "replacement_instruction": self.replacement_instruction,
+            "reserved_high": self.reserved_high,
+            "original_observed_arena_high": self.original_observed_arena_high,
+            "reserved_range_start": self.reserved_range_start,
+            "reserved_range_end": self.reserved_range_end,
+            "diagnostic_address": self.diagnostic_address,
+            "diagnostic_block_size": self.diagnostic_block_size,
+            "hook_installed": self.hook_installed,
+            "normal_exporter_integration": self.normal_exporter_integration,
         }
 
 
@@ -157,6 +206,7 @@ class ProbeDeliveryVerification:
     payload_manifest: FileIdentity
     probe_section: Prime3ProbeSection
     checkpoint_gate: CheckpointGateResult | None
+    entry_bootstrap: EntryBootstrapInstallResult | None
     original_contains_probe_section: bool
     manifest_offsets_valid: bool
     comparisons: tuple[DolComparison, ...]
@@ -171,6 +221,7 @@ class ProbeDeliveryVerification:
             "payload_manifest": self.payload_manifest.to_json_dict(),
             "probe_section": self.probe_section.to_json_dict(),
             "checkpoint_gate": None if self.checkpoint_gate is None else self.checkpoint_gate.to_json_dict(),
+            "entry_bootstrap": None if self.entry_bootstrap is None else self.entry_bootstrap.to_json_dict(),
             "original_contains_probe_section": self.original_contains_probe_section,
             "manifest_offsets_valid": self.manifest_offsets_valid,
             "comparisons": [item.to_json_dict() for item in self.comparisons],
@@ -247,6 +298,94 @@ def install_entry_gate(
     )
 
 
+def decode_entry_branch_plan(dol_bytes: bytes) -> DecodedBranchInstruction:
+    header = parse_dol_header(dol_bytes)
+    if header.entry_point != EXPECTED_ENTRYPOINT:
+        raise Prime3DolPatchError(
+            f"Unexpected Corruption DOL entrypoint 0x{header.entry_point:08x}; expected 0x{EXPECTED_ENTRYPOINT:08x}."
+        )
+    file_offset = header.offset_for_address(header.entry_point)
+    if file_offset is None:
+        raise Prime3DolPatchError(f"Entry point 0x{header.entry_point:08x} is not mapped in the DOL.")
+    instruction_word = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
+    decoded = decode_ppc_unconditional_branch(instruction_word, header.entry_point)
+    if decoded is None:
+        raise Prime3DolPatchError(
+            f"Entry instruction 0x{instruction_word:08x} at 0x{header.entry_point:08x} is not an unconditional branch."
+        )
+    if decoded.absolute:
+        raise Prime3DolPatchError("Entry bootstrap only supports a relative entry branch.")
+    if not decoded.link:
+        raise Prime3DolPatchError("Entry bootstrap requires a branch-and-link retail entry instruction.")
+    return decoded
+
+
+def install_entry_bootstrap_patch(
+    dol_bytes: bytes,
+    *,
+    probe_section: Prime3ProbeSection,
+    manifest: Prime3RuntimePayloadManifest,
+    versions: Iterable[CorruptionDolVersionLike] | None = None,
+) -> tuple[bytes, EntryBootstrapInstallResult]:
+    identify_supported_corruption_version(dol_bytes, versions=versions)
+    entry_bootstrap = manifest.entry_bootstrap
+    if entry_bootstrap is None:
+        raise Prime3DolPatchError("Entry bootstrap installation requires bootstrap metadata in the payload manifest.")
+    decoded = decode_entry_branch_plan(dol_bytes)
+    if decoded.instruction_word != entry_bootstrap.original_entry_instruction:
+        raise Prime3DolPatchError(
+            f"Unexpected retail entry instruction 0x{decoded.instruction_word:08x}; "
+            f"expected 0x{entry_bootstrap.original_entry_instruction:08x}."
+        )
+    if decoded.target_address != entry_bootstrap.original_branch_target:
+        raise Prime3DolPatchError(
+            f"Unexpected retail entry branch target 0x{decoded.target_address:08x}; "
+            f"expected 0x{entry_bootstrap.original_branch_target:08x}."
+        )
+    if decoded.continuation_address != entry_bootstrap.original_continuation_address:
+        raise Prime3DolPatchError(
+            f"Unexpected retail entry continuation 0x{decoded.continuation_address:08x}; "
+            f"expected 0x{entry_bootstrap.original_continuation_address:08x}."
+        )
+    if probe_section.virtual_address != entry_bootstrap.staging_address:
+        raise Prime3DolPatchError(
+            f"Entry bootstrap staging address 0x{probe_section.virtual_address:08x} does not match manifest "
+            f"staging address 0x{entry_bootstrap.staging_address:08x}."
+        )
+
+    replacement_instruction = encode_ppc_unconditional_branch(
+        decoded.instruction_address,
+        probe_section.entry_address,
+        link=True,
+    )
+    patched_bytes, patch_result = patch_guarded_instruction_word(
+        dol_bytes,
+        address=decoded.instruction_address,
+        expected_original_word=decoded.instruction_word,
+        replacement_word=replacement_instruction,
+    )
+    return patched_bytes, EntryBootstrapInstallResult(
+        bootstrap_mode=entry_bootstrap.mode,
+        entrypoint=decoded.instruction_address,
+        original_entry_instruction=decoded.instruction_word,
+        original_branch_target=decoded.target_address,
+        original_continuation_address=decoded.continuation_address,
+        bootstrap_address=probe_section.entry_address,
+        halt_loop_address=entry_bootstrap.halt_loop_address,
+        bootstrap_size=probe_section.payload_size,
+        bootstrap_sha256=probe_section.payload_sha256,
+        replacement_instruction=patch_result.replacement_word,
+        reserved_high=entry_bootstrap.reserved_boundary,
+        original_observed_arena_high=OBSERVED_ENTRY_ARENA_HIGH,
+        reserved_range_start=entry_bootstrap.reserved_range_start,
+        reserved_range_end=entry_bootstrap.reserved_range_end,
+        diagnostic_address=entry_bootstrap.diagnostic_address,
+        diagnostic_block_size=entry_bootstrap.diagnostic_block_size,
+        hook_installed=True,
+        normal_exporter_integration=False,
+    )
+
+
 def _checkpoint_gate_result_from_patch(
     header: DolHeader,
     patch_result: GuardedInstructionPatchResult,
@@ -277,6 +416,7 @@ def build_unhooked_probe_dol(
     expected_halt_word: int | None = None,
     checkpoint_name: str | None = None,
     halt_at_entry: bool = False,
+    install_entry_bootstrap: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDolBuildResult:
     manifest.validate()
@@ -320,12 +460,22 @@ def build_unhooked_probe_dol(
         payload_sha256=manifest.payload_sha256,
     )
     checkpoint_gate = None
+    entry_bootstrap = None
     checkpoint_spec = _resolve_checkpoint_gate(
         halt_at_address=halt_at_address,
         expected_halt_word=expected_halt_word,
         checkpoint_name=checkpoint_name,
         halt_at_entry=halt_at_entry,
     )
+    if install_entry_bootstrap and checkpoint_spec is not None:
+        raise Prime3DolPatchError("Entry bootstrap mode cannot be combined with a checkpoint gate.")
+    if install_entry_bootstrap:
+        probe_dol_bytes, entry_bootstrap = install_entry_bootstrap_patch(
+            probe_dol_bytes,
+            probe_section=probe_section,
+            manifest=manifest,
+            versions=versions,
+        )
     if checkpoint_spec is not None:
         probe_dol_bytes, checkpoint_gate = install_checkpoint_gate(
             probe_dol_bytes,
@@ -338,6 +488,7 @@ def build_unhooked_probe_dol(
         probe_dol_bytes=probe_dol_bytes,
         probe_section=probe_section,
         checkpoint_gate=checkpoint_gate,
+        entry_bootstrap=entry_bootstrap,
     )
 
 
@@ -353,6 +504,7 @@ def verify_probe_delivery(
     expected_halt_word: int | None = None,
     checkpoint_name: str | None = None,
     halt_at_entry: bool = False,
+    install_entry_bootstrap: bool = False,
     versions: Iterable[CorruptionDolVersionLike] | None = None,
 ) -> ProbeDeliveryVerification:
     original_dol_bytes = original_dol_path.read_bytes()
@@ -371,6 +523,7 @@ def verify_probe_delivery(
         expected_halt_word=expected_halt_word,
         checkpoint_name=checkpoint_name,
         halt_at_entry=halt_at_entry,
+        install_entry_bootstrap=install_entry_bootstrap,
         versions=versions,
     )
     if build_result.probe_dol_bytes != probe_dol_bytes:
@@ -432,6 +585,9 @@ def verify_probe_delivery(
     if build_result.checkpoint_gate is not None:
         _verify_checkpoint_gate_word(probe_dol_bytes, probe_header, build_result.checkpoint_gate)
         _verify_checkpoint_gate_word(extracted_dol_bytes, extracted_header, build_result.checkpoint_gate)
+    if build_result.entry_bootstrap is not None:
+        _verify_entry_bootstrap_word(probe_dol_bytes, probe_header, build_result.entry_bootstrap)
+        _verify_entry_bootstrap_word(extracted_dol_bytes, extracted_header, build_result.entry_bootstrap)
 
     return ProbeDeliveryVerification(
         original_dol=_file_identity("original", original_dol_path, original_dol_bytes),
@@ -441,6 +597,7 @@ def verify_probe_delivery(
         payload_manifest=_file_identity("payload_manifest", payload_manifest_path, manifest_text.encode("utf-8")),
         probe_section=probe_section,
         checkpoint_gate=build_result.checkpoint_gate,
+        entry_bootstrap=build_result.entry_bootstrap,
         original_contains_probe_section=original_contains_probe_section,
         manifest_offsets_valid=manifest_offsets_valid,
         comparisons=comparisons,
@@ -502,6 +659,22 @@ def _verify_checkpoint_gate_word(dol_bytes: bytes, header: DolHeader, checkpoint
         raise Prime3DolPatchError(
             f"DOL checkpoint gate word at 0x{checkpoint_gate.gate_address:08x} was 0x{observed:08x}, "
             f"expected 0x{checkpoint_gate.replacement_instruction:08x}."
+        )
+
+
+def _verify_entry_bootstrap_word(
+    dol_bytes: bytes,
+    header: DolHeader,
+    entry_bootstrap: EntryBootstrapInstallResult,
+) -> None:
+    file_offset = header.offset_for_address(entry_bootstrap.entrypoint)
+    if file_offset is None:
+        raise Prime3DolPatchError(f"Entry bootstrap address 0x{entry_bootstrap.entrypoint:08x} is not mapped.")
+    observed = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
+    if observed != entry_bootstrap.replacement_instruction:
+        raise Prime3DolPatchError(
+            f"DOL entry bootstrap word at 0x{entry_bootstrap.entrypoint:08x} was 0x{observed:08x}, "
+            f"expected 0x{entry_bootstrap.replacement_instruction:08x}."
         )
 
 

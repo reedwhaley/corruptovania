@@ -36,6 +36,41 @@ def _make_manifest(payload_bytes: bytes) -> runtime_payload.Prime3RuntimePayload
     )
 
 
+def _make_bootstrap_manifest(payload_bytes: bytes) -> runtime_payload.Prime3RuntimePayloadManifest:
+    manifest = _make_manifest(payload_bytes)
+    raw = manifest.to_json_dict()
+    raw["payload_mode"] = runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT
+    raw["entry_bootstrap"] = {
+        "mode": runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT,
+        "staging_address": 0x806843C0,
+        "staging_save_area_offset": 0x40,
+        "staging_save_area_size": 0x10,
+        "halt_loop_address": 0x806843F0,
+        "reserved_boundary": 0x817E0000,
+        "reserved_range_start": 0x817E0000,
+        "reserved_range_end": 0x817FE3A0,
+        "diagnostic_address": 0x817E0100,
+        "diagnostic_block_size": 0x40,
+        "canary_address": 0x817E0100,
+        "canary_size": 0x10,
+        "canary_sha256": hashlib.sha256(b"P3BOOTSTRAPCANRY").hexdigest(),
+        "marker_address": 0x817E0114,
+        "marker_value": 0x50334254,
+        "counter_address": 0x817E0118,
+        "counter_size": 4,
+        "original_80000034_address": 0x817E011C,
+        "original_80003110_address": 0x817E0120,
+        "replacement_value_address": 0x817E0124,
+        "replacement_value": 0x817E0000,
+        "status_address": 0x817E0128,
+        "status_value": 0xB0070001,
+        "original_entry_instruction": 0x4800016D,
+        "original_branch_target": 0x8000648C,
+        "original_continuation_address": 0x80006324,
+    }
+    return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_json_is_deterministic() -> None:
     manifest = _make_manifest(b"\x4e\x80\x00\x20")
     assert manifest.to_json_text() == manifest.to_json_text()
@@ -127,6 +162,28 @@ def test_runtime_payload_manifest_accepts_optional_probe_metadata() -> None:
     assert parsed.canary_size == 0x10
     assert parsed.counter_offset == 0x20
     assert parsed.counter_size == 4
+
+
+def test_runtime_payload_manifest_accepts_entry_bootstrap_metadata() -> None:
+    manifest = _make_bootstrap_manifest(b"\x4e\x80\x00\x20" * 32)
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(manifest.to_json_dict())
+
+    assert parsed.payload_mode == runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_ENTRY_BOOTSTRAP_HALT
+    assert parsed.entry_bootstrap is not None
+    assert parsed.entry_bootstrap.original_branch_target == 0x8000648C
+    assert parsed.entry_bootstrap.halt_loop_address == 0x806843F0
+
+
+def test_runtime_payload_manifest_rejects_bootstrap_diagnostic_outside_reserved_range() -> None:
+    manifest = _make_bootstrap_manifest(b"\x4e\x80\x00\x20" * 32)
+    raw = manifest.to_json_dict()
+    bootstrap = dict(raw["entry_bootstrap"])
+    bootstrap["diagnostic_address"] = 0x817FF000
+    raw["entry_bootstrap"] = bootstrap
+
+    with pytest.raises(Prime3DolPatchError, match="diagnostic block address is outside the reserved range"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
 def test_runtime_payload_manifest_rejects_partial_probe_metadata() -> None:

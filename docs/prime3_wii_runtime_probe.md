@@ -16,7 +16,7 @@ It does not install a hook, reserve arena space, or claim any runtime-safe paylo
 Networking note:
 
 - the current probe workflow still validates relocation and recurring-poll delivery only
-- the runtime now carries developer-only retail-wrapper metadata and one-shot retail `IOS_OpenAsync` diagnostics, but probe delivery remains separate from normal exporter behavior
+- the runtime now carries developer-only retail-wrapper metadata and a terminal NWC24 one-shot diagnostic; probe delivery remains separate from normal exporter behavior
 - Skyward Sword transport provenance is now documented separately in [`docs/prime3_wii_skyward_sword_transport_recon.md`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/docs/prime3_wii_skyward_sword_transport_recon.md:1)
 - any future network probe must remain developer-only, fixed-storage, and bounded to one receive or send step per recurring poll
 
@@ -241,6 +241,16 @@ Capture:
 - whether the write matches BSS clear, arena init, heap init, REL loading, or another clear path
 
 If a later checkpoint zeroes the low-address payload, capture the earliest changed checkpoint and the writer PC before drawing overwrite conclusions.
+
+For the bounded Wii transport proof, the expected initialization-only terminal state is now:
+
+- `phase = BOUND_NO_RECV`
+- `kd_fd = -1`
+- `kd_closed = true`
+- valid retained `ip_fd` and `socket_fd`
+- zero receive, send, IP-close, and socket-close submissions
+
+For `--ios-nwc24-via-retail-ioctl-once`, the narrower terminal state is `NWC24_COMPLETE` (`0xFE`): `/dev/net/kd/request` remains open, exactly one command-6 ioctl has been submitted via `0x80504FE0`, and no close, IP, socket, receive, or send operation is submitted. The wrapper ABI is `r3..r10 = fd, command, input, input_length, output, output_length, callback, userdata`; `0x80504A08` remains classified as async read.
 
 ## Cleanup
 

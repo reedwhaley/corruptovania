@@ -44,6 +44,39 @@ DIAGNOSTIC_MARKER_NAMES = {
     0xC0DE000C: "wrapper_restoring_state",
     0xC0DE000D: "wrapper_returning_to_game",
 }
+TRANSPORT_PHASE_NAMES = {
+    0: "UNINITIALIZED",
+    1: "OPEN_KD",
+    2: "WAIT_OPEN_KD",
+    3: "NWC24_STARTUP",
+    4: "WAIT_NWC24_STARTUP",
+    5: "CLOSE_KD",
+    6: "WAIT_CLOSE_KD",
+    7: "OPEN_IP",
+    8: "WAIT_OPEN_IP",
+    9: "SO_STARTUP",
+    10: "WAIT_SO_STARTUP",
+    11: "GET_HOST_ID",
+    12: "WAIT_GETHOSTID",
+    13: "CREATE_SOCKET",
+    14: "WAIT_CREATE_SOCKET",
+    15: "BIND_SOCKET",
+    16: "WAIT_BIND_SOCKET",
+    17: "BOUND_NO_RECV",
+    0xFE: "DIAGNOSTIC_COMPLETE",
+    0xFF: "FAILED",
+}
+TRANSPORT_OPERATION_NAMES = {
+    0: "none",
+    1: "open_kd",
+    2: "nwc24_startup",
+    3: "close_kd",
+    4: "open_ip",
+    5: "startup",
+    6: "get_host_id",
+    7: "create_socket",
+    8: "bind_socket",
+}
 
 
 class DolphinReadOnlyBackend(Protocol):
@@ -142,6 +175,7 @@ class RelocatedRuntimeObservation(TypedDict):
     runtime_poll_last_sequence_value: int
     diagnostics: dict[str, object] | None
     transport: dict[str, object] | None
+    abi_probe: dict[str, object] | None
     retail_ios_wrapper: dict[str, object] | None
 
 
@@ -278,6 +312,7 @@ def observe_probe_memory(
             result["probable_stop_boundary"] = _diagnostic_stop_boundary(
                 diagnostics=diagnostics,
                 transport=first_runtime["transport"],
+                abi_probe=cast("dict[str, object] | None", first_runtime.get("abi_probe")),
                 recurring_execution_continuing=recurring_execution_continuing,
             )
     if first_read["boot_info_plus_8"] is not None:
@@ -582,34 +617,153 @@ def _read_probe_state(
             relocated_runtime["retail_ios_wrapper"] = {
                 "supported_dol_sha256": wrapper.supported_dol_sha256,
                 "open_async_address": wrapper.open_async_address,
+                "open_address": wrapper.open_address,
+                "close_async_address": wrapper.close_async_address,
+                "close_address": wrapper.close_address,
+                "read_async_address": wrapper.read_async_address,
+                "read_sync_address": wrapper.read_sync_address,
+                "write_async_address": wrapper.write_async_address,
+                "write_sync_address": wrapper.write_sync_address,
+                "seek_async_address": wrapper.seek_async_address,
+                "seek_sync_address": wrapper.seek_sync_address,
+                "confirmed_ioctl_async_address": wrapper.confirmed_ioctl_async_address,
+                "confirmed_ioctl_sync_address": wrapper.confirmed_ioctl_sync_address,
+                "confirmed_ioctlv_async_address": wrapper.confirmed_ioctlv_async_address,
+                "confirmed_ioctlv_sync_address": wrapper.confirmed_ioctlv_sync_address,
                 "open_async_guard_words": list(wrapper.open_async_guard_words),
                 "callback_signature": wrapper.callback_signature,
                 "preserved_registers": list(wrapper.preserved_registers),
                 "submit_helper_address": wrapper.submit_helper_address,
                 "request_allocator_address": wrapper.request_allocator_address,
+                "evidence_source": wrapper.evidence_source,
                 "confidence": wrapper.confidence,
+            }
+        if runtime_metadata.abi_probe is not None:
+            abi_probe = runtime_metadata.abi_probe
+
+            def read_u32_vector(address: int, size: int) -> list[int]:
+                count = size // 4
+                return [_runtime_u32(address + index * 4) for index in range(count)]
+
+            result_flags = _runtime_u32(abi_probe.result_flags_address)
+            supplied_args = read_u32_vector(abi_probe.supplied_args_address, abi_probe.supplied_args_size)
+            pre_call_args = read_u32_vector(abi_probe.pre_call_args_address, abi_probe.pre_call_args_size)
+            target_args = read_u32_vector(abi_probe.target_args_address, abi_probe.target_args_size)
+            relocated_runtime["abi_probe"] = {
+                "mode": abi_probe.mode,
+                "supplied_args": supplied_args,
+                "pre_call_args": pre_call_args,
+                "target_args": target_args,
+                "return_value": _runtime_s32(abi_probe.return_value_address),
+                "expected_return_value": abi_probe.expected_return_value,
+                "result_flags": result_flags,
+                "stack_pointer_before": _runtime_u32(abi_probe.stack_pointer_before_address),
+                "stack_pointer_after": _runtime_u32(abi_probe.stack_pointer_after_address),
+                "saved_lr": _runtime_u32(abi_probe.saved_lr_address),
+                "restored_lr": _runtime_u32(abi_probe.restored_lr_address),
+                "saved_r2": _runtime_u32(abi_probe.saved_r2_address),
+                "restored_r2": _runtime_u32(abi_probe.restored_r2_address),
+                "saved_r13": _runtime_u32(abi_probe.saved_r13_address),
+                "restored_r13": _runtime_u32(abi_probe.restored_r13_address),
+                "target_ctr": _runtime_u32(abi_probe.target_ctr_address),
+                "after_call_flag": _runtime_u32(abi_probe.after_call_flag_address),
+                "supplied_args_match_pre_call": supplied_args == pre_call_args,
+                "pre_call_args_match_target": pre_call_args == target_args,
+                "return_value_matches_expected": _runtime_u32(abi_probe.return_value_address)
+                == abi_probe.expected_return_value,
+                "stack_pointer_restored": _runtime_u32(abi_probe.stack_pointer_before_address)
+                == _runtime_u32(abi_probe.stack_pointer_after_address),
+                "lr_restored": _runtime_u32(abi_probe.saved_lr_address) == _runtime_u32(abi_probe.restored_lr_address),
+                "r2_restored": _runtime_u32(abi_probe.saved_r2_address) == _runtime_u32(abi_probe.restored_r2_address),
+                "r13_restored": _runtime_u32(abi_probe.saved_r13_address)
+                == _runtime_u32(abi_probe.restored_r13_address),
+                "target_called": _runtime_u32(abi_probe.after_call_flag_address) != 0,
+                "pass": result_flags & 0x003FFFFF == 0x003FFFFF,
             }
         if runtime_metadata.transport is not None:
             transport = runtime_metadata.transport
 
+            def optional_u32(address: int | None) -> int | None:
+                if address is None:
+                    return None
+                return _runtime_u32(address)
+
+            def optional_s32(address: int | None) -> int | None:
+                if address is None:
+                    return None
+                return _runtime_s32(address)
+
+            phase_value = _runtime_u32(transport.phase_address)
+            previous_phase = None
+            previous_phase_name = None
+            if runtime_metadata.diagnostics is not None:
+                previous_phase = _runtime_u32(runtime_metadata.diagnostics.last_transport_phase_before_step_address)
+                previous_phase_name = _phase_name(previous_phase)
             receive_preview_offset = (
                 transport.last_receive_preview_address - runtime_metadata.runtime_destination_address
             )
             send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
+            nwc24_output_offset = transport.nwc24_output_buffer_address - runtime_metadata.runtime_destination_address
             relocated_runtime["transport"] = {
-                "phase": _runtime_u32(transport.phase_address),
+                "mode": transport.mode,
+                "initialization_enabled": transport.initialization_enabled,
+                "receive_enabled": transport.receive_enabled,
+                "send_enabled": transport.send_enabled,
+                "nwc24_startup_enabled": transport.nwc24_startup_enabled,
+                "kd_close_enabled": transport.kd_close_enabled,
+                "ip_close_on_success": transport.ip_close_on_success,
+                "socket_close_on_success": transport.socket_close_on_success,
+                "terminal_phase_value": transport.terminal_phase_value,
+                "terminal_phase_name": transport.terminal_phase_name,
+                "phase": phase_value,
+                "phase_name": _phase_name(phase_value),
+                "previous_phase": previous_phase,
+                "previous_phase_name": previous_phase_name,
                 "last_error": _runtime_s32(transport.last_error_address),
+                "last_socket_error": _runtime_s32(transport.last_socket_error_address),
                 "last_ios_result": _runtime_s32(transport.last_ios_result_address),
                 "pending_operation": _runtime_u32(transport.pending_operation_address),
+                "pending_operation_name": _operation_name(_runtime_u32(transport.pending_operation_address)),
                 "pending_generation": _runtime_u32(transport.pending_generation_address),
                 "callback_generation": _runtime_u32(transport.callback_generation_address),
                 "callback_count": _runtime_u32(transport.callback_count_address),
+                "rejected_callback_count": _runtime_u32(transport.rejected_callback_count_address),
                 "callback_pending": _runtime_u32(transport.callback_pending_address),
+                "open_kd_submit_count": _runtime_u32(transport.open_kd_submit_count_address),
+                "open_kd_callback_count": _runtime_u32(transport.open_kd_callback_count_address),
+                "nwc24_output_buffer_address": transport.nwc24_output_buffer_address,
+                "nwc24_output_buffer_size": transport.nwc24_output_buffer_size,
+                "nwc24_output_buffer_alignment": transport.nwc24_output_buffer_alignment,
+                "nwc24_output_buffer_hex": runtime_bytes[
+                    nwc24_output_offset : nwc24_output_offset + transport.nwc24_output_buffer_size
+                ].hex(),
+                "nwc24_submit_count": _runtime_u32(transport.nwc24_submit_count_address),
+                "nwc24_callback_count": _runtime_u32(transport.nwc24_callback_count_address),
+                "nwc24_synchronous_result": _runtime_s32(transport.nwc24_synchronous_result_address),
+                "nwc24_callback_result": _runtime_s32(transport.nwc24_callback_result_address),
+                "nwc24_output_digest": _runtime_u32(transport.nwc24_output_digest_address),
+                "open_ip_submit_count": _runtime_u32(transport.open_ip_submit_count_address),
+                "open_ip_callback_count": _runtime_u32(transport.open_ip_callback_count_address),
+                "kd_close_submit_count": _runtime_u32(transport.kd_close_submit_count_address),
+                "kd_close_callback_count": _runtime_u32(transport.kd_close_callback_count_address),
+                "startup_submit_count": _runtime_u32(transport.startup_submit_count_address),
+                "startup_callback_count": _runtime_u32(transport.startup_callback_count_address),
+                "get_host_id_submit_count": _runtime_u32(transport.get_host_id_submit_count_address),
+                "get_host_id_callback_count": _runtime_u32(transport.get_host_id_callback_count_address),
+                "socket_submit_count": _runtime_u32(transport.socket_submit_count_address),
+                "socket_callback_count": _runtime_u32(transport.socket_callback_count_address),
+                "bind_submit_count": _runtime_u32(transport.bind_submit_count_address),
+                "bind_callback_count": _runtime_u32(transport.bind_callback_count_address),
                 "kd_fd": _runtime_s32(transport.kd_fd_address),
+                "kd_closed": _runtime_u32(transport.kd_closed_address),
                 "ip_fd": _runtime_s32(transport.ip_fd_address),
                 "socket_fd": _runtime_s32(transport.socket_fd_address),
                 "host_id": _runtime_u32(transport.host_id_address),
                 "bound_port": _runtime_u32(transport.bound_port_address),
+                "receive_submit_count": _runtime_u32(transport.receive_submit_count_address),
+                "send_submit_count": _runtime_u32(transport.send_submit_count_address),
+                "ip_close_submit_count": _runtime_u32(transport.ip_close_submit_count_address),
+                "socket_close_submit_count": _runtime_u32(transport.socket_close_submit_count_address),
                 "receive_count": _runtime_u32(transport.receive_count_address),
                 "receive_bytes": _runtime_u32(transport.receive_bytes_address),
                 "send_count": _runtime_u32(transport.send_count_address),
@@ -627,6 +781,37 @@ def _read_probe_state(
                 "last_send_preview_hex": runtime_bytes[
                     send_preview_offset : send_preview_offset + transport.last_send_preview_size
                 ].hex(),
+                "open_kd_submit_result": optional_s32(transport.open_kd_submit_result_address),
+                "open_kd_callback_result": optional_s32(transport.open_kd_callback_result_address),
+                "open_kd_submit_generation": optional_u32(transport.open_kd_submit_generation_address),
+                "open_kd_callback_generation": optional_u32(transport.open_kd_callback_generation_address),
+                "nwc24_submit_result": _runtime_s32(transport.nwc24_synchronous_result_address),
+                "nwc24_submit_generation": optional_u32(transport.nwc24_submit_generation_address),
+                "nwc24_callback_generation": optional_u32(transport.nwc24_callback_generation_address),
+                "open_ip_submit_result": optional_s32(transport.open_ip_submit_result_address),
+                "open_ip_callback_result": optional_s32(transport.open_ip_callback_result_address),
+                "open_ip_submit_generation": optional_u32(transport.open_ip_submit_generation_address),
+                "open_ip_callback_generation": optional_u32(transport.open_ip_callback_generation_address),
+                "kd_close_submit_result": optional_s32(transport.kd_close_submit_result_address),
+                "kd_close_callback_result": optional_s32(transport.kd_close_callback_result_address),
+                "kd_close_submit_generation": optional_u32(transport.kd_close_submit_generation_address),
+                "kd_close_callback_generation": optional_u32(transport.kd_close_callback_generation_address),
+                "startup_submit_result": optional_s32(transport.startup_submit_result_address),
+                "startup_callback_result": optional_s32(transport.startup_callback_result_address),
+                "startup_submit_generation": optional_u32(transport.startup_submit_generation_address),
+                "startup_callback_generation": optional_u32(transport.startup_callback_generation_address),
+                "host_id_submit_result": optional_s32(transport.get_host_id_submit_result_address),
+                "host_id_callback_result": optional_s32(transport.get_host_id_callback_result_address),
+                "host_id_submit_generation": optional_u32(transport.get_host_id_submit_generation_address),
+                "host_id_callback_generation": optional_u32(transport.get_host_id_callback_generation_address),
+                "socket_submit_result": optional_s32(transport.socket_submit_result_address),
+                "socket_callback_result": optional_s32(transport.socket_callback_result_address),
+                "socket_submit_generation": optional_u32(transport.socket_submit_generation_address),
+                "socket_callback_generation": optional_u32(transport.socket_callback_generation_address),
+                "bind_submit_result": optional_s32(transport.bind_submit_result_address),
+                "bind_callback_result": optional_s32(transport.bind_callback_result_address),
+                "bind_submit_generation": optional_u32(transport.bind_submit_generation_address),
+                "bind_callback_generation": optional_u32(transport.bind_callback_generation_address),
             }
 
     boot_info_pointer = low_memory_words["0x800000F4"]
@@ -674,6 +859,14 @@ def _marker_name(value: int) -> str:
     return DIAGNOSTIC_MARKER_NAMES.get(value, f"unknown_0x{value:08X}")
 
 
+def _phase_name(value: int) -> str:
+    return TRANSPORT_PHASE_NAMES.get(value, f"UNKNOWN_PHASE_0x{value:08X}")
+
+
+def _operation_name(value: int) -> str:
+    return TRANSPORT_OPERATION_NAMES.get(value, f"unknown_operation_{value}")
+
+
 def _diagnostic_counter_consistency(**counts: int) -> str:
     if counts["hook_wrapper_before_poll_count"] > counts["hook_wrapper_entry_count"]:
         return "contradictory"
@@ -706,14 +899,100 @@ def _object_as_int(value: object) -> int:
     return cast("int", value)
 
 
-def _diagnostic_stop_boundary(
+def _diagnostic_stop_boundary(  # noqa: C901
     *,
     diagnostics: dict[str, object],
     transport: dict[str, object] | None,
+    abi_probe: dict[str, object] | None,
     recurring_execution_continuing: bool,
 ) -> str:
     if diagnostics.get("counter_consistency") == "contradictory":
         return "contradictory_counters"
+    if abi_probe is not None and (
+        bool(abi_probe.get("target_called"))
+        or bool(abi_probe.get("result_flags"))
+        or bool(abi_probe.get("return_value"))
+    ):
+        if bool(abi_probe.get("pass")):
+            return "abi_probe_passed"
+        if bool(abi_probe.get("target_called")):
+            return "abi_probe_failed"
+        return "abi_probe_incomplete"
+    if transport is not None:
+        phase = _object_as_int(transport["phase"])
+        if phase == 17:
+            if (
+                _object_as_int(transport["kd_fd"]) == -1
+                and _object_as_int(transport["kd_closed"]) != 0
+                and _object_as_int(transport["ip_fd"]) >= 0
+                and _object_as_int(transport["socket_fd"]) >= 0
+                and _object_as_int(transport["bound_port"]) == 43674
+                and _object_as_int(transport["callback_pending"]) == 0
+                and _object_as_int(transport["receive_submit_count"]) == 0
+                and _object_as_int(transport["send_submit_count"]) == 0
+                and _object_as_int(transport["ip_close_submit_count"]) == 0
+                and _object_as_int(transport["socket_close_submit_count"]) == 0
+                and recurring_execution_continuing
+            ):
+                return "bound_no_recv_stable"
+            return "bound_no_recv"
+        if phase == 4:
+            if _object_as_int(transport["last_submit_result"]) < 0:
+                return "nwc24_submission_failed"
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_nwc24_callback"
+            return "inside_nwc24_call"
+        if phase == 0xFE:
+            if (
+                _object_as_int(transport["open_kd_callback_count"]) == 1
+                and _object_as_int(transport["kd_fd"]) >= 0
+                and _object_as_int(transport["nwc24_synchronous_result"]) == 0
+                and _object_as_int(transport["nwc24_callback_count"]) == 1
+                and _object_as_int(transport["nwc24_submit_generation"])
+                == _object_as_int(transport["nwc24_callback_generation"])
+                and _object_as_int(transport["pending_operation"]) == 0
+                and _object_as_int(transport["kd_close_submit_count"]) == 0
+                and _object_as_int(transport["open_ip_submit_count"]) == 0
+                and _object_as_int(transport["receive_submit_count"]) == 0
+                and _object_as_int(transport["send_submit_count"]) == 0
+                and recurring_execution_continuing
+            ):
+                return "nwc24_completed"
+            return "nwc24_callback_missing"
+        if phase == 6:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_kd_close_callback"
+            return "inside_kd_close_call"
+        if phase == 7:
+            if _object_as_int(transport["kd_closed"]) != 0 and _object_as_int(transport["kd_fd"]) == -1:
+                return "kd_closed"
+            return "nwc24_completed"
+        if phase == 8:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_open_ip_callback"
+            return "inside_open_ip_call"
+        if phase == 9:
+            if _object_as_int(transport["last_submit_result"]) < 0:
+                return "startup_submission_failed"
+            return "startup_completed"
+        if phase == 10:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_startup_callback"
+            return "inside_startup_call"
+        if phase == 12:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_host_id_callback"
+            return "inside_host_id_call"
+        if phase == 14:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_socket_callback"
+            return "inside_socket_call"
+        if phase == 16:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_bind_callback"
+            return "inside_bind_call"
+        if phase == 0xFF:
+            return "failed_with_result"
     if recurring_execution_continuing:
         return "recurring_execution_continues"
     if _object_as_int(diagnostics["c_before_veneer_call_count"]) > _object_as_int(

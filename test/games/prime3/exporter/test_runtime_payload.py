@@ -84,8 +84,8 @@ def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
         "low_bootstrap_size": 0x1A0,
         "low_bootstrap_sha256": hashlib.sha256(payload_bytes[:0x1A0]).hexdigest(),
         "embedded_runtime_blob_offset": 0x1A0,
-        "embedded_runtime_blob_size": 0x1E0,
-        "embedded_runtime_blob_sha256": hashlib.sha256(payload_bytes[0x1A0:0x380]).hexdigest(),
+        "embedded_runtime_blob_size": 0x2F0,
+        "embedded_runtime_blob_sha256": hashlib.sha256(payload_bytes[0x1A0:0x400]).hexdigest(),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
         "runtime_poll_entry_address": 0x817E1020,
@@ -93,14 +93,14 @@ def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
         "runtime_code_start": 0x817E1000,
         "runtime_code_end": 0x817E104C,
         "runtime_state_start": 0x817E1050,
-        "runtime_state_end": 0x817E11C4,
+        "runtime_state_end": 0x817E12F0,
         "runtime_stack_start": None,
         "runtime_stack_end": None,
         "required_source_alignment": 0x20,
         "required_destination_alignment": 0x20,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
-        "cache_range_size": 0x1E0,
+        "cache_range_size": 0x300,
         "runtime_canary_address": 0x817E1050,
         "runtime_canary_size": 0x10,
         "runtime_canary_sha256": hashlib.sha256(b"P3HIRUNTIMECANAR").hexdigest(),
@@ -169,58 +169,157 @@ def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
         },
         "ios_udp_diagnostic_enabled": True,
         "transport": {
+            "mode": "normal",
+            "initialization_enabled": True,
+            "receive_enabled": False,
+            "send_enabled": False,
+            "nwc24_startup_enabled": True,
+            "kd_close_enabled": True,
+            "ip_close_on_success": False,
+            "socket_close_on_success": False,
+            "terminal_phase_value": 17,
+            "terminal_phase_name": "BOUND_NO_RECV",
             "phase_address": 0x817E1144,
             "phase_size": 4,
             "last_error_address": 0x817E1148,
             "last_error_size": 4,
-            "last_ios_result_address": 0x817E114C,
+            "last_socket_error_address": 0x817E114C,
+            "last_socket_error_size": 4,
+            "last_ios_result_address": 0x817E1150,
             "last_ios_result_size": 4,
-            "pending_operation_address": 0x817E1150,
+            "pending_operation_address": 0x817E1154,
             "pending_operation_size": 4,
-            "pending_generation_address": 0x817E1154,
+            "pending_generation_address": 0x817E1158,
             "pending_generation_size": 4,
-            "callback_generation_address": 0x817E1158,
+            "callback_generation_address": 0x817E115C,
             "callback_generation_size": 4,
-            "callback_count_address": 0x817E115C,
+            "callback_count_address": 0x817E1160,
             "callback_count_size": 4,
-            "callback_pending_address": 0x817E1160,
+            "rejected_callback_count_address": 0x817E1164,
+            "rejected_callback_count_size": 4,
+            "callback_pending_address": 0x817E1168,
             "callback_pending_size": 4,
-            "kd_fd_address": 0x817E1164,
+            "open_kd_submit_count_address": 0x817E116C,
+            "open_kd_submit_count_size": 4,
+            "open_kd_callback_count_address": 0x817E1170,
+            "open_kd_callback_count_size": 4,
+            "nwc24_output_buffer_address": 0x817E1180,
+            "nwc24_output_buffer_size": 0x20,
+            "nwc24_output_buffer_alignment": 0x20,
+            "nwc24_submit_count_address": 0x817E1174,
+            "nwc24_submit_count_size": 4,
+            "nwc24_callback_count_address": 0x817E1178,
+            "nwc24_callback_count_size": 4,
+            "nwc24_synchronous_result_address": 0x817E11A0,
+            "nwc24_synchronous_result_size": 4,
+            "nwc24_callback_result_address": 0x817E11A4,
+            "nwc24_callback_result_size": 4,
+            "nwc24_output_digest_address": 0x817E11A8,
+            "nwc24_output_digest_size": 4,
+            "open_ip_submit_count_address": 0x817E11AC,
+            "open_ip_submit_count_size": 4,
+            "open_ip_callback_count_address": 0x817E11B0,
+            "open_ip_callback_count_size": 4,
+            "kd_close_submit_count_address": 0x817E11B4,
+            "kd_close_submit_count_size": 4,
+            "kd_close_callback_count_address": 0x817E11B8,
+            "kd_close_callback_count_size": 4,
+            "startup_submit_count_address": 0x817E11BC,
+            "startup_submit_count_size": 4,
+            "startup_callback_count_address": 0x817E11C0,
+            "startup_callback_count_size": 4,
+            "get_host_id_submit_count_address": 0x817E11C4,
+            "get_host_id_submit_count_size": 4,
+            "get_host_id_callback_count_address": 0x817E11C8,
+            "get_host_id_callback_count_size": 4,
+            "socket_submit_count_address": 0x817E11CC,
+            "socket_submit_count_size": 4,
+            "socket_callback_count_address": 0x817E11D0,
+            "socket_callback_count_size": 4,
+            "bind_submit_count_address": 0x817E11D4,
+            "bind_submit_count_size": 4,
+            "bind_callback_count_address": 0x817E11D8,
+            "bind_callback_count_size": 4,
+            "kd_fd_address": 0x817E11DC,
             "kd_fd_size": 4,
-            "ip_fd_address": 0x817E1168,
+            "kd_closed_address": 0x817E11E0,
+            "kd_closed_size": 4,
+            "ip_fd_address": 0x817E11E4,
             "ip_fd_size": 4,
-            "socket_fd_address": 0x817E116C,
+            "socket_fd_address": 0x817E11E8,
             "socket_fd_size": 4,
-            "host_id_address": 0x817E1170,
+            "host_id_address": 0x817E11EC,
             "host_id_size": 4,
-            "bound_port_address": 0x817E1174,
+            "bound_port_address": 0x817E11F0,
             "bound_port_size": 4,
-            "receive_count_address": 0x817E1178,
+            "receive_submit_count_address": 0x817E11F4,
+            "receive_submit_count_size": 4,
+            "send_submit_count_address": 0x817E11F8,
+            "send_submit_count_size": 4,
+            "ip_close_submit_count_address": 0x817E11FC,
+            "ip_close_submit_count_size": 4,
+            "socket_close_submit_count_address": 0x817E1200,
+            "socket_close_submit_count_size": 4,
+            "receive_count_address": 0x817E1204,
             "receive_count_size": 4,
-            "receive_bytes_address": 0x817E117C,
+            "receive_bytes_address": 0x817E1208,
             "receive_bytes_size": 4,
-            "send_count_address": 0x817E1180,
+            "send_count_address": 0x817E120C,
             "send_count_size": 4,
-            "send_bytes_address": 0x817E1184,
+            "send_bytes_address": 0x817E1210,
             "send_bytes_size": 4,
-            "last_receive_length_address": 0x817E1188,
+            "last_receive_length_address": 0x817E1214,
             "last_receive_length_size": 4,
-            "last_send_length_address": 0x817E118C,
+            "last_send_length_address": 0x817E1218,
             "last_send_length_size": 4,
-            "last_peer_ipv4_address": 0x817E1190,
+            "last_peer_ipv4_address": 0x817E121C,
             "last_peer_ipv4_size": 4,
-            "last_peer_port_address": 0x817E1194,
+            "last_peer_port_address": 0x817E1220,
             "last_peer_port_size": 4,
-            "last_peer_family_address": 0x817E1198,
+            "last_peer_family_address": 0x817E1224,
             "last_peer_family_size": 4,
-            "last_poll_action_address": 0x817E119C,
+            "last_poll_action_address": 0x817E1228,
             "last_poll_action_size": 4,
-            "last_submit_result_address": 0x817E11A0,
+            "last_submit_result_address": 0x817E122C,
             "last_submit_result_size": 4,
-            "last_receive_preview_address": 0x817E11A4,
+            "last_receive_preview_address": 0x817E1230,
             "last_receive_preview_size": 16,
-            "last_send_preview_address": 0x817E11B4,
+            "last_send_preview_address": 0x817E1240,
             "last_send_preview_size": 16,
+        },
+        "abi_probe": {
+            "mode": "retail_wrapper_ioctl_async_abi_probe",
+            "supplied_args_address": 0x817E1260,
+            "supplied_args_size": 0x20,
+            "pre_call_args_address": 0x817E1280,
+            "pre_call_args_size": 0x20,
+            "target_args_address": 0x817E12A0,
+            "target_args_size": 0x20,
+            "return_value_address": 0x817E12C0,
+            "return_value_size": 4,
+            "expected_return_value": 0x13579BDF,
+            "result_flags_address": 0x817E12C4,
+            "result_flags_size": 4,
+            "stack_pointer_before_address": 0x817E12C8,
+            "stack_pointer_before_size": 4,
+            "stack_pointer_after_address": 0x817E12CC,
+            "stack_pointer_after_size": 4,
+            "saved_lr_address": 0x817E12D0,
+            "saved_lr_size": 4,
+            "restored_lr_address": 0x817E12D4,
+            "restored_lr_size": 4,
+            "saved_r2_address": 0x817E12D8,
+            "saved_r2_size": 4,
+            "restored_r2_address": 0x817E12DC,
+            "restored_r2_size": 4,
+            "saved_r13_address": 0x817E12E0,
+            "saved_r13_size": 4,
+            "restored_r13_address": 0x817E12E4,
+            "restored_r13_size": 4,
+            "target_ctr_address": 0x817E12E8,
+            "target_ctr_size": 4,
+            "after_call_flag_address": 0x817E12EC,
+            "after_call_flag_size": 4,
         },
         "retail_ios_wrapper": {
             "supported_dol_sha256": "6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104",
@@ -228,16 +327,62 @@ def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
             "open_address": 0x80504780,
             "close_async_address": 0x805048A0,
             "close_address": 0x80504960,
-            "ioctl_async_address": 0x80504A08,
-            "ioctl_address": 0x80504B08,
-            "ioctlv_async_address": 0x80504C10,
-            "ioctlv_address": 0x80504D10,
+            "read_async_address": 0x80504A08,
+            "read_sync_address": 0x80504B08,
+            "write_async_address": 0x80504C10,
+            "write_sync_address": 0x80504D10,
+            "seek_async_address": 0x80504E18,
+            "seek_sync_address": 0x80504EF8,
+            "confirmed_ioctl_async_address": 0x80504FE0,
+            "confirmed_ioctl_sync_address": 0x80505118,
+            "confirmed_ioctlv_async_address": 0x80505384,
+            "confirmed_ioctlv_sync_address": 0x80505468,
+            "async_ioctl_address": 0x80504FE0,
+            "async_ioctl_extent": "0x80504FE0..0x80505118",
+            "async_ioctl_argument_count": 8,
+            "async_ioctl_stack_argument_count": 0,
+            "async_ioctl_operation": 6,
+            "async_ioctl_confidence": "verified",
+            "confirmed_ioctl_async_fingerprint_sha256": (
+                "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
+            ),
+            "confirmed_ioctl_async_prototype": (
+                "s32 ioctl_async(s32 fd, u32 command, const void *input, u32 input_length, "
+                "void *output, u32 output_length, completion_fn completion, void *userdata)"
+            ),
+            "confirmed_ioctl_async_register_arguments": [
+                "r3=fd",
+                "r4=command",
+                "r5=input",
+                "r6=input_length",
+                "r7=output",
+                "r8=output_length",
+                "r9=completion",
+                "r10=userdata",
+            ],
+            "confirmed_ioctl_async_stack_arguments": [],
+            "request_field_offsets": [
+                "operation=0x00",
+                "result=0x04",
+                "fd=0x08",
+                "argument_0=0x0c",
+                "argument_1=0x10",
+                "argument_2=0x14",
+                "argument_3=0x18",
+                "argument_4=0x1c",
+                "completion=0x20",
+                "completion_userdata=0x24",
+                "special_vector_flag=0x28",
+            ],
             "open_async_guard_words": [0x9421FFD0, 0x7C0802A6, 0x90010034, 0x39610030],
             "callback_signature": "s32 callback(s32 result, void *userdata)",
             "preserved_registers": ["r2", "r13"],
             "submit_helper_address": 0x8050441C,
             "request_allocator_address": 0x80505960,
-            "evidence_source": "prime3-ntsc retail DOL cluster + callsite analysis",
+            "evidence_source": (
+                "prime3-ntsc retail DOL operation 3-7 request construction, cache handling, "
+                "completion fields, and compatible callsite verification"
+            ),
             "confidence": "verified",
         },
     }
@@ -360,13 +505,13 @@ def test_runtime_payload_manifest_rejects_bootstrap_diagnostic_outside_reserved_
 
 
 def test_runtime_payload_manifest_accepts_relocated_runtime_metadata() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
 
     parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(manifest.to_json_dict())
 
     assert parsed.relocated_runtime is not None
     assert parsed.relocated_runtime.runtime_destination_address == 0x817E1000
-    assert parsed.relocated_runtime.cache_range_size == 0x1E0
+    assert parsed.relocated_runtime.cache_range_size == 0x300
     assert parsed.relocated_runtime.runtime_poll_hook_wrapper_address == 0x817E1030
     assert parsed.relocated_runtime.runtime_poll_last_sequence_address == 0x817E107C
     assert parsed.relocated_runtime.diagnostics is not None
@@ -374,12 +519,52 @@ def test_runtime_payload_manifest_accepts_relocated_runtime_metadata() -> None:
     assert parsed.relocated_runtime.ios_udp_diagnostic_enabled is True
     assert parsed.relocated_runtime.transport is not None
     assert parsed.relocated_runtime.transport.last_receive_preview_size == 16
+    assert parsed.relocated_runtime.abi_probe is not None
+    assert parsed.relocated_runtime.abi_probe.expected_return_value == 0x13579BDF
     assert parsed.relocated_runtime.retail_ios_wrapper is not None
-    assert parsed.relocated_runtime.retail_ios_wrapper.ioctlv_async_address == 0x80504C10
+    assert parsed.relocated_runtime.retail_ios_wrapper.write_async_address == 0x80504C10
+    assert parsed.relocated_runtime.retail_ios_wrapper.confirmed_ioctl_async_address == 0x80504FE0
+    assert parsed.relocated_runtime.retail_ios_wrapper.async_ioctl_argument_count == 8
+
+
+def test_runtime_payload_manifest_accepts_nwc24_ioctl_once_terminal_metadata() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_nwc24_startup_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_nwc24_startup_once"
+    transport["kd_close_enabled"] = False
+    transport["terminal_phase_value"] = 0xFE
+    transport["terminal_phase_name"] = "NWC24_COMPLETE"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.kd_close_enabled is False
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "NWC24_COMPLETE"
+
+
+def test_runtime_payload_manifest_rejects_abi_probe_outside_runtime_state() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    abi_probe = dict(relocated["abi_probe"])
+    abi_probe["after_call_flag_address"] = 0x817E12F0
+    relocated["abi_probe"] = abi_probe
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="ABI probe field after_call_flag is outside the runtime state range"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
 def test_runtime_payload_manifest_accepts_disabled_relocated_transport_metadata() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     relocated["ios_udp_diagnostic_enabled"] = False
@@ -394,7 +579,7 @@ def test_runtime_payload_manifest_accepts_disabled_relocated_transport_metadata(
 
 
 def test_runtime_payload_manifest_rejects_transport_metadata_when_disabled() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     relocated["ios_udp_diagnostic_enabled"] = False
@@ -405,7 +590,7 @@ def test_runtime_payload_manifest_rejects_transport_metadata_when_disabled() -> 
 
 
 def test_runtime_payload_manifest_rejects_retail_wrapper_wrong_callback_signature() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     wrapper = dict(relocated["retail_ios_wrapper"])
@@ -417,8 +602,34 @@ def test_runtime_payload_manifest_rejects_retail_wrapper_wrong_callback_signatur
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def test_runtime_payload_manifest_rejects_legacy_inferred_ioctl_labels() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    wrapper = dict(relocated["retail_ios_wrapper"])
+    wrapper["ioctl_async_address"] = wrapper["read_async_address"]
+    relocated["retail_ios_wrapper"] = wrapper
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="legacy inferred label"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
+def test_runtime_payload_manifest_rejects_wrong_confirmed_ioctl_fingerprint() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    wrapper = dict(relocated["retail_ios_wrapper"])
+    wrapper["confirmed_ioctl_async_fingerprint_sha256"] = "0" * 64
+    relocated["retail_ios_wrapper"] = wrapper
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="unexpected function fingerprint"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_rejects_enabled_transport_outside_relocated_continue() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     raw["payload_mode"] = runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT
     raw["entry_bootstrap"]["mode"] = runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT
@@ -433,7 +644,7 @@ def test_runtime_payload_manifest_rejects_enabled_transport_outside_relocated_co
 
 
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     relocated["runtime_destination_address"] = 0x817E0100
@@ -462,17 +673,20 @@ def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstr
     relocated["diagnostics"] = diagnostics
     transport = dict(relocated["transport"])
     for key, value in list(transport.items()):
-        if key.endswith("_address"):
+        if key.endswith("_address") and value is not None:
             transport[key] = value - 0xF00
     relocated["transport"] = transport
     raw["relocated_runtime"] = relocated
 
-    with pytest.raises(Prime3DolPatchError, match="overlaps the bootstrap diagnostic block"):
+    with pytest.raises(
+        Prime3DolPatchError,
+        match="outside the runtime state range|overlaps the bootstrap diagnostic block",
+    ):
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
 def test_runtime_payload_manifest_rejects_partial_runtime_stack_range() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     relocated["runtime_stack_start"] = 0x817E1050
@@ -483,10 +697,10 @@ def test_runtime_payload_manifest_rejects_partial_runtime_stack_range() -> None:
 
 
 def test_runtime_payload_manifest_rejects_runtime_poll_range_outside_state() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
-    relocated["runtime_poll_last_sequence_address"] = 0x817E11C4
+    relocated["runtime_poll_last_sequence_address"] = 0x817E12F0
     raw["relocated_runtime"] = relocated
 
     with pytest.raises(Prime3DolPatchError, match="runtime_poll_last_sequence is outside the runtime state range"):
@@ -494,7 +708,7 @@ def test_runtime_payload_manifest_rejects_runtime_poll_range_outside_state() -> 
 
 
 def test_runtime_payload_manifest_rejects_overlapping_diagnostic_fields() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     diagnostics = dict(relocated["diagnostics"])
@@ -507,11 +721,11 @@ def test_runtime_payload_manifest_rejects_overlapping_diagnostic_fields() -> Non
 
 
 def test_runtime_payload_manifest_rejects_transport_preview_outside_state() -> None:
-    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 240)
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()
     relocated = dict(raw["relocated_runtime"])
     transport = dict(relocated["transport"])
-    transport["last_send_preview_address"] = 0x817E11C0
+    transport["last_send_preview_address"] = 0x817E12E8
     relocated["transport"] = transport
     raw["relocated_runtime"] = relocated
 

@@ -37,6 +37,7 @@ from randovania.games.prime3.exporter.runtime_payload import (
     Prime3EntryBootstrapMetadata,
     Prime3RelocatedRuntimeMetadata,
     Prime3RetailIosWrapperMetadata,
+    Prime3RuntimeAbiProbeMetadata,
     Prime3RuntimeDiagnosticMetadata,
     Prime3RuntimePayloadManifest,
     Prime3RuntimeTransportMetadata,
@@ -95,10 +96,16 @@ PRIME3_NTSC_IOS_OPEN_ASYNC_ADDRESS = 0x80504668
 PRIME3_NTSC_IOS_OPEN_ADDRESS = 0x80504780
 PRIME3_NTSC_IOS_CLOSE_ASYNC_ADDRESS = 0x805048A0
 PRIME3_NTSC_IOS_CLOSE_ADDRESS = 0x80504960
-PRIME3_NTSC_IOS_IOCTL_ASYNC_ADDRESS = 0x80504A08
-PRIME3_NTSC_IOS_IOCTL_ADDRESS = 0x80504B08
-PRIME3_NTSC_IOS_IOCTLV_ASYNC_ADDRESS = 0x80504C10
-PRIME3_NTSC_IOS_IOCTLV_ADDRESS = 0x80504D10
+PRIME3_NTSC_IOS_READ_ASYNC_ADDRESS = 0x80504A08
+PRIME3_NTSC_IOS_READ_SYNC_ADDRESS = 0x80504B08
+PRIME3_NTSC_IOS_WRITE_ASYNC_ADDRESS = 0x80504C10
+PRIME3_NTSC_IOS_WRITE_SYNC_ADDRESS = 0x80504D10
+PRIME3_NTSC_IOS_SEEK_ASYNC_ADDRESS = 0x80504E18
+PRIME3_NTSC_IOS_SEEK_SYNC_ADDRESS = 0x80504EF8
+PRIME3_NTSC_CONFIRMED_IOS_IOCTL_ASYNC_ADDRESS = 0x80504FE0
+PRIME3_NTSC_CONFIRMED_IOS_IOCTL_SYNC_ADDRESS = 0x80505118
+PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_ASYNC_ADDRESS = 0x80505384
+PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_SYNC_ADDRESS = 0x80505468
 PRIME3_NTSC_IOS_SUBMIT_HELPER_ADDRESS = 0x8050441C
 PRIME3_NTSC_IOS_REQUEST_ALLOCATOR_ADDRESS = 0x80505960
 PRIME3_NTSC_IOS_OPEN_ASYNC_GUARD_WORDS = (
@@ -112,11 +119,28 @@ RUNTIME_POLL_ENTRY_SYMBOL = "runtime_poll_entry"
 RUNTIME_POLL_HOOK_WRAPPER_SYMBOL = "runtime_poll_hook_wrapper"
 RUNTIME_RETAIL_IOS_OPEN_VENEER_SYMBOL = "runtime_call_retail_ios_open_async"
 RUNTIME_RETAIL_IOS_CLOSE_VENEER_SYMBOL = "runtime_call_retail_ios_close_async"
-RUNTIME_RETAIL_IOS_IOCTL_VENEER_SYMBOL = "runtime_call_retail_ios_ioctl_async"
-RUNTIME_RETAIL_IOS_IOCTLV_VENEER_SYMBOL = "runtime_call_retail_ios_ioctlv_async"
+RUNTIME_RETAIL_READ_ASYNC_VENEER_SYMBOL = "runtime_call_retail_read_async"
+RUNTIME_RETAIL_WRITE_ASYNC_VENEER_SYMBOL = "runtime_call_retail_write_async"
+RUNTIME_RETAIL_IOS_IOCTL_ASYNC_VENEER_SYMBOL = "runtime_call_retail_ios_ioctl_async"
 RUNTIME_RETAIL_VENEER_SELFTEST_SYMBOL = "runtime_call_retail_veneer_selftest"
 RUNTIME_RETAIL_VENEER_SELFTEST_TARGET_SYMBOL = "runtime_local_veneer_selftest_target"
 RUNTIME_RETAIL_VENEER_SELFTEST_CALLER_SYMBOL = "runtime_run_retail_veneer_selftest"
+RUNTIME_ABI_PROBE_SUPPLIED_ARGS_SYMBOL = "runtime_abi_probe_supplied_args"
+RUNTIME_ABI_PROBE_PRE_CALL_ARGS_SYMBOL = "runtime_abi_probe_pre_call_args"
+RUNTIME_ABI_PROBE_TARGET_ARGS_SYMBOL = "runtime_abi_probe_target_args"
+RUNTIME_ABI_PROBE_RETURN_VALUE_SYMBOL = "runtime_abi_probe_return_value"
+RUNTIME_ABI_PROBE_RESULT_FLAGS_SYMBOL = "runtime_abi_probe_result_flags"
+RUNTIME_ABI_PROBE_STACK_POINTER_BEFORE_SYMBOL = "runtime_abi_probe_stack_pointer_before"
+RUNTIME_ABI_PROBE_STACK_POINTER_AFTER_SYMBOL = "runtime_abi_probe_stack_pointer_after"
+RUNTIME_ABI_PROBE_SAVED_LR_SYMBOL = "runtime_abi_probe_saved_lr"
+RUNTIME_ABI_PROBE_RESTORED_LR_SYMBOL = "runtime_abi_probe_restored_lr"
+RUNTIME_ABI_PROBE_SAVED_R2_SYMBOL = "runtime_abi_probe_saved_r2"
+RUNTIME_ABI_PROBE_RESTORED_R2_SYMBOL = "runtime_abi_probe_restored_r2"
+RUNTIME_ABI_PROBE_SAVED_R13_SYMBOL = "runtime_abi_probe_saved_r13"
+RUNTIME_ABI_PROBE_RESTORED_R13_SYMBOL = "runtime_abi_probe_restored_r13"
+RUNTIME_ABI_PROBE_TARGET_CTR_SYMBOL = "runtime_abi_probe_target_ctr"
+RUNTIME_ABI_PROBE_AFTER_CALL_FLAG_SYMBOL = "runtime_abi_probe_after_call_flag"
+RUNTIME_ABI_PROBE_EXPECTED_RETURN_VALUE_SYMBOL = "runtime_abi_probe_expected_return_value"
 RUNTIME_CODE_START_SYMBOL = "runtime_code_start"
 RUNTIME_CODE_END_SYMBOL = "runtime_code_end"
 RUNTIME_STATE_START_SYMBOL = "runtime_state_start"
@@ -157,17 +181,74 @@ RUNTIME_VERIFIED_GAME_R2_SYMBOL = "runtime_verified_game_r2"
 RUNTIME_VERIFIED_GAME_R13_SYMBOL = "runtime_verified_game_r13"
 RUNTIME_TRANSPORT_PHASE_SYMBOL = "runtime_transport_phase"
 RUNTIME_TRANSPORT_LAST_ERROR_SYMBOL = "runtime_transport_last_error"
+RUNTIME_TRANSPORT_LAST_SOCKET_ERROR_SYMBOL = "runtime_transport_last_socket_error"
 RUNTIME_TRANSPORT_LAST_IOS_RESULT_SYMBOL = "runtime_transport_last_ios_result"
 RUNTIME_TRANSPORT_PENDING_OPERATION_SYMBOL = "runtime_transport_pending_operation"
 RUNTIME_TRANSPORT_PENDING_GENERATION_SYMBOL = "runtime_transport_pending_generation"
 RUNTIME_TRANSPORT_CALLBACK_GENERATION_SYMBOL = "runtime_transport_callback_generation"
 RUNTIME_TRANSPORT_CALLBACK_COUNT_SYMBOL = "runtime_transport_callback_count"
+RUNTIME_TRANSPORT_REJECTED_CALLBACK_COUNT_SYMBOL = "runtime_transport_rejected_callback_count"
 RUNTIME_TRANSPORT_CALLBACK_PENDING_SYMBOL = "runtime_transport_callback_pending"
+RUNTIME_TRANSPORT_OPEN_KD_SUBMIT_COUNT_SYMBOL = "runtime_transport_open_kd_submit_count"
+RUNTIME_TRANSPORT_OPEN_KD_CALLBACK_COUNT_SYMBOL = "runtime_transport_open_kd_callback_count"
+RUNTIME_TRANSPORT_OPEN_KD_SUBMIT_RESULT_SYMBOL = "runtime_transport_open_kd_submit_result"
+RUNTIME_TRANSPORT_OPEN_KD_CALLBACK_RESULT_SYMBOL = "runtime_transport_open_kd_callback_result"
+RUNTIME_TRANSPORT_OPEN_KD_SUBMIT_GENERATION_SYMBOL = "runtime_transport_open_kd_submit_generation"
+RUNTIME_TRANSPORT_OPEN_KD_CALLBACK_GENERATION_SYMBOL = "runtime_transport_open_kd_callback_generation"
+RUNTIME_TRANSPORT_NWC24_SUBMIT_COUNT_SYMBOL = "runtime_transport_nwc24_submit_count"
+RUNTIME_TRANSPORT_NWC24_CALLBACK_COUNT_SYMBOL = "runtime_transport_nwc24_callback_count"
+RUNTIME_TRANSPORT_NWC24_SYNCHRONOUS_RESULT_SYMBOL = "runtime_transport_nwc24_synchronous_result"
+RUNTIME_TRANSPORT_NWC24_CALLBACK_RESULT_SYMBOL = "runtime_transport_nwc24_callback_result"
+RUNTIME_TRANSPORT_NWC24_OUTPUT_BUFFER_SYMBOL = "runtime_transport_nwc24_output_buffer"
+RUNTIME_TRANSPORT_NWC24_OUTPUT_DIGEST_SYMBOL = "runtime_transport_nwc24_output_digest"
+RUNTIME_TRANSPORT_NWC24_SUBMIT_GENERATION_SYMBOL = "runtime_transport_nwc24_submit_generation"
+RUNTIME_TRANSPORT_NWC24_CALLBACK_GENERATION_SYMBOL = "runtime_transport_nwc24_callback_generation"
+RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_COUNT_SYMBOL = "runtime_transport_open_ip_submit_count"
+RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_COUNT_SYMBOL = "runtime_transport_open_ip_callback_count"
+RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_RESULT_SYMBOL = "runtime_transport_open_ip_submit_result"
+RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_RESULT_SYMBOL = "runtime_transport_open_ip_callback_result"
+RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_GENERATION_SYMBOL = "runtime_transport_open_ip_submit_generation"
+RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_GENERATION_SYMBOL = "runtime_transport_open_ip_callback_generation"
+RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_COUNT_SYMBOL = "runtime_transport_kd_close_submit_count"
+RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_COUNT_SYMBOL = "runtime_transport_kd_close_callback_count"
+RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_RESULT_SYMBOL = "runtime_transport_kd_close_submit_result"
+RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_RESULT_SYMBOL = "runtime_transport_kd_close_callback_result"
+RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_GENERATION_SYMBOL = "runtime_transport_kd_close_submit_generation"
+RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_GENERATION_SYMBOL = "runtime_transport_kd_close_callback_generation"
+RUNTIME_TRANSPORT_IP_CLOSE_SUBMIT_COUNT_SYMBOL = "runtime_transport_ip_close_submit_count"
+RUNTIME_TRANSPORT_SOCKET_CLOSE_SUBMIT_COUNT_SYMBOL = "runtime_transport_socket_close_submit_count"
+RUNTIME_TRANSPORT_STARTUP_SUBMIT_COUNT_SYMBOL = "runtime_transport_startup_submit_count"
+RUNTIME_TRANSPORT_STARTUP_CALLBACK_COUNT_SYMBOL = "runtime_transport_startup_callback_count"
+RUNTIME_TRANSPORT_STARTUP_SUBMIT_RESULT_SYMBOL = "runtime_transport_startup_submit_result"
+RUNTIME_TRANSPORT_STARTUP_CALLBACK_RESULT_SYMBOL = "runtime_transport_startup_callback_result"
+RUNTIME_TRANSPORT_STARTUP_SUBMIT_GENERATION_SYMBOL = "runtime_transport_startup_submit_generation"
+RUNTIME_TRANSPORT_STARTUP_CALLBACK_GENERATION_SYMBOL = "runtime_transport_startup_callback_generation"
+RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_COUNT_SYMBOL = "runtime_transport_get_host_id_submit_count"
+RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_COUNT_SYMBOL = "runtime_transport_get_host_id_callback_count"
+RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_RESULT_SYMBOL = "runtime_transport_get_host_id_submit_result"
+RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_RESULT_SYMBOL = "runtime_transport_get_host_id_callback_result"
+RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_GENERATION_SYMBOL = "runtime_transport_get_host_id_submit_generation"
+RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_GENERATION_SYMBOL = "runtime_transport_get_host_id_callback_generation"
+RUNTIME_TRANSPORT_SOCKET_SUBMIT_COUNT_SYMBOL = "runtime_transport_socket_submit_count"
+RUNTIME_TRANSPORT_SOCKET_CALLBACK_COUNT_SYMBOL = "runtime_transport_socket_callback_count"
+RUNTIME_TRANSPORT_SOCKET_SUBMIT_RESULT_SYMBOL = "runtime_transport_socket_submit_result"
+RUNTIME_TRANSPORT_SOCKET_CALLBACK_RESULT_SYMBOL = "runtime_transport_socket_callback_result"
+RUNTIME_TRANSPORT_SOCKET_SUBMIT_GENERATION_SYMBOL = "runtime_transport_socket_submit_generation"
+RUNTIME_TRANSPORT_SOCKET_CALLBACK_GENERATION_SYMBOL = "runtime_transport_socket_callback_generation"
+RUNTIME_TRANSPORT_BIND_SUBMIT_COUNT_SYMBOL = "runtime_transport_bind_submit_count"
+RUNTIME_TRANSPORT_BIND_CALLBACK_COUNT_SYMBOL = "runtime_transport_bind_callback_count"
+RUNTIME_TRANSPORT_BIND_SUBMIT_RESULT_SYMBOL = "runtime_transport_bind_submit_result"
+RUNTIME_TRANSPORT_BIND_CALLBACK_RESULT_SYMBOL = "runtime_transport_bind_callback_result"
+RUNTIME_TRANSPORT_BIND_SUBMIT_GENERATION_SYMBOL = "runtime_transport_bind_submit_generation"
+RUNTIME_TRANSPORT_BIND_CALLBACK_GENERATION_SYMBOL = "runtime_transport_bind_callback_generation"
 RUNTIME_TRANSPORT_KD_FD_SYMBOL = "runtime_transport_kd_fd"
+RUNTIME_TRANSPORT_KD_CLOSED_SYMBOL = "runtime_transport_kd_closed"
 RUNTIME_TRANSPORT_IP_FD_SYMBOL = "runtime_transport_ip_fd"
 RUNTIME_TRANSPORT_SOCKET_FD_SYMBOL = "runtime_transport_socket_fd"
 RUNTIME_TRANSPORT_HOST_ID_SYMBOL = "runtime_transport_host_id"
 RUNTIME_TRANSPORT_BOUND_PORT_SYMBOL = "runtime_transport_bound_port"
+RUNTIME_TRANSPORT_RECEIVE_SUBMIT_COUNT_SYMBOL = "runtime_transport_receive_submit_count"
+RUNTIME_TRANSPORT_SEND_SUBMIT_COUNT_SYMBOL = "runtime_transport_send_submit_count"
 RUNTIME_TRANSPORT_RECEIVE_COUNT_SYMBOL = "runtime_transport_receive_count"
 RUNTIME_TRANSPORT_RECEIVE_BYTES_SYMBOL = "runtime_transport_receive_bytes"
 RUNTIME_TRANSPORT_SEND_COUNT_SYMBOL = "runtime_transport_send_count"
@@ -231,19 +312,65 @@ class RelocatedRuntimeBuildResult:
     diagnostic_callback_result_address: int | None
     verified_game_r2_address: int
     verified_game_r13_address: int
+    abi_probe_supplied_args_address: int
+    abi_probe_supplied_args_size: int
+    abi_probe_pre_call_args_address: int
+    abi_probe_pre_call_args_size: int
+    abi_probe_target_args_address: int
+    abi_probe_target_args_size: int
+    abi_probe_return_value_address: int
+    abi_probe_result_flags_address: int
+    abi_probe_stack_pointer_before_address: int
+    abi_probe_stack_pointer_after_address: int
+    abi_probe_saved_lr_address: int
+    abi_probe_restored_lr_address: int
+    abi_probe_saved_r2_address: int
+    abi_probe_restored_r2_address: int
+    abi_probe_saved_r13_address: int
+    abi_probe_restored_r13_address: int
+    abi_probe_target_ctr_address: int
+    abi_probe_after_call_flag_address: int
+    abi_probe_expected_return_value_address: int
     transport_phase_address: int
     transport_last_error_address: int
+    transport_last_socket_error_address: int
     transport_last_ios_result_address: int
     transport_pending_operation_address: int
     transport_pending_generation_address: int
     transport_callback_generation_address: int
     transport_callback_count_address: int
+    transport_rejected_callback_count_address: int
     transport_callback_pending_address: int
+    transport_open_kd_submit_count_address: int
+    transport_open_kd_callback_count_address: int
+    transport_nwc24_submit_count_address: int
+    transport_nwc24_callback_count_address: int
+    transport_nwc24_synchronous_result_address: int
+    transport_nwc24_callback_result_address: int
+    transport_nwc24_output_buffer_address: int
+    transport_nwc24_output_digest_address: int
+    transport_open_ip_submit_count_address: int
+    transport_open_ip_callback_count_address: int
+    transport_kd_close_submit_count_address: int
+    transport_kd_close_callback_count_address: int
+    transport_ip_close_submit_count_address: int
+    transport_socket_close_submit_count_address: int
+    transport_startup_submit_count_address: int
+    transport_startup_callback_count_address: int
+    transport_get_host_id_submit_count_address: int
+    transport_get_host_id_callback_count_address: int
+    transport_socket_submit_count_address: int
+    transport_socket_callback_count_address: int
+    transport_bind_submit_count_address: int
+    transport_bind_callback_count_address: int
     transport_kd_fd_address: int
+    transport_kd_closed_address: int
     transport_ip_fd_address: int
     transport_socket_fd_address: int
     transport_host_id_address: int
     transport_bound_port_address: int
+    transport_receive_submit_count_address: int
+    transport_send_submit_count_address: int
     transport_receive_count_address: int
     transport_receive_bytes_address: int
     transport_send_count_address: int
@@ -259,6 +386,36 @@ class RelocatedRuntimeBuildResult:
     transport_last_receive_preview_size: int
     transport_last_send_preview_address: int
     transport_last_send_preview_size: int
+    transport_open_kd_submit_result_address: int
+    transport_open_kd_callback_result_address: int
+    transport_open_kd_submit_generation_address: int
+    transport_open_kd_callback_generation_address: int
+    transport_nwc24_submit_generation_address: int
+    transport_nwc24_callback_generation_address: int
+    transport_open_ip_submit_result_address: int
+    transport_open_ip_callback_result_address: int
+    transport_open_ip_submit_generation_address: int
+    transport_open_ip_callback_generation_address: int
+    transport_kd_close_submit_result_address: int
+    transport_kd_close_callback_result_address: int
+    transport_kd_close_submit_generation_address: int
+    transport_kd_close_callback_generation_address: int
+    transport_startup_submit_result_address: int
+    transport_startup_callback_result_address: int
+    transport_startup_submit_generation_address: int
+    transport_startup_callback_generation_address: int
+    transport_get_host_id_submit_result_address: int
+    transport_get_host_id_callback_result_address: int
+    transport_get_host_id_submit_generation_address: int
+    transport_get_host_id_callback_generation_address: int
+    transport_socket_submit_result_address: int
+    transport_socket_callback_result_address: int
+    transport_socket_submit_generation_address: int
+    transport_socket_callback_generation_address: int
+    transport_bind_submit_result_address: int
+    transport_bind_callback_result_address: int
+    transport_bind_submit_generation_address: int
+    transport_bind_callback_generation_address: int
     cache_range_start: int
     cache_range_size: int
 
@@ -274,8 +431,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--relocated-continue", action="store_true")
     parser.add_argument("--enable-recurring-hook-diagnostics", action="store_true")
     parser.add_argument("--enable-ios-udp-diagnostic", action="store_true")
+    parser.add_argument("--enable-ios-udp-diagnostic-init", action="store_true")
     parser.add_argument("--ios-udp-dry-run", action="store_true")
     parser.add_argument("--ios-open-via-retail-wrapper-once", action="store_true")
+    parser.add_argument("--ios-nwc24-once", action="store_true")
+    parser.add_argument("--ios-nwc24-via-retail-ioctl-once", action="store_true")
+    parser.add_argument("--ios-close-kd-once", action="store_true")
+    parser.add_argument("--ios-open-ip-once", action="store_true")
+    parser.add_argument("--ios-startup-once", action="store_true")
+    parser.add_argument("--ios-get-host-id-once", action="store_true")
+    parser.add_argument("--ios-create-socket-once", action="store_true")
+    parser.add_argument("--ios-bind-once", action="store_true")
+    parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
     parser.add_argument("--diagnostic-address")
@@ -290,16 +457,62 @@ def _prime3_ntsc_retail_ios_wrapper_metadata() -> Prime3RetailIosWrapperMetadata
         open_address=PRIME3_NTSC_IOS_OPEN_ADDRESS,
         close_async_address=PRIME3_NTSC_IOS_CLOSE_ASYNC_ADDRESS,
         close_address=PRIME3_NTSC_IOS_CLOSE_ADDRESS,
-        ioctl_async_address=PRIME3_NTSC_IOS_IOCTL_ASYNC_ADDRESS,
-        ioctl_address=PRIME3_NTSC_IOS_IOCTL_ADDRESS,
-        ioctlv_async_address=PRIME3_NTSC_IOS_IOCTLV_ASYNC_ADDRESS,
-        ioctlv_address=PRIME3_NTSC_IOS_IOCTLV_ADDRESS,
+        read_async_address=PRIME3_NTSC_IOS_READ_ASYNC_ADDRESS,
+        read_sync_address=PRIME3_NTSC_IOS_READ_SYNC_ADDRESS,
+        write_async_address=PRIME3_NTSC_IOS_WRITE_ASYNC_ADDRESS,
+        write_sync_address=PRIME3_NTSC_IOS_WRITE_SYNC_ADDRESS,
+        seek_async_address=PRIME3_NTSC_IOS_SEEK_ASYNC_ADDRESS,
+        seek_sync_address=PRIME3_NTSC_IOS_SEEK_SYNC_ADDRESS,
+        confirmed_ioctl_async_address=PRIME3_NTSC_CONFIRMED_IOS_IOCTL_ASYNC_ADDRESS,
+        confirmed_ioctl_sync_address=PRIME3_NTSC_CONFIRMED_IOS_IOCTL_SYNC_ADDRESS,
+        confirmed_ioctlv_async_address=PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_ASYNC_ADDRESS,
+        confirmed_ioctlv_sync_address=PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_SYNC_ADDRESS,
+        async_ioctl_address=PRIME3_NTSC_CONFIRMED_IOS_IOCTL_ASYNC_ADDRESS,
+        async_ioctl_extent="0x80504FE0..0x80505118",
+        async_ioctl_argument_count=8,
+        async_ioctl_stack_argument_count=0,
+        async_ioctl_operation=6,
+        async_ioctl_confidence="verified",
+        confirmed_ioctl_async_fingerprint_sha256=(
+            "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
+        ),
+        confirmed_ioctl_async_prototype=(
+            "s32 ioctl_async(s32 fd, u32 command, const void *input, u32 input_length, "
+            "void *output, u32 output_length, completion_fn completion, void *userdata)"
+        ),
+        confirmed_ioctl_async_register_arguments=(
+            "r3=fd",
+            "r4=command",
+            "r5=input",
+            "r6=input_length",
+            "r7=output",
+            "r8=output_length",
+            "r9=completion",
+            "r10=userdata",
+        ),
+        confirmed_ioctl_async_stack_arguments=(),
+        request_field_offsets=(
+            "operation=0x00",
+            "result=0x04",
+            "fd=0x08",
+            "argument_0=0x0c",
+            "argument_1=0x10",
+            "argument_2=0x14",
+            "argument_3=0x18",
+            "argument_4=0x1c",
+            "completion=0x20",
+            "completion_userdata=0x24",
+            "special_vector_flag=0x28",
+        ),
         open_async_guard_words=PRIME3_NTSC_IOS_OPEN_ASYNC_GUARD_WORDS,
         callback_signature="s32 callback(s32 result, void *userdata)",
         preserved_registers=("r2", "r13"),
         submit_helper_address=PRIME3_NTSC_IOS_SUBMIT_HELPER_ADDRESS,
         request_allocator_address=PRIME3_NTSC_IOS_REQUEST_ALLOCATOR_ADDRESS,
-        evidence_source="prime3-ntsc retail DOL cluster + callsite analysis",
+        evidence_source=(
+            "prime3-ntsc retail DOL operation 3-7 request construction, cache handling, "
+            "completion fields, and compatible callsite verification"
+        ),
         confidence="verified",
     )
 
@@ -334,7 +547,19 @@ def build_prime3_runtime_payload(  # noqa: C901
     compiler_defines: list[str] = []
     linker_defines: list[str] = []
 
-    if ios_udp_mode not in {"normal", "dry_run", "retail_wrapper_open_kd_once"}:
+    if ios_udp_mode not in {
+        "normal",
+        "dry_run",
+        "retail_wrapper_open_kd_once",
+        "retail_wrapper_nwc24_startup_once",
+        "retail_wrapper_close_kd_once",
+        "retail_wrapper_open_ip_once",
+        "retail_wrapper_startup_once",
+        "retail_wrapper_get_host_id_once",
+        "retail_wrapper_create_socket_once",
+        "retail_wrapper_bind_once",
+        "retail_wrapper_ioctl_async_abi_probe",
+    }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
     if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
@@ -557,6 +782,40 @@ def build_prime3_runtime_payload(  # noqa: C901
             raise RuntimeError("Embedded runtime blob hash does not match the separately linked runtime payload.")
         runtime_destination = RELOCATED_RUNTIME_DESTINATION if runtime_destination is None else runtime_destination
         diagnostic_metadata = None
+        abi_probe_metadata = Prime3RuntimeAbiProbeMetadata(
+            mode="retail_wrapper_ioctl_async_abi_probe",
+            supplied_args_address=relocated_runtime.abi_probe_supplied_args_address,
+            supplied_args_size=relocated_runtime.abi_probe_supplied_args_size,
+            pre_call_args_address=relocated_runtime.abi_probe_pre_call_args_address,
+            pre_call_args_size=relocated_runtime.abi_probe_pre_call_args_size,
+            target_args_address=relocated_runtime.abi_probe_target_args_address,
+            target_args_size=relocated_runtime.abi_probe_target_args_size,
+            return_value_address=relocated_runtime.abi_probe_return_value_address,
+            return_value_size=4,
+            expected_return_value=0x13579BDF,
+            result_flags_address=relocated_runtime.abi_probe_result_flags_address,
+            result_flags_size=4,
+            stack_pointer_before_address=relocated_runtime.abi_probe_stack_pointer_before_address,
+            stack_pointer_before_size=4,
+            stack_pointer_after_address=relocated_runtime.abi_probe_stack_pointer_after_address,
+            stack_pointer_after_size=4,
+            saved_lr_address=relocated_runtime.abi_probe_saved_lr_address,
+            saved_lr_size=4,
+            restored_lr_address=relocated_runtime.abi_probe_restored_lr_address,
+            restored_lr_size=4,
+            saved_r2_address=relocated_runtime.abi_probe_saved_r2_address,
+            saved_r2_size=4,
+            restored_r2_address=relocated_runtime.abi_probe_restored_r2_address,
+            restored_r2_size=4,
+            saved_r13_address=relocated_runtime.abi_probe_saved_r13_address,
+            saved_r13_size=4,
+            restored_r13_address=relocated_runtime.abi_probe_restored_r13_address,
+            restored_r13_size=4,
+            target_ctr_address=relocated_runtime.abi_probe_target_ctr_address,
+            target_ctr_size=4,
+            after_call_flag_address=relocated_runtime.abi_probe_after_call_flag_address,
+            after_call_flag_size=4,
+        )
         if enable_recurring_hook_diagnostics:
             diagnostic_fields = (
                 relocated_runtime.diagnostic_hook_wrapper_entry_count_address,
@@ -655,11 +914,24 @@ def build_prime3_runtime_payload(  # noqa: C901
             )
         transport_metadata = None
         if enable_ios_udp_diagnostic:
+            nwc24_ioctl_once = ios_udp_mode == "retail_wrapper_nwc24_startup_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
+                mode=ios_udp_mode,
+                initialization_enabled=True,
+                receive_enabled=False,
+                send_enabled=False,
+                nwc24_startup_enabled=True,
+                kd_close_enabled=not nwc24_ioctl_once,
+                ip_close_on_success=False,
+                socket_close_on_success=False,
+                terminal_phase_value=0xFE if nwc24_ioctl_once else 0x11,
+                terminal_phase_name="NWC24_COMPLETE" if nwc24_ioctl_once else "BOUND_NO_RECV",
                 phase_address=relocated_runtime.transport_phase_address,
                 phase_size=4,
                 last_error_address=relocated_runtime.transport_last_error_address,
                 last_error_size=4,
+                last_socket_error_address=relocated_runtime.transport_last_socket_error_address,
+                last_socket_error_size=4,
                 last_ios_result_address=relocated_runtime.transport_last_ios_result_address,
                 last_ios_result_size=4,
                 pending_operation_address=relocated_runtime.transport_pending_operation_address,
@@ -670,10 +942,55 @@ def build_prime3_runtime_payload(  # noqa: C901
                 callback_generation_size=4,
                 callback_count_address=relocated_runtime.transport_callback_count_address,
                 callback_count_size=4,
+                rejected_callback_count_address=relocated_runtime.transport_rejected_callback_count_address,
+                rejected_callback_count_size=4,
                 callback_pending_address=relocated_runtime.transport_callback_pending_address,
                 callback_pending_size=4,
+                open_kd_submit_count_address=relocated_runtime.transport_open_kd_submit_count_address,
+                open_kd_submit_count_size=4,
+                open_kd_callback_count_address=relocated_runtime.transport_open_kd_callback_count_address,
+                open_kd_callback_count_size=4,
+                nwc24_output_buffer_address=relocated_runtime.transport_nwc24_output_buffer_address,
+                nwc24_output_buffer_size=0x20,
+                nwc24_output_buffer_alignment=0x20,
+                nwc24_submit_count_address=relocated_runtime.transport_nwc24_submit_count_address,
+                nwc24_submit_count_size=4,
+                nwc24_callback_count_address=relocated_runtime.transport_nwc24_callback_count_address,
+                nwc24_callback_count_size=4,
+                nwc24_synchronous_result_address=relocated_runtime.transport_nwc24_synchronous_result_address,
+                nwc24_synchronous_result_size=4,
+                nwc24_callback_result_address=relocated_runtime.transport_nwc24_callback_result_address,
+                nwc24_callback_result_size=4,
+                nwc24_output_digest_address=relocated_runtime.transport_nwc24_output_digest_address,
+                nwc24_output_digest_size=4,
+                open_ip_submit_count_address=relocated_runtime.transport_open_ip_submit_count_address,
+                open_ip_submit_count_size=4,
+                open_ip_callback_count_address=relocated_runtime.transport_open_ip_callback_count_address,
+                open_ip_callback_count_size=4,
+                kd_close_submit_count_address=relocated_runtime.transport_kd_close_submit_count_address,
+                kd_close_submit_count_size=4,
+                kd_close_callback_count_address=relocated_runtime.transport_kd_close_callback_count_address,
+                kd_close_callback_count_size=4,
+                startup_submit_count_address=relocated_runtime.transport_startup_submit_count_address,
+                startup_submit_count_size=4,
+                startup_callback_count_address=relocated_runtime.transport_startup_callback_count_address,
+                startup_callback_count_size=4,
+                get_host_id_submit_count_address=relocated_runtime.transport_get_host_id_submit_count_address,
+                get_host_id_submit_count_size=4,
+                get_host_id_callback_count_address=relocated_runtime.transport_get_host_id_callback_count_address,
+                get_host_id_callback_count_size=4,
+                socket_submit_count_address=relocated_runtime.transport_socket_submit_count_address,
+                socket_submit_count_size=4,
+                socket_callback_count_address=relocated_runtime.transport_socket_callback_count_address,
+                socket_callback_count_size=4,
+                bind_submit_count_address=relocated_runtime.transport_bind_submit_count_address,
+                bind_submit_count_size=4,
+                bind_callback_count_address=relocated_runtime.transport_bind_callback_count_address,
+                bind_callback_count_size=4,
                 kd_fd_address=relocated_runtime.transport_kd_fd_address,
                 kd_fd_size=4,
+                kd_closed_address=relocated_runtime.transport_kd_closed_address,
+                kd_closed_size=4,
                 ip_fd_address=relocated_runtime.transport_ip_fd_address,
                 ip_fd_size=4,
                 socket_fd_address=relocated_runtime.transport_socket_fd_address,
@@ -682,6 +999,14 @@ def build_prime3_runtime_payload(  # noqa: C901
                 host_id_size=4,
                 bound_port_address=relocated_runtime.transport_bound_port_address,
                 bound_port_size=4,
+                receive_submit_count_address=relocated_runtime.transport_receive_submit_count_address,
+                receive_submit_count_size=4,
+                send_submit_count_address=relocated_runtime.transport_send_submit_count_address,
+                send_submit_count_size=4,
+                ip_close_submit_count_address=relocated_runtime.transport_ip_close_submit_count_address,
+                ip_close_submit_count_size=4,
+                socket_close_submit_count_address=relocated_runtime.transport_socket_close_submit_count_address,
+                socket_close_submit_count_size=4,
                 receive_count_address=relocated_runtime.transport_receive_count_address,
                 receive_count_size=4,
                 receive_bytes_address=relocated_runtime.transport_receive_bytes_address,
@@ -708,6 +1033,68 @@ def build_prime3_runtime_payload(  # noqa: C901
                 last_receive_preview_size=relocated_runtime.transport_last_receive_preview_size,
                 last_send_preview_address=relocated_runtime.transport_last_send_preview_address,
                 last_send_preview_size=relocated_runtime.transport_last_send_preview_size,
+                open_kd_submit_result_address=relocated_runtime.transport_open_kd_submit_result_address,
+                open_kd_submit_result_size=4,
+                open_kd_callback_result_address=relocated_runtime.transport_open_kd_callback_result_address,
+                open_kd_callback_result_size=4,
+                open_kd_submit_generation_address=relocated_runtime.transport_open_kd_submit_generation_address,
+                open_kd_submit_generation_size=4,
+                open_kd_callback_generation_address=relocated_runtime.transport_open_kd_callback_generation_address,
+                open_kd_callback_generation_size=4,
+                nwc24_submit_generation_address=relocated_runtime.transport_nwc24_submit_generation_address,
+                nwc24_submit_generation_size=4,
+                nwc24_callback_generation_address=relocated_runtime.transport_nwc24_callback_generation_address,
+                nwc24_callback_generation_size=4,
+                open_ip_submit_result_address=relocated_runtime.transport_open_ip_submit_result_address,
+                open_ip_submit_result_size=4,
+                open_ip_callback_result_address=relocated_runtime.transport_open_ip_callback_result_address,
+                open_ip_callback_result_size=4,
+                open_ip_submit_generation_address=relocated_runtime.transport_open_ip_submit_generation_address,
+                open_ip_submit_generation_size=4,
+                open_ip_callback_generation_address=relocated_runtime.transport_open_ip_callback_generation_address,
+                open_ip_callback_generation_size=4,
+                kd_close_submit_result_address=relocated_runtime.transport_kd_close_submit_result_address,
+                kd_close_submit_result_size=4,
+                kd_close_callback_result_address=relocated_runtime.transport_kd_close_callback_result_address,
+                kd_close_callback_result_size=4,
+                kd_close_submit_generation_address=relocated_runtime.transport_kd_close_submit_generation_address,
+                kd_close_submit_generation_size=4,
+                kd_close_callback_generation_address=relocated_runtime.transport_kd_close_callback_generation_address,
+                kd_close_callback_generation_size=4,
+                startup_submit_result_address=relocated_runtime.transport_startup_submit_result_address,
+                startup_submit_result_size=4,
+                startup_callback_result_address=relocated_runtime.transport_startup_callback_result_address,
+                startup_callback_result_size=4,
+                startup_submit_generation_address=relocated_runtime.transport_startup_submit_generation_address,
+                startup_submit_generation_size=4,
+                startup_callback_generation_address=relocated_runtime.transport_startup_callback_generation_address,
+                startup_callback_generation_size=4,
+                get_host_id_submit_result_address=relocated_runtime.transport_get_host_id_submit_result_address,
+                get_host_id_submit_result_size=4,
+                get_host_id_callback_result_address=relocated_runtime.transport_get_host_id_callback_result_address,
+                get_host_id_callback_result_size=4,
+                get_host_id_submit_generation_address=relocated_runtime.transport_get_host_id_submit_generation_address,
+                get_host_id_submit_generation_size=4,
+                get_host_id_callback_generation_address=(
+                    relocated_runtime.transport_get_host_id_callback_generation_address
+                ),
+                get_host_id_callback_generation_size=4,
+                socket_submit_result_address=relocated_runtime.transport_socket_submit_result_address,
+                socket_submit_result_size=4,
+                socket_callback_result_address=relocated_runtime.transport_socket_callback_result_address,
+                socket_callback_result_size=4,
+                socket_submit_generation_address=relocated_runtime.transport_socket_submit_generation_address,
+                socket_submit_generation_size=4,
+                socket_callback_generation_address=relocated_runtime.transport_socket_callback_generation_address,
+                socket_callback_generation_size=4,
+                bind_submit_result_address=relocated_runtime.transport_bind_submit_result_address,
+                bind_submit_result_size=4,
+                bind_callback_result_address=relocated_runtime.transport_bind_callback_result_address,
+                bind_callback_result_size=4,
+                bind_submit_generation_address=relocated_runtime.transport_bind_submit_generation_address,
+                bind_submit_generation_size=4,
+                bind_callback_generation_address=relocated_runtime.transport_bind_callback_generation_address,
+                bind_callback_generation_size=4,
             )
         relocated_runtime_metadata = Prime3RelocatedRuntimeMetadata(
             mode=payload_mode,
@@ -754,6 +1141,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             diagnostics=diagnostic_metadata,
             ios_udp_diagnostic_enabled=enable_ios_udp_diagnostic,
             transport=transport_metadata,
+            abi_probe=abi_probe_metadata,
             retail_ios_wrapper=_prime3_ntsc_retail_ios_wrapper_metadata() if enable_ios_udp_diagnostic else None,
         )
 
@@ -809,13 +1197,26 @@ def _build_relocated_runtime(
         f"-DPRIME3_RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS=0x{RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_IOS_OPEN_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_OPEN_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_IOS_CLOSE_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_CLOSE_ASYNC_ADDRESS:08X}",
-        f"-DPRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_IOCTL_ASYNC_ADDRESS:08X}",
-        f"-DPRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_IOCTLV_ASYNC_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_IOS_READ_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_READ_ASYNC_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_IOS_WRITE_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_WRITE_ASYNC_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS=0x{PRIME3_NTSC_CONFIRMED_IOS_IOCTL_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS={1 if enable_recurring_hook_diagnostics else 0}",
         f"-DPRIME3_ENABLE_IOS_UDP_DIAGNOSTIC={1 if enable_ios_udp_diagnostic else 0}",
         (
             "-DPRIME3_IOS_UDP_DIAGNOSTIC_MODE="
-            + {"normal": "0", "dry_run": "1", "retail_wrapper_open_kd_once": "2"}[ios_udp_mode]
+            + {
+                "normal": "0",
+                "dry_run": "1",
+                "retail_wrapper_open_kd_once": "2",
+                "retail_wrapper_nwc24_startup_once": "3",
+                "retail_wrapper_close_kd_once": "4",
+                "retail_wrapper_open_ip_once": "5",
+                "retail_wrapper_startup_once": "6",
+                "retail_wrapper_get_host_id_once": "7",
+                "retail_wrapper_create_socket_once": "8",
+                "retail_wrapper_bind_once": "9",
+                "retail_wrapper_ioctl_async_abi_probe": "10",
+            }[ios_udp_mode]
         ),
     ]
     _run(
@@ -983,8 +1384,38 @@ def _build_relocated_runtime(
     )
     verified_game_r2_address = _extract_symbol_address(readelf_symbols, RUNTIME_VERIFIED_GAME_R2_SYMBOL)
     verified_game_r13_address = _extract_symbol_address(readelf_symbols, RUNTIME_VERIFIED_GAME_R13_SYMBOL)
+    abi_probe_supplied_args_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_SUPPLIED_ARGS_SYMBOL)
+    abi_probe_supplied_args_size = _extract_symbol_size(readelf_symbols, RUNTIME_ABI_PROBE_SUPPLIED_ARGS_SYMBOL)
+    abi_probe_pre_call_args_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_PRE_CALL_ARGS_SYMBOL)
+    abi_probe_pre_call_args_size = _extract_symbol_size(readelf_symbols, RUNTIME_ABI_PROBE_PRE_CALL_ARGS_SYMBOL)
+    abi_probe_target_args_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_TARGET_ARGS_SYMBOL)
+    abi_probe_target_args_size = _extract_symbol_size(readelf_symbols, RUNTIME_ABI_PROBE_TARGET_ARGS_SYMBOL)
+    abi_probe_return_value_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_RETURN_VALUE_SYMBOL)
+    abi_probe_result_flags_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_RESULT_FLAGS_SYMBOL)
+    abi_probe_stack_pointer_before_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_ABI_PROBE_STACK_POINTER_BEFORE_SYMBOL
+    )
+    abi_probe_stack_pointer_after_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_ABI_PROBE_STACK_POINTER_AFTER_SYMBOL
+    )
+    abi_probe_saved_lr_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_SAVED_LR_SYMBOL)
+    abi_probe_restored_lr_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_RESTORED_LR_SYMBOL)
+    abi_probe_saved_r2_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_SAVED_R2_SYMBOL)
+    abi_probe_restored_r2_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_RESTORED_R2_SYMBOL)
+    abi_probe_saved_r13_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_SAVED_R13_SYMBOL)
+    abi_probe_restored_r13_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_RESTORED_R13_SYMBOL)
+    abi_probe_target_ctr_address = _extract_symbol_address(readelf_symbols, RUNTIME_ABI_PROBE_TARGET_CTR_SYMBOL)
+    abi_probe_after_call_flag_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_ABI_PROBE_AFTER_CALL_FLAG_SYMBOL
+    )
+    abi_probe_expected_return_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_ABI_PROBE_EXPECTED_RETURN_VALUE_SYMBOL
+    )
     transport_phase_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_PHASE_SYMBOL)
     transport_last_error_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_LAST_ERROR_SYMBOL)
+    transport_last_socket_error_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_LAST_SOCKET_ERROR_SYMBOL
+    )
     transport_last_ios_result_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_IOS_RESULT_SYMBOL
     )
@@ -998,14 +1429,180 @@ def _build_relocated_runtime(
         readelf_symbols, RUNTIME_TRANSPORT_CALLBACK_GENERATION_SYMBOL
     )
     transport_callback_count_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_CALLBACK_COUNT_SYMBOL)
+    transport_rejected_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_REJECTED_CALLBACK_COUNT_SYMBOL
+    )
     transport_callback_pending_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_CALLBACK_PENDING_SYMBOL
     )
+    transport_open_kd_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_KD_SUBMIT_COUNT_SYMBOL
+    )
+    transport_open_kd_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_KD_CALLBACK_COUNT_SYMBOL
+    )
+    transport_open_kd_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_KD_SUBMIT_RESULT_SYMBOL
+    )
+    transport_open_kd_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_KD_CALLBACK_RESULT_SYMBOL
+    )
+    transport_open_kd_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_KD_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_open_kd_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_KD_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_nwc24_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_SUBMIT_COUNT_SYMBOL
+    )
+    transport_nwc24_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_CALLBACK_COUNT_SYMBOL
+    )
+    transport_nwc24_synchronous_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_SYNCHRONOUS_RESULT_SYMBOL
+    )
+    transport_nwc24_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_CALLBACK_RESULT_SYMBOL
+    )
+    transport_nwc24_output_buffer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_OUTPUT_BUFFER_SYMBOL
+    )
+    transport_nwc24_output_digest_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_OUTPUT_DIGEST_SYMBOL
+    )
+    transport_nwc24_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_nwc24_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_NWC24_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_open_ip_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_COUNT_SYMBOL
+    )
+    transport_open_ip_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_COUNT_SYMBOL
+    )
+    transport_open_ip_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_RESULT_SYMBOL
+    )
+    transport_open_ip_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_RESULT_SYMBOL
+    )
+    transport_open_ip_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_open_ip_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_kd_close_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_COUNT_SYMBOL
+    )
+    transport_kd_close_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_kd_close_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_RESULT_SYMBOL
+    )
+    transport_kd_close_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_RESULT_SYMBOL
+    )
+    transport_kd_close_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_kd_close_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_ip_close_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_IP_CLOSE_SUBMIT_COUNT_SYMBOL
+    )
+    transport_socket_close_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CLOSE_SUBMIT_COUNT_SYMBOL
+    )
+    transport_startup_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_STARTUP_SUBMIT_COUNT_SYMBOL
+    )
+    transport_startup_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_STARTUP_CALLBACK_COUNT_SYMBOL
+    )
+    transport_startup_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_STARTUP_SUBMIT_RESULT_SYMBOL
+    )
+    transport_startup_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_STARTUP_CALLBACK_RESULT_SYMBOL
+    )
+    transport_startup_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_STARTUP_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_startup_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_STARTUP_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_get_host_id_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_COUNT_SYMBOL
+    )
+    transport_get_host_id_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_COUNT_SYMBOL
+    )
+    transport_get_host_id_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_RESULT_SYMBOL
+    )
+    transport_get_host_id_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_RESULT_SYMBOL
+    )
+    transport_get_host_id_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_get_host_id_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_socket_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_SUBMIT_COUNT_SYMBOL
+    )
+    transport_socket_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CALLBACK_COUNT_SYMBOL
+    )
+    transport_socket_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_SUBMIT_RESULT_SYMBOL
+    )
+    transport_socket_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CALLBACK_RESULT_SYMBOL
+    )
+    transport_socket_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_socket_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_bind_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_SUBMIT_COUNT_SYMBOL
+    )
+    transport_bind_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_CALLBACK_COUNT_SYMBOL
+    )
+    transport_bind_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_SUBMIT_RESULT_SYMBOL
+    )
+    transport_bind_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_CALLBACK_RESULT_SYMBOL
+    )
+    transport_bind_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_bind_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_CALLBACK_GENERATION_SYMBOL
+    )
     transport_kd_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_KD_FD_SYMBOL)
+    transport_kd_closed_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSED_SYMBOL)
     transport_ip_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_IP_FD_SYMBOL)
     transport_socket_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SOCKET_FD_SYMBOL)
     transport_host_id_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_HOST_ID_SYMBOL)
     transport_bound_port_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_BOUND_PORT_SYMBOL)
+    transport_receive_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_RECEIVE_SUBMIT_COUNT_SYMBOL
+    )
+    transport_send_submit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SEND_SUBMIT_COUNT_SYMBOL
+    )
     transport_receive_count_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_RECEIVE_COUNT_SYMBOL)
     transport_receive_bytes_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_RECEIVE_BYTES_SYMBOL)
     transport_send_count_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SEND_COUNT_SYMBOL)
@@ -1090,19 +1687,65 @@ def _build_relocated_runtime(
         diagnostic_callback_result_address=diagnostic_callback_result_address,
         verified_game_r2_address=verified_game_r2_address,
         verified_game_r13_address=verified_game_r13_address,
+        abi_probe_supplied_args_address=abi_probe_supplied_args_address,
+        abi_probe_supplied_args_size=abi_probe_supplied_args_size,
+        abi_probe_pre_call_args_address=abi_probe_pre_call_args_address,
+        abi_probe_pre_call_args_size=abi_probe_pre_call_args_size,
+        abi_probe_target_args_address=abi_probe_target_args_address,
+        abi_probe_target_args_size=abi_probe_target_args_size,
+        abi_probe_return_value_address=abi_probe_return_value_address,
+        abi_probe_result_flags_address=abi_probe_result_flags_address,
+        abi_probe_stack_pointer_before_address=abi_probe_stack_pointer_before_address,
+        abi_probe_stack_pointer_after_address=abi_probe_stack_pointer_after_address,
+        abi_probe_saved_lr_address=abi_probe_saved_lr_address,
+        abi_probe_restored_lr_address=abi_probe_restored_lr_address,
+        abi_probe_saved_r2_address=abi_probe_saved_r2_address,
+        abi_probe_restored_r2_address=abi_probe_restored_r2_address,
+        abi_probe_saved_r13_address=abi_probe_saved_r13_address,
+        abi_probe_restored_r13_address=abi_probe_restored_r13_address,
+        abi_probe_target_ctr_address=abi_probe_target_ctr_address,
+        abi_probe_after_call_flag_address=abi_probe_after_call_flag_address,
+        abi_probe_expected_return_value_address=abi_probe_expected_return_value_address,
         transport_phase_address=transport_phase_address,
         transport_last_error_address=transport_last_error_address,
+        transport_last_socket_error_address=transport_last_socket_error_address,
         transport_last_ios_result_address=transport_last_ios_result_address,
         transport_pending_operation_address=transport_pending_operation_address,
         transport_pending_generation_address=transport_pending_generation_address,
         transport_callback_generation_address=transport_callback_generation_address,
         transport_callback_count_address=transport_callback_count_address,
+        transport_rejected_callback_count_address=transport_rejected_callback_count_address,
         transport_callback_pending_address=transport_callback_pending_address,
+        transport_open_kd_submit_count_address=transport_open_kd_submit_count_address,
+        transport_open_kd_callback_count_address=transport_open_kd_callback_count_address,
+        transport_nwc24_submit_count_address=transport_nwc24_submit_count_address,
+        transport_nwc24_callback_count_address=transport_nwc24_callback_count_address,
+        transport_nwc24_synchronous_result_address=transport_nwc24_synchronous_result_address,
+        transport_nwc24_callback_result_address=transport_nwc24_callback_result_address,
+        transport_nwc24_output_buffer_address=transport_nwc24_output_buffer_address,
+        transport_nwc24_output_digest_address=transport_nwc24_output_digest_address,
+        transport_open_ip_submit_count_address=transport_open_ip_submit_count_address,
+        transport_open_ip_callback_count_address=transport_open_ip_callback_count_address,
+        transport_kd_close_submit_count_address=transport_kd_close_submit_count_address,
+        transport_kd_close_callback_count_address=transport_kd_close_callback_count_address,
+        transport_ip_close_submit_count_address=transport_ip_close_submit_count_address,
+        transport_socket_close_submit_count_address=transport_socket_close_submit_count_address,
+        transport_startup_submit_count_address=transport_startup_submit_count_address,
+        transport_startup_callback_count_address=transport_startup_callback_count_address,
+        transport_get_host_id_submit_count_address=transport_get_host_id_submit_count_address,
+        transport_get_host_id_callback_count_address=transport_get_host_id_callback_count_address,
+        transport_socket_submit_count_address=transport_socket_submit_count_address,
+        transport_socket_callback_count_address=transport_socket_callback_count_address,
+        transport_bind_submit_count_address=transport_bind_submit_count_address,
+        transport_bind_callback_count_address=transport_bind_callback_count_address,
         transport_kd_fd_address=transport_kd_fd_address,
+        transport_kd_closed_address=transport_kd_closed_address,
         transport_ip_fd_address=transport_ip_fd_address,
         transport_socket_fd_address=transport_socket_fd_address,
         transport_host_id_address=transport_host_id_address,
         transport_bound_port_address=transport_bound_port_address,
+        transport_receive_submit_count_address=transport_receive_submit_count_address,
+        transport_send_submit_count_address=transport_send_submit_count_address,
         transport_receive_count_address=transport_receive_count_address,
         transport_receive_bytes_address=transport_receive_bytes_address,
         transport_send_count_address=transport_send_count_address,
@@ -1118,6 +1761,36 @@ def _build_relocated_runtime(
         transport_last_receive_preview_size=transport_last_receive_preview_size,
         transport_last_send_preview_address=transport_last_send_preview_address,
         transport_last_send_preview_size=transport_last_send_preview_size,
+        transport_open_kd_submit_result_address=transport_open_kd_submit_result_address,
+        transport_open_kd_callback_result_address=transport_open_kd_callback_result_address,
+        transport_open_kd_submit_generation_address=transport_open_kd_submit_generation_address,
+        transport_open_kd_callback_generation_address=transport_open_kd_callback_generation_address,
+        transport_nwc24_submit_generation_address=transport_nwc24_submit_generation_address,
+        transport_nwc24_callback_generation_address=transport_nwc24_callback_generation_address,
+        transport_open_ip_submit_result_address=transport_open_ip_submit_result_address,
+        transport_open_ip_callback_result_address=transport_open_ip_callback_result_address,
+        transport_open_ip_submit_generation_address=transport_open_ip_submit_generation_address,
+        transport_open_ip_callback_generation_address=transport_open_ip_callback_generation_address,
+        transport_kd_close_submit_result_address=transport_kd_close_submit_result_address,
+        transport_kd_close_callback_result_address=transport_kd_close_callback_result_address,
+        transport_kd_close_submit_generation_address=transport_kd_close_submit_generation_address,
+        transport_kd_close_callback_generation_address=transport_kd_close_callback_generation_address,
+        transport_startup_submit_result_address=transport_startup_submit_result_address,
+        transport_startup_callback_result_address=transport_startup_callback_result_address,
+        transport_startup_submit_generation_address=transport_startup_submit_generation_address,
+        transport_startup_callback_generation_address=transport_startup_callback_generation_address,
+        transport_get_host_id_submit_result_address=transport_get_host_id_submit_result_address,
+        transport_get_host_id_callback_result_address=transport_get_host_id_callback_result_address,
+        transport_get_host_id_submit_generation_address=transport_get_host_id_submit_generation_address,
+        transport_get_host_id_callback_generation_address=transport_get_host_id_callback_generation_address,
+        transport_socket_submit_result_address=transport_socket_submit_result_address,
+        transport_socket_callback_result_address=transport_socket_callback_result_address,
+        transport_socket_submit_generation_address=transport_socket_submit_generation_address,
+        transport_socket_callback_generation_address=transport_socket_callback_generation_address,
+        transport_bind_submit_result_address=transport_bind_submit_result_address,
+        transport_bind_callback_result_address=transport_bind_callback_result_address,
+        transport_bind_submit_generation_address=transport_bind_submit_generation_address,
+        transport_bind_callback_generation_address=transport_bind_callback_generation_address,
         cache_range_start=cache_range_start,
         cache_range_size=cache_range_size,
     )
@@ -1286,18 +1959,37 @@ def _find_instruction_index(
     raise RuntimeError(f"Unable to locate {mnemonic!r} in generated disassembly.")
 
 
-def _validate_retail_call_veneer_instructions(
+def _validate_retail_call_veneer_instructions(  # noqa: C901
     *,
     veneer_name: str,
     instructions: list[tuple[int, str, str]],
     expected_target: int,
 ) -> None:
+    argument_registers = {f"r{index}" for index in range(3, 11)}
+
+    def _normalized_operands(operands: str) -> list[str]:
+        return [item.strip().lower() for item in operands.split(",") if item.strip()]
+
+    def _written_register(mnemonic: str, operands: str) -> str | None:
+        normalized = _normalized_operands(operands)
+        if not normalized:
+            return None
+        if mnemonic in {"mr", "addi", "addis", "ori", "oris", "lwz", "li", "lis", "lbz", "lha", "lhz", "slwi"}:
+            return normalized[0]
+        return None
+
     if not instructions:
         raise RuntimeError(f"Generated disassembly for {veneer_name} is empty.")
     frame_mnemonic = instructions[0][1]
     frame_operands = instructions[0][2]
     if frame_mnemonic != "stwu" or not frame_operands.replace(" ", "").startswith("r1,-"):
         raise RuntimeError(f"{veneer_name} must begin with an ABI stack frame save before calling the retail target.")
+    try:
+        frame_size = abs(int(frame_operands.split(",", 1)[1].split("(", 1)[0], 0))
+    except (IndexError, ValueError) as exc:
+        raise RuntimeError(f"{veneer_name} stack frame could not be decoded from {frame_operands!r}.") from exc
+    if frame_size < 0x20 or frame_size % 0x10 != 0:
+        raise RuntimeError(f"{veneer_name} must allocate an ABI-aligned frame of at least 0x20 bytes.")
     mflr_index = _find_instruction_index(instructions, "mflr")
     lr_store_index = _find_instruction_index(instructions, "stw", start=mflr_index + 1)
     mtctr_index = _find_instruction_index(instructions, "mtctr")
@@ -1320,6 +2012,16 @@ def _validate_retail_call_veneer_instructions(
     ori_operands = [item.strip() for item in instructions[ori_index][2].split(",")]
     if len(lis_operands) < 2 or len(ori_operands) < 3:
         raise RuntimeError(f"{veneer_name} is missing the expected lis/ori target load sequence.")
+    lis_target = lis_operands[0].lower()
+    ori_target = ori_operands[0].lower()
+    ori_source = ori_operands[1].lower()
+    if lis_target != ori_target or lis_target != ori_source:
+        raise RuntimeError(f"{veneer_name} must keep the retail target load in one scratch register.")
+    if lis_target in argument_registers:
+        raise RuntimeError(f"{veneer_name} must not use argument register {lis_target} for the retail target address.")
+    mtctr_operands = _normalized_operands(instructions[mtctr_index][2])
+    if not mtctr_operands or mtctr_operands[0] != lis_target:
+        raise RuntimeError(f"{veneer_name} must transfer CTR from the loaded retail target register.")
     loaded_hi = int(lis_operands[1], 0) & 0xFFFF
     loaded_lo = int(ori_operands[2], 0) & 0xFFFF
     loaded_target = (loaded_hi << 16) | loaded_lo
@@ -1327,6 +2029,13 @@ def _validate_retail_call_veneer_instructions(
         raise RuntimeError(
             f"{veneer_name} loads 0x{loaded_target:08X}, expected 0x{expected_target:08X}."
         )
+    for _, mnemonic, operands in instructions[:bctrl_index]:
+        written_register = _written_register(mnemonic, operands)
+        if written_register in argument_registers:
+            raise RuntimeError(
+                f"{veneer_name} clobbers {written_register} before bctrl; "
+                "retail argument registers must reach the target unchanged."
+            )
     target_return_index = _find_instruction_index(instructions, "lwz", start=bctrl_index + 1)
     mtlr_index = _find_instruction_index(instructions, "mtlr", start=bctrl_index + 1)
     blr_index = _find_instruction_index(instructions, "blr", start=mtlr_index + 1)
@@ -1363,8 +2072,9 @@ def _validate_retail_call_veneer_disassembly(
     veneer_targets = {
         RUNTIME_RETAIL_IOS_OPEN_VENEER_SYMBOL: wrapper_metadata.open_async_address,
         RUNTIME_RETAIL_IOS_CLOSE_VENEER_SYMBOL: wrapper_metadata.close_async_address,
-        RUNTIME_RETAIL_IOS_IOCTL_VENEER_SYMBOL: wrapper_metadata.ioctl_async_address,
-        RUNTIME_RETAIL_IOS_IOCTLV_VENEER_SYMBOL: wrapper_metadata.ioctlv_async_address,
+        RUNTIME_RETAIL_READ_ASYNC_VENEER_SYMBOL: wrapper_metadata.read_async_address,
+        RUNTIME_RETAIL_WRITE_ASYNC_VENEER_SYMBOL: wrapper_metadata.write_async_address,
+        RUNTIME_RETAIL_IOS_IOCTL_ASYNC_VENEER_SYMBOL: wrapper_metadata.confirmed_ioctl_async_address,
         RUNTIME_RETAIL_VENEER_SELFTEST_SYMBOL: selftest_target_address,
     }
     for veneer_name, expected_target in veneer_targets.items():
@@ -1417,18 +2127,56 @@ def main() -> None:
             "--ios-open-kd-once is the failed direct-submit experiment and is no longer selectable; "
             "use --ios-open-via-retail-wrapper-once."
         )
-    if sum(1 for selected in (args.ios_udp_dry_run, args.ios_open_via_retail_wrapper_once) if selected) > 1:
+    if sum(
+        1
+        for selected in (
+            args.ios_udp_dry_run,
+            args.ios_open_via_retail_wrapper_once,
+            args.ios_nwc24_once,
+            args.ios_nwc24_via_retail_ioctl_once,
+            args.ios_close_kd_once,
+            args.ios_open_ip_once,
+            args.ios_startup_once,
+            args.ios_get_host_id_once,
+            args.ios_create_socket_once,
+            args.ios_bind_once,
+            args.ios_ioctl_async_abi_probe,
+            args.enable_ios_udp_diagnostic_init,
+        )
+        if selected
+    ) > 1:
         raise RuntimeError("Use at most one IOS UDP diagnostic sub-mode flag at a time.")
     ios_udp_mode = "normal"
     if args.ios_udp_dry_run:
         ios_udp_mode = "dry_run"
     elif args.ios_open_via_retail_wrapper_once:
         ios_udp_mode = "retail_wrapper_open_kd_once"
+    elif args.ios_nwc24_once or args.ios_nwc24_via_retail_ioctl_once:
+        ios_udp_mode = "retail_wrapper_nwc24_startup_once"
+    elif args.ios_close_kd_once:
+        ios_udp_mode = "retail_wrapper_close_kd_once"
+    elif args.ios_open_ip_once:
+        ios_udp_mode = "retail_wrapper_open_ip_once"
+    elif args.ios_startup_once:
+        ios_udp_mode = "retail_wrapper_startup_once"
+    elif args.ios_get_host_id_once:
+        ios_udp_mode = "retail_wrapper_get_host_id_once"
+    elif args.ios_create_socket_once:
+        ios_udp_mode = "retail_wrapper_create_socket_once"
+    elif args.ios_ioctl_async_abi_probe:
+        ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
+    elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:
+        ios_udp_mode = "retail_wrapper_bind_once" if args.ios_bind_once else "normal"
 
     reserved_high = None if args.reserved_high is None else int(args.reserved_high, 0)
     diagnostic_address = None if args.diagnostic_address is None else int(args.diagnostic_address, 0)
     runtime_destination = None if args.runtime_destination is None else int(args.runtime_destination, 0)
-    if args.enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
+    enable_ios_udp_diagnostic = (
+        args.enable_ios_udp_diagnostic
+        or args.enable_ios_udp_diagnostic_init
+        or ios_udp_mode != "normal"
+    )
+    if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("--enable-ios-udp-diagnostic requires --relocated-continue.")
     if payload_mode in PRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODES:
         if reserved_high is None or diagnostic_address is None:
@@ -1437,7 +2185,7 @@ def main() -> None:
         Path(args.output_dir),
         payload_mode=payload_mode,
         enable_recurring_hook_diagnostics=args.enable_recurring_hook_diagnostics,
-        enable_ios_udp_diagnostic=args.enable_ios_udp_diagnostic,
+        enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
         ios_udp_mode=ios_udp_mode,
         reserved_high=reserved_high,
         diagnostic_address=diagnostic_address,

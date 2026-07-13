@@ -178,10 +178,22 @@ class Prime3EntryBootstrapMetadata:
 
 @dataclasses.dataclass(frozen=True)
 class Prime3RuntimeTransportMetadata:
+    mode: str
+    initialization_enabled: bool
+    receive_enabled: bool
+    send_enabled: bool
+    nwc24_startup_enabled: bool
+    kd_close_enabled: bool
+    ip_close_on_success: bool
+    socket_close_on_success: bool
+    terminal_phase_value: int
+    terminal_phase_name: str
     phase_address: int
     phase_size: int
     last_error_address: int
     last_error_size: int
+    last_socket_error_address: int
+    last_socket_error_size: int
     last_ios_result_address: int
     last_ios_result_size: int
     pending_operation_address: int
@@ -192,10 +204,55 @@ class Prime3RuntimeTransportMetadata:
     callback_generation_size: int
     callback_count_address: int
     callback_count_size: int
+    rejected_callback_count_address: int
+    rejected_callback_count_size: int
     callback_pending_address: int
     callback_pending_size: int
+    open_kd_submit_count_address: int
+    open_kd_submit_count_size: int
+    open_kd_callback_count_address: int
+    open_kd_callback_count_size: int
+    nwc24_output_buffer_address: int
+    nwc24_output_buffer_size: int
+    nwc24_output_buffer_alignment: int
+    nwc24_submit_count_address: int
+    nwc24_submit_count_size: int
+    nwc24_callback_count_address: int
+    nwc24_callback_count_size: int
+    nwc24_synchronous_result_address: int
+    nwc24_synchronous_result_size: int
+    nwc24_callback_result_address: int
+    nwc24_callback_result_size: int
+    nwc24_output_digest_address: int
+    nwc24_output_digest_size: int
+    open_ip_submit_count_address: int
+    open_ip_submit_count_size: int
+    open_ip_callback_count_address: int
+    open_ip_callback_count_size: int
+    kd_close_submit_count_address: int
+    kd_close_submit_count_size: int
+    kd_close_callback_count_address: int
+    kd_close_callback_count_size: int
+    startup_submit_count_address: int
+    startup_submit_count_size: int
+    startup_callback_count_address: int
+    startup_callback_count_size: int
+    get_host_id_submit_count_address: int
+    get_host_id_submit_count_size: int
+    get_host_id_callback_count_address: int
+    get_host_id_callback_count_size: int
+    socket_submit_count_address: int
+    socket_submit_count_size: int
+    socket_callback_count_address: int
+    socket_callback_count_size: int
+    bind_submit_count_address: int
+    bind_submit_count_size: int
+    bind_callback_count_address: int
+    bind_callback_count_size: int
     kd_fd_address: int
     kd_fd_size: int
+    kd_closed_address: int
+    kd_closed_size: int
     ip_fd_address: int
     ip_fd_size: int
     socket_fd_address: int
@@ -204,6 +261,14 @@ class Prime3RuntimeTransportMetadata:
     host_id_size: int
     bound_port_address: int
     bound_port_size: int
+    receive_submit_count_address: int
+    receive_submit_count_size: int
+    send_submit_count_address: int
+    send_submit_count_size: int
+    ip_close_submit_count_address: int
+    ip_close_submit_count_size: int
+    socket_close_submit_count_address: int
+    socket_close_submit_count_size: int
     receive_count_address: int
     receive_count_size: int
     receive_bytes_address: int
@@ -230,22 +295,197 @@ class Prime3RuntimeTransportMetadata:
     last_receive_preview_size: int
     last_send_preview_address: int
     last_send_preview_size: int
+    open_kd_submit_result_address: int | None = None
+    open_kd_submit_result_size: int | None = None
+    open_kd_callback_result_address: int | None = None
+    open_kd_callback_result_size: int | None = None
+    open_kd_submit_generation_address: int | None = None
+    open_kd_submit_generation_size: int | None = None
+    open_kd_callback_generation_address: int | None = None
+    open_kd_callback_generation_size: int | None = None
+    nwc24_submit_generation_address: int | None = None
+    nwc24_submit_generation_size: int | None = None
+    nwc24_callback_generation_address: int | None = None
+    nwc24_callback_generation_size: int | None = None
+    open_ip_submit_result_address: int | None = None
+    open_ip_submit_result_size: int | None = None
+    open_ip_callback_result_address: int | None = None
+    open_ip_callback_result_size: int | None = None
+    open_ip_submit_generation_address: int | None = None
+    open_ip_submit_generation_size: int | None = None
+    open_ip_callback_generation_address: int | None = None
+    open_ip_callback_generation_size: int | None = None
+    kd_close_submit_result_address: int | None = None
+    kd_close_submit_result_size: int | None = None
+    kd_close_callback_result_address: int | None = None
+    kd_close_callback_result_size: int | None = None
+    kd_close_submit_generation_address: int | None = None
+    kd_close_submit_generation_size: int | None = None
+    kd_close_callback_generation_address: int | None = None
+    kd_close_callback_generation_size: int | None = None
+    startup_submit_result_address: int | None = None
+    startup_submit_result_size: int | None = None
+    startup_callback_result_address: int | None = None
+    startup_callback_result_size: int | None = None
+    startup_submit_generation_address: int | None = None
+    startup_submit_generation_size: int | None = None
+    startup_callback_generation_address: int | None = None
+    startup_callback_generation_size: int | None = None
+    get_host_id_submit_result_address: int | None = None
+    get_host_id_submit_result_size: int | None = None
+    get_host_id_callback_result_address: int | None = None
+    get_host_id_callback_result_size: int | None = None
+    get_host_id_submit_generation_address: int | None = None
+    get_host_id_submit_generation_size: int | None = None
+    get_host_id_callback_generation_address: int | None = None
+    get_host_id_callback_generation_size: int | None = None
+    socket_submit_result_address: int | None = None
+    socket_submit_result_size: int | None = None
+    socket_callback_result_address: int | None = None
+    socket_callback_result_size: int | None = None
+    socket_submit_generation_address: int | None = None
+    socket_submit_generation_size: int | None = None
+    socket_callback_generation_address: int | None = None
+    socket_callback_generation_size: int | None = None
+    bind_submit_result_address: int | None = None
+    bind_submit_result_size: int | None = None
+    bind_callback_result_address: int | None = None
+    bind_callback_result_size: int | None = None
+    bind_submit_generation_address: int | None = None
+    bind_submit_generation_size: int | None = None
+    bind_callback_generation_address: int | None = None
+    bind_callback_generation_size: int | None = None
 
-    def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
-        ranges = (
+    def validate(  # noqa: C901
+        self, *, runtime_state_start: int, runtime_state_end: int
+    ) -> tuple[tuple[str, int, int], ...]:
+        if not self.mode:
+            raise Prime3DolPatchError("Relocated runtime transport metadata requires a mode.")
+        if not self.initialization_enabled:
+            raise Prime3DolPatchError("Relocated runtime transport metadata must mark initialization_enabled.")
+        if self.receive_enabled:
+            raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
+        if self.send_enabled:
+            raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
+        if not self.nwc24_startup_enabled:
+            raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
+        is_nwc24_ioctl_once = self.mode == "retail_wrapper_nwc24_startup_once"
+        if is_nwc24_ioctl_once:
+            if self.kd_close_enabled:
+                raise Prime3DolPatchError("NWC24 ioctl-once metadata must not enable kd close.")
+            if self.terminal_phase_value != 0xFE or self.terminal_phase_name != "NWC24_COMPLETE":
+                raise Prime3DolPatchError("NWC24 ioctl-once metadata must use the terminal diagnostic phase.")
+        elif not self.kd_close_enabled:
+            raise Prime3DolPatchError("Initialization-only transport metadata must enable kd close.")
+        if self.ip_close_on_success:
+            raise Prime3DolPatchError(
+                "Initialization-only transport metadata must not close ip descriptors on success."
+            )
+        if self.socket_close_on_success:
+            raise Prime3DolPatchError(
+                "Initialization-only transport metadata must not close socket descriptors on success."
+            )
+        if self.terminal_phase_value <= 0:
+            raise Prime3DolPatchError("Relocated runtime transport terminal phase must be positive.")
+        if not self.terminal_phase_name:
+            raise Prime3DolPatchError("Relocated runtime transport metadata requires a terminal phase name.")
+        if self.nwc24_output_buffer_size != 0x20:
+            raise Prime3DolPatchError("NWC24 output buffer must be exactly 0x20 bytes.")
+        if self.nwc24_output_buffer_alignment < 0x20 or (
+            self.nwc24_output_buffer_alignment & (self.nwc24_output_buffer_alignment - 1)
+        ) != 0:
+            raise Prime3DolPatchError("NWC24 output buffer alignment must be a power of two at least 0x20.")
+        if self.nwc24_output_buffer_address % self.nwc24_output_buffer_alignment != 0:
+            raise Prime3DolPatchError("NWC24 output buffer address must satisfy its declared alignment.")
+        ranges: tuple[tuple[str, int, int], ...] = (
             ("transport_phase", self.phase_address, self.phase_size),
             ("transport_last_error", self.last_error_address, self.last_error_size),
+            ("transport_last_socket_error", self.last_socket_error_address, self.last_socket_error_size),
             ("transport_last_ios_result", self.last_ios_result_address, self.last_ios_result_size),
             ("transport_pending_operation", self.pending_operation_address, self.pending_operation_size),
             ("transport_pending_generation", self.pending_generation_address, self.pending_generation_size),
             ("transport_callback_generation", self.callback_generation_address, self.callback_generation_size),
             ("transport_callback_count", self.callback_count_address, self.callback_count_size),
+            (
+                "transport_rejected_callback_count",
+                self.rejected_callback_count_address,
+                self.rejected_callback_count_size,
+            ),
             ("transport_callback_pending", self.callback_pending_address, self.callback_pending_size),
+            ("transport_open_kd_submit_count", self.open_kd_submit_count_address, self.open_kd_submit_count_size),
+            (
+                "transport_open_kd_callback_count",
+                self.open_kd_callback_count_address,
+                self.open_kd_callback_count_size,
+            ),
+            ("transport_nwc24_output_buffer", self.nwc24_output_buffer_address, self.nwc24_output_buffer_size),
+            ("transport_nwc24_submit_count", self.nwc24_submit_count_address, self.nwc24_submit_count_size),
+            (
+                "transport_nwc24_callback_count",
+                self.nwc24_callback_count_address,
+                self.nwc24_callback_count_size,
+            ),
+            (
+                "transport_nwc24_synchronous_result",
+                self.nwc24_synchronous_result_address,
+                self.nwc24_synchronous_result_size,
+            ),
+            (
+                "transport_nwc24_callback_result",
+                self.nwc24_callback_result_address,
+                self.nwc24_callback_result_size,
+            ),
+            ("transport_nwc24_output_digest", self.nwc24_output_digest_address, self.nwc24_output_digest_size),
+            ("transport_open_ip_submit_count", self.open_ip_submit_count_address, self.open_ip_submit_count_size),
+            (
+                "transport_open_ip_callback_count",
+                self.open_ip_callback_count_address,
+                self.open_ip_callback_count_size,
+            ),
+            ("transport_kd_close_submit_count", self.kd_close_submit_count_address, self.kd_close_submit_count_size),
+            (
+                "transport_kd_close_callback_count",
+                self.kd_close_callback_count_address,
+                self.kd_close_callback_count_size,
+            ),
+            ("transport_startup_submit_count", self.startup_submit_count_address, self.startup_submit_count_size),
+            (
+                "transport_startup_callback_count",
+                self.startup_callback_count_address,
+                self.startup_callback_count_size,
+            ),
+            (
+                "transport_get_host_id_submit_count",
+                self.get_host_id_submit_count_address,
+                self.get_host_id_submit_count_size,
+            ),
+            (
+                "transport_get_host_id_callback_count",
+                self.get_host_id_callback_count_address,
+                self.get_host_id_callback_count_size,
+            ),
+            ("transport_socket_submit_count", self.socket_submit_count_address, self.socket_submit_count_size),
+            ("transport_socket_callback_count", self.socket_callback_count_address, self.socket_callback_count_size),
+            ("transport_bind_submit_count", self.bind_submit_count_address, self.bind_submit_count_size),
+            ("transport_bind_callback_count", self.bind_callback_count_address, self.bind_callback_count_size),
             ("transport_kd_fd", self.kd_fd_address, self.kd_fd_size),
+            ("transport_kd_closed", self.kd_closed_address, self.kd_closed_size),
             ("transport_ip_fd", self.ip_fd_address, self.ip_fd_size),
             ("transport_socket_fd", self.socket_fd_address, self.socket_fd_size),
             ("transport_host_id", self.host_id_address, self.host_id_size),
             ("transport_bound_port", self.bound_port_address, self.bound_port_size),
+            (
+                "transport_receive_submit_count",
+                self.receive_submit_count_address,
+                self.receive_submit_count_size,
+            ),
+            ("transport_send_submit_count", self.send_submit_count_address, self.send_submit_count_size),
+            ("transport_ip_close_submit_count", self.ip_close_submit_count_address, self.ip_close_submit_count_size),
+            (
+                "transport_socket_close_submit_count",
+                self.socket_close_submit_count_address,
+                self.socket_close_submit_count_size,
+            ),
             ("transport_receive_count", self.receive_count_address, self.receive_count_size),
             ("transport_receive_bytes", self.receive_bytes_address, self.receive_bytes_size),
             ("transport_send_count", self.send_count_address, self.send_count_size),
@@ -269,6 +509,159 @@ class Prime3RuntimeTransportMetadata:
                 )
             if start + size > runtime_state_end:
                 raise Prime3DolPatchError(f"Relocated runtime transport field {name} exceeds the runtime state range.")
+        optional_ranges: tuple[tuple[str, int | None, int | None], ...] = (
+            ("transport_open_kd_submit_result", self.open_kd_submit_result_address, self.open_kd_submit_result_size),
+            (
+                "transport_open_kd_callback_result",
+                self.open_kd_callback_result_address,
+                self.open_kd_callback_result_size,
+            ),
+            (
+                "transport_open_kd_submit_generation",
+                self.open_kd_submit_generation_address,
+                self.open_kd_submit_generation_size,
+            ),
+            (
+                "transport_open_kd_callback_generation",
+                self.open_kd_callback_generation_address,
+                self.open_kd_callback_generation_size,
+            ),
+            (
+                "transport_nwc24_submit_generation",
+                self.nwc24_submit_generation_address,
+                self.nwc24_submit_generation_size,
+            ),
+            (
+                "transport_nwc24_callback_generation",
+                self.nwc24_callback_generation_address,
+                self.nwc24_callback_generation_size,
+            ),
+            ("transport_open_ip_submit_result", self.open_ip_submit_result_address, self.open_ip_submit_result_size),
+            (
+                "transport_open_ip_callback_result",
+                self.open_ip_callback_result_address,
+                self.open_ip_callback_result_size,
+            ),
+            (
+                "transport_open_ip_submit_generation",
+                self.open_ip_submit_generation_address,
+                self.open_ip_submit_generation_size,
+            ),
+            (
+                "transport_open_ip_callback_generation",
+                self.open_ip_callback_generation_address,
+                self.open_ip_callback_generation_size,
+            ),
+            (
+                "transport_kd_close_submit_result",
+                self.kd_close_submit_result_address,
+                self.kd_close_submit_result_size,
+            ),
+            (
+                "transport_kd_close_callback_result",
+                self.kd_close_callback_result_address,
+                self.kd_close_callback_result_size,
+            ),
+            (
+                "transport_kd_close_submit_generation",
+                self.kd_close_submit_generation_address,
+                self.kd_close_submit_generation_size,
+            ),
+            (
+                "transport_kd_close_callback_generation",
+                self.kd_close_callback_generation_address,
+                self.kd_close_callback_generation_size,
+            ),
+            ("transport_startup_submit_result", self.startup_submit_result_address, self.startup_submit_result_size),
+            (
+                "transport_startup_callback_result",
+                self.startup_callback_result_address,
+                self.startup_callback_result_size,
+            ),
+            (
+                "transport_startup_submit_generation",
+                self.startup_submit_generation_address,
+                self.startup_submit_generation_size,
+            ),
+            (
+                "transport_startup_callback_generation",
+                self.startup_callback_generation_address,
+                self.startup_callback_generation_size,
+            ),
+            (
+                "transport_get_host_id_submit_result",
+                self.get_host_id_submit_result_address,
+                self.get_host_id_submit_result_size,
+            ),
+            (
+                "transport_get_host_id_callback_result",
+                self.get_host_id_callback_result_address,
+                self.get_host_id_callback_result_size,
+            ),
+            (
+                "transport_get_host_id_submit_generation",
+                self.get_host_id_submit_generation_address,
+                self.get_host_id_submit_generation_size,
+            ),
+            (
+                "transport_get_host_id_callback_generation",
+                self.get_host_id_callback_generation_address,
+                self.get_host_id_callback_generation_size,
+            ),
+            ("transport_socket_submit_result", self.socket_submit_result_address, self.socket_submit_result_size),
+            (
+                "transport_socket_callback_result",
+                self.socket_callback_result_address,
+                self.socket_callback_result_size,
+            ),
+            (
+                "transport_socket_submit_generation",
+                self.socket_submit_generation_address,
+                self.socket_submit_generation_size,
+            ),
+            (
+                "transport_socket_callback_generation",
+                self.socket_callback_generation_address,
+                self.socket_callback_generation_size,
+            ),
+            ("transport_bind_submit_result", self.bind_submit_result_address, self.bind_submit_result_size),
+            (
+                "transport_bind_callback_result",
+                self.bind_callback_result_address,
+                self.bind_callback_result_size,
+            ),
+            (
+                "transport_bind_submit_generation",
+                self.bind_submit_generation_address,
+                self.bind_submit_generation_size,
+            ),
+            (
+                "transport_bind_callback_generation",
+                self.bind_callback_generation_address,
+                self.bind_callback_generation_size,
+            ),
+        )
+        for name, optional_start, optional_size in optional_ranges:
+            if optional_start is None and optional_size is None:
+                continue
+            if optional_start is None or optional_size is None:
+                raise Prime3DolPatchError(
+                    f"Relocated runtime transport field {name} must define both address and size."
+                )
+            if optional_size <= 0:
+                raise Prime3DolPatchError(f"Relocated runtime transport field {name} size must be positive.")
+            if not (runtime_state_start <= optional_start < runtime_state_end):
+                raise Prime3DolPatchError(
+                    f"Relocated runtime transport field {name} is outside the runtime state range."
+                )
+            if optional_start + optional_size > runtime_state_end:
+                raise Prime3DolPatchError(f"Relocated runtime transport field {name} exceeds the runtime state range.")
+        validated_optional_ranges: tuple[tuple[str, int, int], ...] = tuple(
+            (name, start, size)
+            for name, start, size in optional_ranges
+            if start is not None and size is not None
+        )
+        ranges = ranges + validated_optional_ranges
         _validate_non_overlapping_ranges(ranges)
         return ranges
 
@@ -278,10 +671,22 @@ class Prime3RuntimeTransportMetadata:
     @classmethod
     def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeTransportMetadata:
         return cls(
+            mode=_json_string(data, "mode"),
+            initialization_enabled=_json_bool(data, "initialization_enabled"),
+            receive_enabled=_json_bool(data, "receive_enabled"),
+            send_enabled=_json_bool(data, "send_enabled"),
+            nwc24_startup_enabled=_json_bool(data, "nwc24_startup_enabled"),
+            kd_close_enabled=_json_bool(data, "kd_close_enabled"),
+            ip_close_on_success=_json_bool(data, "ip_close_on_success"),
+            socket_close_on_success=_json_bool(data, "socket_close_on_success"),
+            terminal_phase_value=_json_int(data, "terminal_phase_value"),
+            terminal_phase_name=_json_string(data, "terminal_phase_name"),
             phase_address=_json_int(data, "phase_address"),
             phase_size=_json_int(data, "phase_size"),
             last_error_address=_json_int(data, "last_error_address"),
             last_error_size=_json_int(data, "last_error_size"),
+            last_socket_error_address=_json_int(data, "last_socket_error_address"),
+            last_socket_error_size=_json_int(data, "last_socket_error_size"),
             last_ios_result_address=_json_int(data, "last_ios_result_address"),
             last_ios_result_size=_json_int(data, "last_ios_result_size"),
             pending_operation_address=_json_int(data, "pending_operation_address"),
@@ -292,10 +697,55 @@ class Prime3RuntimeTransportMetadata:
             callback_generation_size=_json_int(data, "callback_generation_size"),
             callback_count_address=_json_int(data, "callback_count_address"),
             callback_count_size=_json_int(data, "callback_count_size"),
+            rejected_callback_count_address=_json_int(data, "rejected_callback_count_address"),
+            rejected_callback_count_size=_json_int(data, "rejected_callback_count_size"),
             callback_pending_address=_json_int(data, "callback_pending_address"),
             callback_pending_size=_json_int(data, "callback_pending_size"),
+            open_kd_submit_count_address=_json_int(data, "open_kd_submit_count_address"),
+            open_kd_submit_count_size=_json_int(data, "open_kd_submit_count_size"),
+            open_kd_callback_count_address=_json_int(data, "open_kd_callback_count_address"),
+            open_kd_callback_count_size=_json_int(data, "open_kd_callback_count_size"),
+            nwc24_output_buffer_address=_json_int(data, "nwc24_output_buffer_address"),
+            nwc24_output_buffer_size=_json_int(data, "nwc24_output_buffer_size"),
+            nwc24_output_buffer_alignment=_json_int(data, "nwc24_output_buffer_alignment"),
+            nwc24_submit_count_address=_json_int(data, "nwc24_submit_count_address"),
+            nwc24_submit_count_size=_json_int(data, "nwc24_submit_count_size"),
+            nwc24_callback_count_address=_json_int(data, "nwc24_callback_count_address"),
+            nwc24_callback_count_size=_json_int(data, "nwc24_callback_count_size"),
+            nwc24_synchronous_result_address=_json_int(data, "nwc24_synchronous_result_address"),
+            nwc24_synchronous_result_size=_json_int(data, "nwc24_synchronous_result_size"),
+            nwc24_callback_result_address=_json_int(data, "nwc24_callback_result_address"),
+            nwc24_callback_result_size=_json_int(data, "nwc24_callback_result_size"),
+            nwc24_output_digest_address=_json_int(data, "nwc24_output_digest_address"),
+            nwc24_output_digest_size=_json_int(data, "nwc24_output_digest_size"),
+            open_ip_submit_count_address=_json_int(data, "open_ip_submit_count_address"),
+            open_ip_submit_count_size=_json_int(data, "open_ip_submit_count_size"),
+            open_ip_callback_count_address=_json_int(data, "open_ip_callback_count_address"),
+            open_ip_callback_count_size=_json_int(data, "open_ip_callback_count_size"),
+            kd_close_submit_count_address=_json_int(data, "kd_close_submit_count_address"),
+            kd_close_submit_count_size=_json_int(data, "kd_close_submit_count_size"),
+            kd_close_callback_count_address=_json_int(data, "kd_close_callback_count_address"),
+            kd_close_callback_count_size=_json_int(data, "kd_close_callback_count_size"),
+            startup_submit_count_address=_json_int(data, "startup_submit_count_address"),
+            startup_submit_count_size=_json_int(data, "startup_submit_count_size"),
+            startup_callback_count_address=_json_int(data, "startup_callback_count_address"),
+            startup_callback_count_size=_json_int(data, "startup_callback_count_size"),
+            get_host_id_submit_count_address=_json_int(data, "get_host_id_submit_count_address"),
+            get_host_id_submit_count_size=_json_int(data, "get_host_id_submit_count_size"),
+            get_host_id_callback_count_address=_json_int(data, "get_host_id_callback_count_address"),
+            get_host_id_callback_count_size=_json_int(data, "get_host_id_callback_count_size"),
+            socket_submit_count_address=_json_int(data, "socket_submit_count_address"),
+            socket_submit_count_size=_json_int(data, "socket_submit_count_size"),
+            socket_callback_count_address=_json_int(data, "socket_callback_count_address"),
+            socket_callback_count_size=_json_int(data, "socket_callback_count_size"),
+            bind_submit_count_address=_json_int(data, "bind_submit_count_address"),
+            bind_submit_count_size=_json_int(data, "bind_submit_count_size"),
+            bind_callback_count_address=_json_int(data, "bind_callback_count_address"),
+            bind_callback_count_size=_json_int(data, "bind_callback_count_size"),
             kd_fd_address=_json_int(data, "kd_fd_address"),
             kd_fd_size=_json_int(data, "kd_fd_size"),
+            kd_closed_address=_json_int(data, "kd_closed_address"),
+            kd_closed_size=_json_int(data, "kd_closed_size"),
             ip_fd_address=_json_int(data, "ip_fd_address"),
             ip_fd_size=_json_int(data, "ip_fd_size"),
             socket_fd_address=_json_int(data, "socket_fd_address"),
@@ -304,6 +754,14 @@ class Prime3RuntimeTransportMetadata:
             host_id_size=_json_int(data, "host_id_size"),
             bound_port_address=_json_int(data, "bound_port_address"),
             bound_port_size=_json_int(data, "bound_port_size"),
+            receive_submit_count_address=_json_int(data, "receive_submit_count_address"),
+            receive_submit_count_size=_json_int(data, "receive_submit_count_size"),
+            send_submit_count_address=_json_int(data, "send_submit_count_address"),
+            send_submit_count_size=_json_int(data, "send_submit_count_size"),
+            ip_close_submit_count_address=_json_int(data, "ip_close_submit_count_address"),
+            ip_close_submit_count_size=_json_int(data, "ip_close_submit_count_size"),
+            socket_close_submit_count_address=_json_int(data, "socket_close_submit_count_address"),
+            socket_close_submit_count_size=_json_int(data, "socket_close_submit_count_size"),
             receive_count_address=_json_int(data, "receive_count_address"),
             receive_count_size=_json_int(data, "receive_count_size"),
             receive_bytes_address=_json_int(data, "receive_bytes_address"),
@@ -330,6 +788,68 @@ class Prime3RuntimeTransportMetadata:
             last_receive_preview_size=_json_int(data, "last_receive_preview_size"),
             last_send_preview_address=_json_int(data, "last_send_preview_address"),
             last_send_preview_size=_json_int(data, "last_send_preview_size"),
+            open_kd_submit_result_address=_json_optional_int(data, "open_kd_submit_result_address"),
+            open_kd_submit_result_size=_json_optional_int(data, "open_kd_submit_result_size"),
+            open_kd_callback_result_address=_json_optional_int(data, "open_kd_callback_result_address"),
+            open_kd_callback_result_size=_json_optional_int(data, "open_kd_callback_result_size"),
+            open_kd_submit_generation_address=_json_optional_int(data, "open_kd_submit_generation_address"),
+            open_kd_submit_generation_size=_json_optional_int(data, "open_kd_submit_generation_size"),
+            open_kd_callback_generation_address=_json_optional_int(data, "open_kd_callback_generation_address"),
+            open_kd_callback_generation_size=_json_optional_int(data, "open_kd_callback_generation_size"),
+            nwc24_submit_generation_address=_json_optional_int(data, "nwc24_submit_generation_address"),
+            nwc24_submit_generation_size=_json_optional_int(data, "nwc24_submit_generation_size"),
+            nwc24_callback_generation_address=_json_optional_int(data, "nwc24_callback_generation_address"),
+            nwc24_callback_generation_size=_json_optional_int(data, "nwc24_callback_generation_size"),
+            open_ip_submit_result_address=_json_optional_int(data, "open_ip_submit_result_address"),
+            open_ip_submit_result_size=_json_optional_int(data, "open_ip_submit_result_size"),
+            open_ip_callback_result_address=_json_optional_int(data, "open_ip_callback_result_address"),
+            open_ip_callback_result_size=_json_optional_int(data, "open_ip_callback_result_size"),
+            open_ip_submit_generation_address=_json_optional_int(data, "open_ip_submit_generation_address"),
+            open_ip_submit_generation_size=_json_optional_int(data, "open_ip_submit_generation_size"),
+            open_ip_callback_generation_address=_json_optional_int(data, "open_ip_callback_generation_address"),
+            open_ip_callback_generation_size=_json_optional_int(data, "open_ip_callback_generation_size"),
+            kd_close_submit_result_address=_json_optional_int(data, "kd_close_submit_result_address"),
+            kd_close_submit_result_size=_json_optional_int(data, "kd_close_submit_result_size"),
+            kd_close_callback_result_address=_json_optional_int(data, "kd_close_callback_result_address"),
+            kd_close_callback_result_size=_json_optional_int(data, "kd_close_callback_result_size"),
+            kd_close_submit_generation_address=_json_optional_int(data, "kd_close_submit_generation_address"),
+            kd_close_submit_generation_size=_json_optional_int(data, "kd_close_submit_generation_size"),
+            kd_close_callback_generation_address=_json_optional_int(data, "kd_close_callback_generation_address"),
+            kd_close_callback_generation_size=_json_optional_int(data, "kd_close_callback_generation_size"),
+            startup_submit_result_address=_json_optional_int(data, "startup_submit_result_address"),
+            startup_submit_result_size=_json_optional_int(data, "startup_submit_result_size"),
+            startup_callback_result_address=_json_optional_int(data, "startup_callback_result_address"),
+            startup_callback_result_size=_json_optional_int(data, "startup_callback_result_size"),
+            startup_submit_generation_address=_json_optional_int(data, "startup_submit_generation_address"),
+            startup_submit_generation_size=_json_optional_int(data, "startup_submit_generation_size"),
+            startup_callback_generation_address=_json_optional_int(data, "startup_callback_generation_address"),
+            startup_callback_generation_size=_json_optional_int(data, "startup_callback_generation_size"),
+            get_host_id_submit_result_address=_json_optional_int(data, "get_host_id_submit_result_address"),
+            get_host_id_submit_result_size=_json_optional_int(data, "get_host_id_submit_result_size"),
+            get_host_id_callback_result_address=_json_optional_int(data, "get_host_id_callback_result_address"),
+            get_host_id_callback_result_size=_json_optional_int(data, "get_host_id_callback_result_size"),
+            get_host_id_submit_generation_address=_json_optional_int(data, "get_host_id_submit_generation_address"),
+            get_host_id_submit_generation_size=_json_optional_int(data, "get_host_id_submit_generation_size"),
+            get_host_id_callback_generation_address=_json_optional_int(
+                data, "get_host_id_callback_generation_address"
+            ),
+            get_host_id_callback_generation_size=_json_optional_int(data, "get_host_id_callback_generation_size"),
+            socket_submit_result_address=_json_optional_int(data, "socket_submit_result_address"),
+            socket_submit_result_size=_json_optional_int(data, "socket_submit_result_size"),
+            socket_callback_result_address=_json_optional_int(data, "socket_callback_result_address"),
+            socket_callback_result_size=_json_optional_int(data, "socket_callback_result_size"),
+            socket_submit_generation_address=_json_optional_int(data, "socket_submit_generation_address"),
+            socket_submit_generation_size=_json_optional_int(data, "socket_submit_generation_size"),
+            socket_callback_generation_address=_json_optional_int(data, "socket_callback_generation_address"),
+            socket_callback_generation_size=_json_optional_int(data, "socket_callback_generation_size"),
+            bind_submit_result_address=_json_optional_int(data, "bind_submit_result_address"),
+            bind_submit_result_size=_json_optional_int(data, "bind_submit_result_size"),
+            bind_callback_result_address=_json_optional_int(data, "bind_callback_result_address"),
+            bind_callback_result_size=_json_optional_int(data, "bind_callback_result_size"),
+            bind_submit_generation_address=_json_optional_int(data, "bind_submit_generation_address"),
+            bind_submit_generation_size=_json_optional_int(data, "bind_submit_generation_size"),
+            bind_callback_generation_address=_json_optional_int(data, "bind_callback_generation_address"),
+            bind_callback_generation_size=_json_optional_int(data, "bind_callback_generation_size"),
         )
 
 
@@ -340,10 +860,27 @@ class Prime3RetailIosWrapperMetadata:
     open_address: int
     close_async_address: int
     close_address: int
-    ioctl_async_address: int
-    ioctl_address: int
-    ioctlv_async_address: int
-    ioctlv_address: int
+    read_async_address: int
+    read_sync_address: int
+    write_async_address: int
+    write_sync_address: int
+    seek_async_address: int
+    seek_sync_address: int
+    confirmed_ioctl_async_address: int
+    confirmed_ioctl_sync_address: int
+    confirmed_ioctlv_async_address: int
+    confirmed_ioctlv_sync_address: int
+    async_ioctl_address: int
+    async_ioctl_extent: str
+    async_ioctl_argument_count: int
+    async_ioctl_stack_argument_count: int
+    async_ioctl_operation: int
+    async_ioctl_confidence: str
+    confirmed_ioctl_async_fingerprint_sha256: str
+    confirmed_ioctl_async_prototype: str
+    confirmed_ioctl_async_register_arguments: tuple[str, ...]
+    confirmed_ioctl_async_stack_arguments: tuple[str, ...]
+    request_field_offsets: tuple[str, ...]
     open_async_guard_words: tuple[int, ...]
     callback_signature: str
     preserved_registers: tuple[str, ...]
@@ -360,10 +897,17 @@ class Prime3RetailIosWrapperMetadata:
             self.open_address,
             self.close_async_address,
             self.close_address,
-            self.ioctl_async_address,
-            self.ioctl_address,
-            self.ioctlv_async_address,
-            self.ioctlv_address,
+            self.read_async_address,
+            self.read_sync_address,
+            self.write_async_address,
+            self.write_sync_address,
+            self.seek_async_address,
+            self.seek_sync_address,
+            self.confirmed_ioctl_async_address,
+            self.confirmed_ioctl_sync_address,
+            self.confirmed_ioctlv_async_address,
+            self.confirmed_ioctlv_sync_address,
+            self.async_ioctl_address,
             self.submit_helper_address,
             self.request_allocator_address,
         )
@@ -376,6 +920,54 @@ class Prime3RetailIosWrapperMetadata:
             raise Prime3DolPatchError("Retail IOS wrapper callback signature metadata is unexpected.")
         if tuple(self.preserved_registers) != ("r2", "r13"):
             raise Prime3DolPatchError("Retail IOS wrapper metadata must document preserved game SDA registers.")
+        expected_ioctl_async_fingerprint = (
+            "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
+        )
+        if self.confirmed_ioctl_async_fingerprint_sha256 != expected_ioctl_async_fingerprint:
+            raise Prime3DolPatchError("Retail IOS ioctl metadata has an unexpected function fingerprint.")
+        if self.async_ioctl_address != 0x80504FE0 or self.async_ioctl_address == self.read_async_address:
+            raise Prime3DolPatchError("Retail IOS metadata must identify the verified async ioctl wrapper.")
+        if self.async_ioctl_extent != "0x80504FE0..0x80505118":
+            raise Prime3DolPatchError("Retail IOS async ioctl metadata has an unexpected extent.")
+        if self.async_ioctl_argument_count != 8 or self.async_ioctl_stack_argument_count != 0:
+            raise Prime3DolPatchError("Retail IOS async ioctl metadata has an unexpected ABI arity.")
+        if self.async_ioctl_operation != 6 or self.async_ioctl_confidence != "verified":
+            raise Prime3DolPatchError("Retail IOS async ioctl metadata is not verified for operation 6.")
+        if self.confirmed_ioctl_async_address != self.async_ioctl_address:
+            raise Prime3DolPatchError("Retail IOS async ioctl metadata disagrees with the confirmed wrapper address.")
+        expected_prototype = (
+            "s32 ioctl_async(s32 fd, u32 command, const void *input, u32 input_length, "
+            "void *output, u32 output_length, completion_fn completion, void *userdata)"
+        )
+        if self.confirmed_ioctl_async_prototype != expected_prototype:
+            raise Prime3DolPatchError("Retail IOS ioctl metadata has an unexpected asynchronous prototype.")
+        if self.confirmed_ioctl_async_register_arguments != (
+            "r3=fd",
+            "r4=command",
+            "r5=input",
+            "r6=input_length",
+            "r7=output",
+            "r8=output_length",
+            "r9=completion",
+            "r10=userdata",
+        ):
+            raise Prime3DolPatchError("Retail IOS ioctl metadata has unexpected register argument placement.")
+        if self.confirmed_ioctl_async_stack_arguments:
+            raise Prime3DolPatchError("Retail IOS ioctl metadata must not claim stack-passed arguments.")
+        if self.request_field_offsets != (
+            "operation=0x00",
+            "result=0x04",
+            "fd=0x08",
+            "argument_0=0x0c",
+            "argument_1=0x10",
+            "argument_2=0x14",
+            "argument_3=0x18",
+            "argument_4=0x1c",
+            "completion=0x20",
+            "completion_userdata=0x24",
+            "special_vector_flag=0x28",
+        ):
+            raise Prime3DolPatchError("Retail IOS wrapper metadata has an unexpected request-field map.")
         if not self.evidence_source:
             raise Prime3DolPatchError("Retail IOS wrapper metadata requires an evidence source.")
         if self.confidence not in {"candidate", "verified"}:
@@ -386,20 +978,57 @@ class Prime3RetailIosWrapperMetadata:
             **dataclasses.asdict(self),
             "open_async_guard_words": list(self.open_async_guard_words),
             "preserved_registers": list(self.preserved_registers),
+            "confirmed_ioctl_async_register_arguments": list(self.confirmed_ioctl_async_register_arguments),
+            "confirmed_ioctl_async_stack_arguments": list(self.confirmed_ioctl_async_stack_arguments),
+            "request_field_offsets": list(self.request_field_offsets),
         }
 
     @classmethod
     def from_json_dict(cls, data: dict[str, object]) -> Prime3RetailIosWrapperMetadata:
+        legacy_keys = (
+            "ioctl_async_address",
+            "ioctl_address",
+            "ioctlv_async_address",
+            "ioctlv_address",
+        )
+        for legacy_key in legacy_keys:
+            if legacy_key in data:
+                raise Prime3DolPatchError(
+                    f"Retail IOS wrapper metadata must not use legacy inferred label {legacy_key!r}."
+                )
         metadata = cls(
             supported_dol_sha256=_json_string(data, "supported_dol_sha256"),
             open_async_address=_json_int(data, "open_async_address"),
             open_address=_json_int(data, "open_address"),
             close_async_address=_json_int(data, "close_async_address"),
             close_address=_json_int(data, "close_address"),
-            ioctl_async_address=_json_int(data, "ioctl_async_address"),
-            ioctl_address=_json_int(data, "ioctl_address"),
-            ioctlv_async_address=_json_int(data, "ioctlv_async_address"),
-            ioctlv_address=_json_int(data, "ioctlv_address"),
+            read_async_address=_json_int(data, "read_async_address"),
+            read_sync_address=_json_int(data, "read_sync_address"),
+            write_async_address=_json_int(data, "write_async_address"),
+            write_sync_address=_json_int(data, "write_sync_address"),
+            seek_async_address=_json_int(data, "seek_async_address"),
+            seek_sync_address=_json_int(data, "seek_sync_address"),
+            confirmed_ioctl_async_address=_json_int(data, "confirmed_ioctl_async_address"),
+            confirmed_ioctl_sync_address=_json_int(data, "confirmed_ioctl_sync_address"),
+            confirmed_ioctlv_async_address=_json_int(data, "confirmed_ioctlv_async_address"),
+            confirmed_ioctlv_sync_address=_json_int(data, "confirmed_ioctlv_sync_address"),
+            async_ioctl_address=_json_int(data, "async_ioctl_address"),
+            async_ioctl_extent=_json_string(data, "async_ioctl_extent"),
+            async_ioctl_argument_count=_json_int(data, "async_ioctl_argument_count"),
+            async_ioctl_stack_argument_count=_json_int(data, "async_ioctl_stack_argument_count"),
+            async_ioctl_operation=_json_int(data, "async_ioctl_operation"),
+            async_ioctl_confidence=_json_string(data, "async_ioctl_confidence"),
+            confirmed_ioctl_async_fingerprint_sha256=_json_string(
+                data, "confirmed_ioctl_async_fingerprint_sha256"
+            ),
+            confirmed_ioctl_async_prototype=_json_string(data, "confirmed_ioctl_async_prototype"),
+            confirmed_ioctl_async_register_arguments=tuple(
+                _json_string_list(data, "confirmed_ioctl_async_register_arguments")
+            ),
+            confirmed_ioctl_async_stack_arguments=tuple(
+                _json_string_list(data, "confirmed_ioctl_async_stack_arguments")
+            ),
+            request_field_offsets=tuple(_json_string_list(data, "request_field_offsets")),
             open_async_guard_words=tuple(_json_int_list(data, "open_async_guard_words")),
             callback_signature=_json_string(data, "callback_signature"),
             preserved_registers=tuple(_json_string_list(data, "preserved_registers")),
@@ -409,6 +1038,114 @@ class Prime3RetailIosWrapperMetadata:
             confidence=_json_string(data, "confidence"),
         )
         metadata.validate()
+        return metadata
+
+
+@dataclasses.dataclass(frozen=True)
+class Prime3RuntimeAbiProbeMetadata:
+    mode: str
+    supplied_args_address: int
+    supplied_args_size: int
+    pre_call_args_address: int
+    pre_call_args_size: int
+    target_args_address: int
+    target_args_size: int
+    return_value_address: int
+    return_value_size: int
+    expected_return_value: int
+    result_flags_address: int
+    result_flags_size: int
+    stack_pointer_before_address: int
+    stack_pointer_before_size: int
+    stack_pointer_after_address: int
+    stack_pointer_after_size: int
+    saved_lr_address: int
+    saved_lr_size: int
+    restored_lr_address: int
+    restored_lr_size: int
+    saved_r2_address: int
+    saved_r2_size: int
+    restored_r2_address: int
+    restored_r2_size: int
+    saved_r13_address: int
+    saved_r13_size: int
+    restored_r13_address: int
+    restored_r13_size: int
+    target_ctr_address: int
+    target_ctr_size: int
+    after_call_flag_address: int
+    after_call_flag_size: int
+
+    def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
+        ranges = (
+            ("supplied_args", self.supplied_args_address, self.supplied_args_size),
+            ("pre_call_args", self.pre_call_args_address, self.pre_call_args_size),
+            ("target_args", self.target_args_address, self.target_args_size),
+            ("return_value", self.return_value_address, self.return_value_size),
+            ("result_flags", self.result_flags_address, self.result_flags_size),
+            ("stack_pointer_before", self.stack_pointer_before_address, self.stack_pointer_before_size),
+            ("stack_pointer_after", self.stack_pointer_after_address, self.stack_pointer_after_size),
+            ("saved_lr", self.saved_lr_address, self.saved_lr_size),
+            ("restored_lr", self.restored_lr_address, self.restored_lr_size),
+            ("saved_r2", self.saved_r2_address, self.saved_r2_size),
+            ("restored_r2", self.restored_r2_address, self.restored_r2_size),
+            ("saved_r13", self.saved_r13_address, self.saved_r13_size),
+            ("restored_r13", self.restored_r13_address, self.restored_r13_size),
+            ("target_ctr", self.target_ctr_address, self.target_ctr_size),
+            ("after_call_flag", self.after_call_flag_address, self.after_call_flag_size),
+        )
+        if self.mode != "retail_wrapper_ioctl_async_abi_probe":
+            raise Prime3DolPatchError(f"Unsupported ABI probe mode {self.mode!r}.")
+        if self.expected_return_value <= 0 or self.expected_return_value > 0xFFFFFFFF:
+            raise Prime3DolPatchError("ABI probe expected return value must be a 32-bit sentinel.")
+        for name, start, size in ranges:
+            if size <= 0:
+                raise Prime3DolPatchError(f"ABI probe field {name} must have positive size.")
+            if not (runtime_state_start <= start < runtime_state_end):
+                raise Prime3DolPatchError(f"ABI probe field {name} is outside the runtime state range.")
+            if start + size > runtime_state_end:
+                raise Prime3DolPatchError(f"ABI probe field {name} exceeds the runtime state range.")
+        return ranges
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeAbiProbeMetadata:
+        metadata = cls(
+            mode=_json_string(data, "mode"),
+            supplied_args_address=_json_int(data, "supplied_args_address"),
+            supplied_args_size=_json_int(data, "supplied_args_size"),
+            pre_call_args_address=_json_int(data, "pre_call_args_address"),
+            pre_call_args_size=_json_int(data, "pre_call_args_size"),
+            target_args_address=_json_int(data, "target_args_address"),
+            target_args_size=_json_int(data, "target_args_size"),
+            return_value_address=_json_int(data, "return_value_address"),
+            return_value_size=_json_int(data, "return_value_size"),
+            expected_return_value=_json_int(data, "expected_return_value"),
+            result_flags_address=_json_int(data, "result_flags_address"),
+            result_flags_size=_json_int(data, "result_flags_size"),
+            stack_pointer_before_address=_json_int(data, "stack_pointer_before_address"),
+            stack_pointer_before_size=_json_int(data, "stack_pointer_before_size"),
+            stack_pointer_after_address=_json_int(data, "stack_pointer_after_address"),
+            stack_pointer_after_size=_json_int(data, "stack_pointer_after_size"),
+            saved_lr_address=_json_int(data, "saved_lr_address"),
+            saved_lr_size=_json_int(data, "saved_lr_size"),
+            restored_lr_address=_json_int(data, "restored_lr_address"),
+            restored_lr_size=_json_int(data, "restored_lr_size"),
+            saved_r2_address=_json_int(data, "saved_r2_address"),
+            saved_r2_size=_json_int(data, "saved_r2_size"),
+            restored_r2_address=_json_int(data, "restored_r2_address"),
+            restored_r2_size=_json_int(data, "restored_r2_size"),
+            saved_r13_address=_json_int(data, "saved_r13_address"),
+            saved_r13_size=_json_int(data, "saved_r13_size"),
+            restored_r13_address=_json_int(data, "restored_r13_address"),
+            restored_r13_size=_json_int(data, "restored_r13_size"),
+            target_ctr_address=_json_int(data, "target_ctr_address"),
+            target_ctr_size=_json_int(data, "target_ctr_size"),
+            after_call_flag_address=_json_int(data, "after_call_flag_address"),
+            after_call_flag_size=_json_int(data, "after_call_flag_size"),
+        )
         return metadata
 
 
@@ -635,6 +1372,7 @@ class Prime3RelocatedRuntimeMetadata:
     diagnostics: Prime3RuntimeDiagnosticMetadata | None = None
     ios_udp_diagnostic_enabled: bool = False
     transport: Prime3RuntimeTransportMetadata | None = None
+    abi_probe: Prime3RuntimeAbiProbeMetadata | None = None
     retail_ios_wrapper: Prime3RetailIosWrapperMetadata | None = None
 
     def _validate_diagnostic_configuration(self) -> tuple[tuple[str, int, int], ...]:
@@ -657,6 +1395,14 @@ class Prime3RelocatedRuntimeMetadata:
         if self.transport is None:
             return ()
         return self.transport.validate(
+            runtime_state_start=self.runtime_state_start,
+            runtime_state_end=self.runtime_state_end,
+        )
+
+    def _validate_abi_probe_configuration(self) -> tuple[tuple[str, int, int], ...]:
+        if self.abi_probe is None:
+            return ()
+        return self.abi_probe.validate(
             runtime_state_start=self.runtime_state_start,
             runtime_state_end=self.runtime_state_end,
         )
@@ -740,6 +1486,7 @@ class Prime3RelocatedRuntimeMetadata:
         )
         diagnostic_ranges = self._validate_diagnostic_configuration()
         transport_ranges = self._validate_transport_configuration()
+        abi_probe_ranges = self._validate_abi_probe_configuration()
         self._validate_retail_wrapper_configuration()
         for name, start, size in state_ranges:
             if not (self.runtime_state_start <= start < self.runtime_state_end):
@@ -748,7 +1495,7 @@ class Prime3RelocatedRuntimeMetadata:
                 raise Prime3DolPatchError(f"Relocated runtime field {name} exceeds the runtime state range.")
             if start < diagnostic_end and start + size > bootstrap_diagnostic_start:
                 raise Prime3DolPatchError(f"Relocated runtime field {name} overlaps the bootstrap diagnostic block.")
-        _validate_non_overlapping_ranges(state_ranges + diagnostic_ranges + transport_ranges)
+        _validate_non_overlapping_ranges(state_ranges + diagnostic_ranges + transport_ranges + abi_probe_ranges)
 
         expected_cache_start, expected_cache_size = compute_cache_range(
             address=self.runtime_destination_address,
@@ -808,6 +1555,7 @@ class Prime3RelocatedRuntimeMetadata:
             diagnostics=_json_optional_runtime_diagnostics(data, "diagnostics"),
             ios_udp_diagnostic_enabled=_json_optional_bool(data, "ios_udp_diagnostic_enabled") or False,
             transport=_json_optional_runtime_transport(data, "transport"),
+            abi_probe=_json_optional_runtime_abi_probe(data, "abi_probe"),
             retail_ios_wrapper=_json_optional_retail_ios_wrapper(data, "retail_ios_wrapper"),
         )
 
@@ -1117,6 +1865,13 @@ def _json_optional_int(data: dict[str, object], key: str) -> int | None:
     return value
 
 
+def _json_bool(data: dict[str, object], key: str) -> bool:
+    value = data.get(key)
+    if not isinstance(value, bool):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a bool.")
+    return value
+
+
 def _json_optional_bool(data: dict[str, object], key: str) -> bool | None:
     value = data.get(key)
     if value is None:
@@ -1186,6 +1941,18 @@ def _json_optional_retail_ios_wrapper(
     if not isinstance(value, dict):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
     return Prime3RetailIosWrapperMetadata.from_json_dict(value)
+
+
+def _json_optional_runtime_abi_probe(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RuntimeAbiProbeMetadata | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"{key} must be an object when provided.")
+    return Prime3RuntimeAbiProbeMetadata.from_json_dict(value)
 
 
 def _validate_optional_range(*, payload_size: int, field_name: str, start: int | None, size: int | None) -> None:

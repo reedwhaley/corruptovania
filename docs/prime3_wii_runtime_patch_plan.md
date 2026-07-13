@@ -88,6 +88,13 @@ Additional transport evidence now documented:
 - socket commands `31`, `16`, `15`, `2`, `12`, `13`, and `3` for startup, host IP, socket create, bind, receive, send, and close
 - aligned `sockaddr`-compatible request layout and big-endian peer encoding
 - direct `IOS_OpenAsync`, `IOS_IoctlAsync`, and `IOS_IoctlvAsync` usage without libogc `net_*`
+- corrected initialization order for the bounded Prime 3 proof path:
+  - open `/dev/net/kd/request`
+  - issue `IOCTL_NWC24_STARTUP` with an aligned `0x20`-byte output buffer
+  - close the temporary request descriptor after the callback completes
+  - open `/dev/net/ip/top`
+  - issue `IOCTL_SO_STARTUP`
+- successful bind-only completion now requires `kd_fd = -1` plus a separate `kd_closed` flag; retaining `kd_fd` after bind is no longer considered correct
 
 The minimal payload:
 
@@ -471,3 +478,11 @@ What is still missing from repository-wide support:
 5. Only after those live-writer facts are known should arena-reservation candidates or a harmless hook be revisited.
 
 Until those five steps are complete, the project should stop at source-built artifact generation and validated halted-entry observation rather than pretending runtime execution is ready.
+
+## Retail IPC wrapper correction
+
+The NTSC retail wrapper sequence is now statically classified through operation `7`. The former ioctl labels at `0x80504A08..0x80504D10` were incorrect: those four functions are the async/sync read and write pairs. Seek follows at `0x80504E18/0x80504EF8`; the actual async/sync ioctl pair is `0x80504FE0/0x80505118`; vector preparation is at `0x80505248`; and async/sync vector ioctl is at `0x80505384/0x80505468`.
+
+The lower request is `0x40` bytes aligned to `0x20`. Proven common fields are operation `+0x00`, completion result `+0x04`, fd `+0x08`, operation-specific union fields `+0x0c..+0x1c`, completion function `+0x20`, completion userdata `+0x24`, and a special vector flag at `+0x28`. For ioctl, the union stores command, input pointer/length, and output pointer/length in that order. The completion dispatcher calls `request+0x20(request+0x04, request+0x24)` and then frees the request.
+
+The explicit developer-only `--ios-nwc24-via-retail-ioctl-once` implementation targets `0x80504FE0`, guarded by the retail DOL and function fingerprints. It opens `/dev/net/kd/request`, submits command `6` exactly once with `r3..r10 = fd, command, input, input_length, output, output_length, callback, userdata`, and enters `NWC24_COMPLETE` after the callback. Its project-owned callback context and `0x20`-byte output buffer remain valid through completion. It does not submit CLOSE_KD, OPEN_IP, receive, send, CP3W, or mailbox work; the old async-read target `0x80504A08` remains unreachable as ioctl.

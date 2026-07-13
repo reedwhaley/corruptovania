@@ -9,8 +9,9 @@
 .global runtime_poll_hook_wrapper
 .global runtime_call_retail_ios_open_async
 .global runtime_call_retail_ios_close_async
+.global runtime_call_retail_read_async
+.global runtime_call_retail_write_async
 .global runtime_call_retail_ios_ioctl_async
-.global runtime_call_retail_ios_ioctlv_async
 .global runtime_call_retail_veneer_selftest
 .global runtime_canary_start
 .global runtime_canary_end
@@ -20,8 +21,9 @@
 .type runtime_poll_hook_wrapper, @function
 .type runtime_call_retail_ios_open_async, @function
 .type runtime_call_retail_ios_close_async, @function
+.type runtime_call_retail_read_async, @function
+.type runtime_call_retail_write_async, @function
 .type runtime_call_retail_ios_ioctl_async, @function
-.type runtime_call_retail_ios_ioctlv_async, @function
 .type runtime_call_retail_veneer_selftest, @function
 
 runtime_entry:
@@ -69,16 +71,36 @@ runtime_poll_entry:
 .macro retail_call_veneer name, target
 \name:
     stwu    1, -0x20(1)
+    addi    11, 1, 0x20
+    lis     12, runtime_abi_probe_stack_pointer_before@ha
+    stw     11, runtime_abi_probe_stack_pointer_before@l(12)
     mflr    0
     stw     0, 0x08(1)
     stw     2, 0x0C(1)
     stw     13, 0x10(1)
+    lis     11, runtime_abi_probe_saved_lr@ha
+    stw     0, runtime_abi_probe_saved_lr@l(11)
+    lis     11, runtime_abi_probe_saved_r2@ha
+    stw     2, runtime_abi_probe_saved_r2@l(11)
+    lis     11, runtime_abi_probe_saved_r13@ha
+    stw     13, runtime_abi_probe_saved_r13@l(11)
+    lis     11, runtime_abi_probe_pre_call_args@ha
+    stw     3, runtime_abi_probe_pre_call_args@l(11)
+    stw     4, runtime_abi_probe_pre_call_args+4@l(11)
+    stw     5, runtime_abi_probe_pre_call_args+8@l(11)
+    stw     6, runtime_abi_probe_pre_call_args+12@l(11)
+    stw     7, runtime_abi_probe_pre_call_args+16@l(11)
+    stw     8, runtime_abi_probe_pre_call_args+20@l(11)
+    stw     9, runtime_abi_probe_pre_call_args+24@l(11)
+    stw     10, runtime_abi_probe_pre_call_args+28@l(11)
     diag_increment runtime_retail_veneer_entry_count
     diag_store_marker 0xC0DE0005
     install_verified_game_sda_registers
     diag_store_marker 0xC0DE0006
     lis     12, \target@h
     ori     12, 12, \target@l
+    lis     11, runtime_abi_probe_target_ctr@ha
+    stw     12, runtime_abi_probe_target_ctr@l(11)
     mtctr   12
     bctrl
     stw     3, 0x14(1)
@@ -86,13 +108,21 @@ runtime_poll_entry:
     diag_store_marker 0xC0DE0007
     lwz     2, 0x0C(1)
     lwz     13, 0x10(1)
+    lis     11, runtime_abi_probe_restored_r2@ha
+    stw     2, runtime_abi_probe_restored_r2@l(11)
+    lis     11, runtime_abi_probe_restored_r13@ha
+    stw     13, runtime_abi_probe_restored_r13@l(11)
     diag_store_marker 0xC0DE0008
     lwz     0, 0x08(1)
+    lis     11, runtime_abi_probe_restored_lr@ha
+    stw     0, runtime_abi_probe_restored_lr@l(11)
     mtlr    0
     lwz     3, 0x14(1)
     diag_increment runtime_retail_veneer_exit_count
     diag_store_marker 0xC0DE0009
     addi    1, 1, 0x20
+    lis     11, runtime_abi_probe_stack_pointer_after@ha
+    stw     1, runtime_abi_probe_stack_pointer_after@l(11)
     blr
 
 .size \name, . - \name
@@ -150,8 +180,9 @@ runtime_poll_hook_wrapper:
 
 retail_call_veneer runtime_call_retail_ios_open_async, PRIME3_RETAIL_IOS_OPEN_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_ios_close_async, PRIME3_RETAIL_IOS_CLOSE_ASYNC_ADDRESS
+retail_call_veneer runtime_call_retail_read_async, PRIME3_RETAIL_IOS_READ_ASYNC_ADDRESS
+retail_call_veneer runtime_call_retail_write_async, PRIME3_RETAIL_IOS_WRITE_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_ios_ioctl_async, PRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS
-retail_call_veneer runtime_call_retail_ios_ioctlv_async, PRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_veneer_selftest, runtime_local_veneer_selftest_target
 
 .section .runtime_state.canary, "aw", @progbits

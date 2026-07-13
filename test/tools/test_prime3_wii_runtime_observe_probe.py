@@ -128,8 +128,8 @@ def _relocated_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
         "low_bootstrap_size": 0x20,
         "low_bootstrap_sha256": __import__("hashlib").sha256(payload_bytes[:0x20]).hexdigest(),
         "embedded_runtime_blob_offset": 0x20,
-        "embedded_runtime_blob_size": 0x140,
-        "embedded_runtime_blob_sha256": __import__("hashlib").sha256(payload_bytes[0x20:0x160]).hexdigest(),
+        "embedded_runtime_blob_size": 0x2F0,
+        "embedded_runtime_blob_sha256": __import__("hashlib").sha256(payload_bytes[0x20:0x310]).hexdigest(),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
         "runtime_poll_entry_address": 0x817E1004,
@@ -137,14 +137,14 @@ def _relocated_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
         "runtime_code_start": 0x817E1000,
         "runtime_code_end": 0x817E1028,
         "runtime_state_start": 0x817E1028,
-        "runtime_state_end": 0x817E1140,
+        "runtime_state_end": 0x817E12F0,
         "runtime_stack_start": None,
         "runtime_stack_end": None,
         "required_source_alignment": 0x20,
         "required_destination_alignment": 0x20,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
-        "cache_range_size": 0x140,
+        "cache_range_size": 0x300,
         "runtime_canary_address": 0x817E1028,
         "runtime_canary_size": 0x10,
         "runtime_canary_sha256": __import__("hashlib").sha256(b"R" * 0x10).hexdigest(),
@@ -213,58 +213,157 @@ def _relocated_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
             "callback_result_size": 4,
         },
         "transport": {
-            "phase_address": 0x817E1058,
+            "mode": "normal",
+            "initialization_enabled": True,
+            "receive_enabled": False,
+            "send_enabled": False,
+            "nwc24_startup_enabled": True,
+            "kd_close_enabled": True,
+            "ip_close_on_success": False,
+            "socket_close_on_success": False,
+            "terminal_phase_value": 17,
+            "terminal_phase_name": "BOUND_NO_RECV",
+            "phase_address": 0x817E1140,
             "phase_size": 4,
-            "last_error_address": 0x817E105C,
+            "last_error_address": 0x817E1144,
             "last_error_size": 4,
-            "last_ios_result_address": 0x817E1060,
+            "last_socket_error_address": 0x817E1148,
+            "last_socket_error_size": 4,
+            "last_ios_result_address": 0x817E114C,
             "last_ios_result_size": 4,
-            "pending_operation_address": 0x817E1064,
+            "pending_operation_address": 0x817E1150,
             "pending_operation_size": 4,
-            "pending_generation_address": 0x817E1068,
+            "pending_generation_address": 0x817E1154,
             "pending_generation_size": 4,
-            "callback_generation_address": 0x817E106C,
+            "callback_generation_address": 0x817E1158,
             "callback_generation_size": 4,
-            "callback_count_address": 0x817E1070,
+            "callback_count_address": 0x817E115C,
             "callback_count_size": 4,
-            "callback_pending_address": 0x817E1074,
+            "rejected_callback_count_address": 0x817E1160,
+            "rejected_callback_count_size": 4,
+            "callback_pending_address": 0x817E1164,
             "callback_pending_size": 4,
-            "kd_fd_address": 0x817E1078,
+            "open_kd_submit_count_address": 0x817E1168,
+            "open_kd_submit_count_size": 4,
+            "open_kd_callback_count_address": 0x817E116C,
+            "open_kd_callback_count_size": 4,
+            "nwc24_output_buffer_address": 0x817E1180,
+            "nwc24_output_buffer_size": 0x20,
+            "nwc24_output_buffer_alignment": 0x20,
+            "nwc24_submit_count_address": 0x817E1170,
+            "nwc24_submit_count_size": 4,
+            "nwc24_callback_count_address": 0x817E1174,
+            "nwc24_callback_count_size": 4,
+            "nwc24_synchronous_result_address": 0x817E11A0,
+            "nwc24_synchronous_result_size": 4,
+            "nwc24_callback_result_address": 0x817E11A4,
+            "nwc24_callback_result_size": 4,
+            "nwc24_output_digest_address": 0x817E11A8,
+            "nwc24_output_digest_size": 4,
+            "open_ip_submit_count_address": 0x817E11AC,
+            "open_ip_submit_count_size": 4,
+            "open_ip_callback_count_address": 0x817E11B0,
+            "open_ip_callback_count_size": 4,
+            "kd_close_submit_count_address": 0x817E11B4,
+            "kd_close_submit_count_size": 4,
+            "kd_close_callback_count_address": 0x817E11B8,
+            "kd_close_callback_count_size": 4,
+            "startup_submit_count_address": 0x817E11BC,
+            "startup_submit_count_size": 4,
+            "startup_callback_count_address": 0x817E11C0,
+            "startup_callback_count_size": 4,
+            "get_host_id_submit_count_address": 0x817E11C4,
+            "get_host_id_submit_count_size": 4,
+            "get_host_id_callback_count_address": 0x817E11C8,
+            "get_host_id_callback_count_size": 4,
+            "socket_submit_count_address": 0x817E11CC,
+            "socket_submit_count_size": 4,
+            "socket_callback_count_address": 0x817E11D0,
+            "socket_callback_count_size": 4,
+            "bind_submit_count_address": 0x817E11D4,
+            "bind_submit_count_size": 4,
+            "bind_callback_count_address": 0x817E11D8,
+            "bind_callback_count_size": 4,
+            "kd_fd_address": 0x817E11DC,
             "kd_fd_size": 4,
-            "ip_fd_address": 0x817E107C,
+            "kd_closed_address": 0x817E11E0,
+            "kd_closed_size": 4,
+            "ip_fd_address": 0x817E11E4,
             "ip_fd_size": 4,
-            "socket_fd_address": 0x817E1080,
+            "socket_fd_address": 0x817E11E8,
             "socket_fd_size": 4,
-            "host_id_address": 0x817E1084,
+            "host_id_address": 0x817E11EC,
             "host_id_size": 4,
-            "bound_port_address": 0x817E1088,
+            "bound_port_address": 0x817E11F0,
             "bound_port_size": 4,
-            "receive_count_address": 0x817E108C,
+            "receive_submit_count_address": 0x817E11F4,
+            "receive_submit_count_size": 4,
+            "send_submit_count_address": 0x817E11F8,
+            "send_submit_count_size": 4,
+            "ip_close_submit_count_address": 0x817E11FC,
+            "ip_close_submit_count_size": 4,
+            "socket_close_submit_count_address": 0x817E1200,
+            "socket_close_submit_count_size": 4,
+            "receive_count_address": 0x817E1204,
             "receive_count_size": 4,
-            "receive_bytes_address": 0x817E1090,
+            "receive_bytes_address": 0x817E1208,
             "receive_bytes_size": 4,
-            "send_count_address": 0x817E1094,
+            "send_count_address": 0x817E120C,
             "send_count_size": 4,
-            "send_bytes_address": 0x817E1098,
+            "send_bytes_address": 0x817E1210,
             "send_bytes_size": 4,
-            "last_receive_length_address": 0x817E109C,
+            "last_receive_length_address": 0x817E1214,
             "last_receive_length_size": 4,
-            "last_send_length_address": 0x817E10A0,
+            "last_send_length_address": 0x817E1218,
             "last_send_length_size": 4,
-            "last_peer_ipv4_address": 0x817E10A4,
+            "last_peer_ipv4_address": 0x817E121C,
             "last_peer_ipv4_size": 4,
-            "last_peer_port_address": 0x817E10A8,
+            "last_peer_port_address": 0x817E1220,
             "last_peer_port_size": 4,
-            "last_peer_family_address": 0x817E10AC,
+            "last_peer_family_address": 0x817E1224,
             "last_peer_family_size": 4,
-            "last_poll_action_address": 0x817E10B0,
+            "last_poll_action_address": 0x817E1228,
             "last_poll_action_size": 4,
-            "last_submit_result_address": 0x817E10B4,
+            "last_submit_result_address": 0x817E122C,
             "last_submit_result_size": 4,
-            "last_receive_preview_address": 0x817E10C0,
+            "last_receive_preview_address": 0x817E1234,
             "last_receive_preview_size": 16,
-            "last_send_preview_address": 0x817E10D0,
+            "last_send_preview_address": 0x817E1244,
             "last_send_preview_size": 16,
+        },
+        "abi_probe": {
+            "mode": "retail_wrapper_ioctl_async_abi_probe",
+            "supplied_args_address": 0x817E1260,
+            "supplied_args_size": 0x20,
+            "pre_call_args_address": 0x817E1280,
+            "pre_call_args_size": 0x20,
+            "target_args_address": 0x817E12A0,
+            "target_args_size": 0x20,
+            "return_value_address": 0x817E12C0,
+            "return_value_size": 4,
+            "expected_return_value": 0x13579BDF,
+            "result_flags_address": 0x817E12C4,
+            "result_flags_size": 4,
+            "stack_pointer_before_address": 0x817E12C8,
+            "stack_pointer_before_size": 4,
+            "stack_pointer_after_address": 0x817E12CC,
+            "stack_pointer_after_size": 4,
+            "saved_lr_address": 0x817E12D0,
+            "saved_lr_size": 4,
+            "restored_lr_address": 0x817E12D4,
+            "restored_lr_size": 4,
+            "saved_r2_address": 0x817E12D8,
+            "saved_r2_size": 4,
+            "restored_r2_address": 0x817E12DC,
+            "restored_r2_size": 4,
+            "saved_r13_address": 0x817E12E0,
+            "saved_r13_size": 4,
+            "restored_r13_address": 0x817E12E4,
+            "restored_r13_size": 4,
+            "target_ctr_address": 0x817E12E8,
+            "target_ctr_size": 4,
+            "after_call_flag_address": 0x817E12EC,
+            "after_call_flag_size": 4,
         },
     }
     return Prime3RuntimePayloadManifest.from_json_dict(raw)
@@ -276,6 +375,157 @@ def _write_u32(blob: bytearray, offset: int, value: int) -> None:
 
 def _write_s32(blob: bytearray, offset: int, value: int) -> None:
     blob[offset : offset + 4] = value.to_bytes(4, "big", signed=True)
+
+
+def _install_transport_state(
+    blob: bytearray,
+    *,
+    phase: int,
+    last_error: int = 0,
+    last_socket_error: int = 0,
+    last_ios_result: int = 0,
+    pending_operation: int = 0,
+    pending_generation: int = 0,
+    callback_generation: int = 0,
+    callback_count: int = 0,
+    rejected_callback_count: int = 0,
+    callback_pending: int = 0,
+    open_kd_submit_count: int = 0,
+    open_kd_callback_count: int = 0,
+    nwc24_submit_count: int = 0,
+    nwc24_callback_count: int = 0,
+    nwc24_synchronous_result: int = 0,
+    nwc24_callback_result: int = 0,
+    nwc24_output_digest: int = 0,
+    nwc24_output_buffer_hex: str = "00" * 32,
+    open_ip_submit_count: int = 0,
+    open_ip_callback_count: int = 0,
+    kd_close_submit_count: int = 0,
+    kd_close_callback_count: int = 0,
+    startup_submit_count: int = 0,
+    startup_callback_count: int = 0,
+    get_host_id_submit_count: int = 0,
+    get_host_id_callback_count: int = 0,
+    socket_submit_count: int = 0,
+    socket_callback_count: int = 0,
+    bind_submit_count: int = 0,
+    bind_callback_count: int = 0,
+    kd_fd: int = -1,
+    kd_closed: int = 0,
+    ip_fd: int = -1,
+    socket_fd: int = -1,
+    host_id: int = 0,
+    bound_port: int = 43674,
+    receive_submit_count: int = 0,
+    send_submit_count: int = 0,
+    ip_close_submit_count: int = 0,
+    socket_close_submit_count: int = 0,
+    receive_count: int = 0,
+    receive_bytes: int = 0,
+    send_count: int = 0,
+    send_bytes: int = 0,
+    last_receive_length: int = 0,
+    last_send_length: int = 0,
+    last_peer_ipv4: int = 0,
+    last_peer_port: int = 0,
+    last_peer_family: int = 0,
+    last_poll_action: int = 0,
+    last_submit_result: int = 0,
+    last_receive_preview_hex: str = "00" * 16,
+    last_send_preview_hex: str = "00" * 16,
+) -> None:
+    _write_u32(blob, 0x140, phase)
+    _write_s32(blob, 0x144, last_error)
+    _write_s32(blob, 0x148, last_socket_error)
+    _write_s32(blob, 0x14C, last_ios_result)
+    _write_u32(blob, 0x150, pending_operation)
+    _write_u32(blob, 0x154, pending_generation)
+    _write_u32(blob, 0x158, callback_generation)
+    _write_u32(blob, 0x15C, callback_count)
+    _write_u32(blob, 0x160, rejected_callback_count)
+    _write_u32(blob, 0x164, callback_pending)
+    _write_u32(blob, 0x168, open_kd_submit_count)
+    _write_u32(blob, 0x16C, open_kd_callback_count)
+    _write_u32(blob, 0x170, nwc24_submit_count)
+    _write_u32(blob, 0x174, nwc24_callback_count)
+    blob[0x180:0x1A0] = bytes.fromhex(nwc24_output_buffer_hex)
+    _write_s32(blob, 0x1A0, nwc24_synchronous_result)
+    _write_s32(blob, 0x1A4, nwc24_callback_result)
+    _write_u32(blob, 0x1A8, nwc24_output_digest)
+    _write_u32(blob, 0x1AC, open_ip_submit_count)
+    _write_u32(blob, 0x1B0, open_ip_callback_count)
+    _write_u32(blob, 0x1B4, kd_close_submit_count)
+    _write_u32(blob, 0x1B8, kd_close_callback_count)
+    _write_u32(blob, 0x1BC, startup_submit_count)
+    _write_u32(blob, 0x1C0, startup_callback_count)
+    _write_u32(blob, 0x1C4, get_host_id_submit_count)
+    _write_u32(blob, 0x1C8, get_host_id_callback_count)
+    _write_u32(blob, 0x1CC, socket_submit_count)
+    _write_u32(blob, 0x1D0, socket_callback_count)
+    _write_u32(blob, 0x1D4, bind_submit_count)
+    _write_u32(blob, 0x1D8, bind_callback_count)
+    _write_s32(blob, 0x1DC, kd_fd)
+    _write_u32(blob, 0x1E0, kd_closed)
+    _write_s32(blob, 0x1E4, ip_fd)
+    _write_s32(blob, 0x1E8, socket_fd)
+    _write_u32(blob, 0x1EC, host_id)
+    _write_u32(blob, 0x1F0, bound_port)
+    _write_u32(blob, 0x1F4, receive_submit_count)
+    _write_u32(blob, 0x1F8, send_submit_count)
+    _write_u32(blob, 0x1FC, ip_close_submit_count)
+    _write_u32(blob, 0x200, socket_close_submit_count)
+    _write_u32(blob, 0x204, receive_count)
+    _write_u32(blob, 0x208, receive_bytes)
+    _write_u32(blob, 0x20C, send_count)
+    _write_u32(blob, 0x210, send_bytes)
+    _write_u32(blob, 0x214, last_receive_length)
+    _write_u32(blob, 0x218, last_send_length)
+    _write_u32(blob, 0x21C, last_peer_ipv4)
+    _write_u32(blob, 0x220, last_peer_port)
+    _write_u32(blob, 0x224, last_peer_family)
+    _write_u32(blob, 0x228, last_poll_action)
+    _write_s32(blob, 0x22C, last_submit_result)
+    blob[0x234:0x244] = bytes.fromhex(last_receive_preview_hex)
+    blob[0x244:0x254] = bytes.fromhex(last_send_preview_hex)
+
+
+def _install_abi_probe_state(
+    blob: bytearray,
+    *,
+    supplied_args: tuple[int, ...] = (),
+    pre_call_args: tuple[int, ...] = (),
+    target_args: tuple[int, ...] = (),
+    return_value: int = 0,
+    result_flags: int = 0,
+    stack_pointer_before: int = 0,
+    stack_pointer_after: int = 0,
+    saved_lr: int = 0,
+    restored_lr: int = 0,
+    saved_r2: int = 0,
+    restored_r2: int = 0,
+    saved_r13: int = 0,
+    restored_r13: int = 0,
+    target_ctr: int = 0,
+    after_call_flag: int = 0,
+) -> None:
+    for index, value in enumerate(supplied_args):
+        _write_u32(blob, 0x260 + (index * 4), value)
+    for index, value in enumerate(pre_call_args):
+        _write_u32(blob, 0x280 + (index * 4), value)
+    for index, value in enumerate(target_args):
+        _write_u32(blob, 0x2A0 + (index * 4), value)
+    _write_s32(blob, 0x2C0, return_value)
+    _write_u32(blob, 0x2C4, result_flags)
+    _write_u32(blob, 0x2C8, stack_pointer_before)
+    _write_u32(blob, 0x2CC, stack_pointer_after)
+    _write_u32(blob, 0x2D0, saved_lr)
+    _write_u32(blob, 0x2D4, restored_lr)
+    _write_u32(blob, 0x2D8, saved_r2)
+    _write_u32(blob, 0x2DC, restored_r2)
+    _write_u32(blob, 0x2E0, saved_r13)
+    _write_u32(blob, 0x2E4, restored_r13)
+    _write_u32(blob, 0x2E8, target_ctr)
+    _write_u32(blob, 0x2EC, after_call_flag)
 
 
 def _install_diagnostics(
@@ -455,7 +705,7 @@ def test_observe_probe_reads_bootstrap_diagnostic_block() -> None:
 
 def test_observe_probe_reads_relocated_runtime_state() -> None:
     module = _load_module()
-    runtime_blob = bytearray(b"R" * 0x140)
+    runtime_blob = bytearray(b"R" * 0x2F0)
     _write_u32(runtime_blob, 0x38, 0x434F5059)
     _write_u32(runtime_blob, 0x3C, 0x52554E21)
     _write_u32(runtime_blob, 0x40, 1)
@@ -464,32 +714,37 @@ def test_observe_probe_reads_relocated_runtime_state() -> None:
     _write_u32(runtime_blob, 0x4C, 7)
     _write_u32(runtime_blob, 0x50, 7)
     _write_u32(runtime_blob, 0x54, 7)
-    _write_u32(runtime_blob, 0x58, 21)
-    _write_s32(runtime_blob, 0x5C, 0)
-    _write_s32(runtime_blob, 0x60, 0)
-    _write_u32(runtime_blob, 0x64, 0)
-    _write_u32(runtime_blob, 0x68, 7)
-    _write_u32(runtime_blob, 0x6C, 7)
-    _write_u32(runtime_blob, 0x70, 2)
-    _write_u32(runtime_blob, 0x74, 0)
-    _write_s32(runtime_blob, 0x78, -1)
-    _write_s32(runtime_blob, 0x7C, 3)
-    _write_s32(runtime_blob, 0x80, 4)
-    _write_u32(runtime_blob, 0x84, 0xC0A80164)
-    _write_u32(runtime_blob, 0x88, 43674)
-    _write_u32(runtime_blob, 0x8C, 1)
-    _write_u32(runtime_blob, 0x90, 24)
-    _write_u32(runtime_blob, 0x94, 1)
-    _write_u32(runtime_blob, 0x98, 48)
-    _write_u32(runtime_blob, 0x9C, 24)
-    _write_u32(runtime_blob, 0xA0, 48)
-    _write_u32(runtime_blob, 0xA4, 0xC0A80102)
-    _write_u32(runtime_blob, 0xA8, 0xABAA)
-    _write_u32(runtime_blob, 0xAC, 2)
-    _write_u32(runtime_blob, 0xB0, 4)
-    _write_s32(runtime_blob, 0xB4, 0)
-    runtime_blob[0xC0:0xD0] = bytes.fromhex("0102030405060708090a0b0c0d0e0f10")
-    runtime_blob[0xD0:0xE0] = bytes.fromhex("50335544000000010000000700000007")
+    _install_transport_state(
+        runtime_blob,
+        phase=17,
+        callback_count=1,
+        open_kd_submit_count=1,
+        open_kd_callback_count=1,
+        nwc24_submit_count=1,
+        nwc24_callback_count=1,
+        nwc24_output_buffer_hex="11" * 32,
+        nwc24_output_digest=0xA5A5A5A5,
+        open_ip_submit_count=1,
+        open_ip_callback_count=1,
+        kd_close_submit_count=1,
+        kd_close_callback_count=1,
+        startup_submit_count=1,
+        startup_callback_count=1,
+        get_host_id_submit_count=1,
+        get_host_id_callback_count=1,
+        socket_submit_count=1,
+        socket_callback_count=1,
+        bind_submit_count=1,
+        bind_callback_count=1,
+        kd_fd=-1,
+        kd_closed=1,
+        ip_fd=3,
+        socket_fd=4,
+        host_id=0xC0A80164,
+        bound_port=43674,
+        last_receive_preview_hex="0102030405060708090a0b0c0d0e0f10",
+        last_send_preview_hex="50335544000000010000000700000007",
+    )
     _install_diagnostics(
         runtime_blob,
         hook_wrapper_entry_count=7,
@@ -506,10 +761,11 @@ def test_observe_probe_reads_relocated_runtime_state() -> None:
         hook_wrapper_after_poll_count=7,
         hook_wrapper_exit_count=7,
         last_execution_marker=0xC0DE000D,
-        last_transport_phase_before_step=21,
-        last_transport_phase_after_step=21,
+        last_transport_phase_before_step=17,
+        last_transport_phase_after_step=17,
         callback_result=0,
     )
+    _install_abi_probe_state(runtime_blob)
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob)
     manifest = _relocated_manifest(payload_bytes)
     config = module.ProbeObservationConfig(
@@ -535,7 +791,7 @@ def test_observe_probe_reads_relocated_runtime_state() -> None:
     diagnostic[0x24:0x28] = (0x817E0000).to_bytes(4, "big")
     diagnostic[0x28:0x2C] = (0xB0071002).to_bytes(4, "big")
     memory[0x817E0100] = bytes(diagnostic)
-    runtime_state = bytearray(payload_bytes[0x20:0x160])
+    runtime_state = bytearray(payload_bytes[0x20:0x310])
     memory[0x817E1000] = bytes(runtime_state)
     memory[0x80000034] = (0x817E0000).to_bytes(4, "big")
     memory[0x80003110] = (0x817E0000).to_bytes(4, "big")
@@ -555,14 +811,17 @@ def test_observe_probe_reads_relocated_runtime_state() -> None:
     assert result["relocated_runtime"]["runtime_poll_last_sequence_value"] == 7
     assert result["relocated_runtime"]["diagnostics"]["wrapper_counts_balanced"] is True
     assert result["relocated_runtime"]["diagnostics"]["last_execution_marker_name"] == "wrapper_returning_to_game"
-    assert result["relocated_runtime"]["transport"]["phase"] == 21
+    assert result["relocated_runtime"]["transport"]["phase"] == 17
+    assert result["relocated_runtime"]["transport"]["kd_closed"] == 1
+    assert result["relocated_runtime"]["transport"]["nwc24_output_buffer_hex"] == "11" * 32
     assert result["relocated_runtime"]["transport"]["host_id"] == 0xC0A80164
     assert result["relocated_runtime"]["transport"]["last_receive_preview_hex"] == "0102030405060708090a0b0c0d0e0f10"
+    assert result["probable_stop_boundary"] == "bound_no_recv"
 
 
 def test_observe_probe_reports_recurring_hook_and_poll_progress() -> None:
     module = _load_module()
-    runtime_blob_first = bytearray(b"R" * 0x140)
+    runtime_blob_first = bytearray(b"R" * 0x2F0)
     _write_u32(runtime_blob_first, 0x38, 0x434F5059)
     _write_u32(runtime_blob_first, 0x3C, 0x52554E21)
     _write_u32(runtime_blob_first, 0x40, 1)
@@ -571,10 +830,16 @@ def test_observe_probe_reports_recurring_hook_and_poll_progress() -> None:
     _write_u32(runtime_blob_first, 0x4C, 7)
     _write_u32(runtime_blob_first, 0x50, 7)
     _write_u32(runtime_blob_first, 0x54, 7)
-    _write_u32(runtime_blob_first, 0x58, 21)
-    _write_u32(runtime_blob_first, 0x90, 24)
-    _write_u32(runtime_blob_first, 0x98, 48)
-    _write_u32(runtime_blob_first, 0xB0, 4)
+    _install_transport_state(
+        runtime_blob_first,
+        phase=17,
+        kd_fd=-1,
+        kd_closed=1,
+        ip_fd=3,
+        socket_fd=4,
+        host_id=0xC0A80164,
+        bound_port=43674,
+    )
     _install_diagnostics(
         runtime_blob_first,
         hook_wrapper_entry_count=7,
@@ -591,10 +856,11 @@ def test_observe_probe_reports_recurring_hook_and_poll_progress() -> None:
         hook_wrapper_after_poll_count=7,
         hook_wrapper_exit_count=7,
         last_execution_marker=0xC0DE000D,
-        last_transport_phase_before_step=21,
-        last_transport_phase_after_step=21,
+        last_transport_phase_before_step=17,
+        last_transport_phase_after_step=17,
         callback_result=0,
     )
+    _install_abi_probe_state(runtime_blob_first)
     runtime_blob_second = bytearray(runtime_blob_first)
     _write_u32(runtime_blob_second, 0x4C, 11)
     _write_u32(runtime_blob_second, 0x50, 11)
@@ -615,8 +881,8 @@ def test_observe_probe_reports_recurring_hook_and_poll_progress() -> None:
         hook_wrapper_after_poll_count=11,
         hook_wrapper_exit_count=11,
         last_execution_marker=0xC0DE000D,
-        last_transport_phase_before_step=21,
-        last_transport_phase_after_step=21,
+        last_transport_phase_before_step=17,
+        last_transport_phase_after_step=17,
         callback_result=0,
     )
 
@@ -668,12 +934,12 @@ def test_observe_probe_reports_recurring_hook_and_poll_progress() -> None:
     assert result["heartbeat_updated"] is True
     assert result["approximate_calls_per_second"] == 16.0
     assert result["recurring_execution_continuing"] is True
-    assert result["probable_stop_boundary"] == "recurring_execution_continues"
+    assert result["probable_stop_boundary"] == "bound_no_recv_stable"
 
 
 def test_observe_probe_reports_waiting_for_callback_boundary() -> None:
     module = _load_module()
-    runtime_blob = bytearray(b"R" * 0x140)
+    runtime_blob = bytearray(b"R" * 0x2F0)
     _write_u32(runtime_blob, 0x38, 0x434F5059)
     _write_u32(runtime_blob, 0x3C, 0x52554E21)
     _write_u32(runtime_blob, 0x40, 1)
@@ -682,12 +948,15 @@ def test_observe_probe_reports_waiting_for_callback_boundary() -> None:
     _write_u32(runtime_blob, 0x4C, 1)
     _write_u32(runtime_blob, 0x50, 1)
     _write_u32(runtime_blob, 0x54, 1)
-    _write_u32(runtime_blob, 0x58, 2)
-    _write_u32(runtime_blob, 0x64, 1)
-    _write_u32(runtime_blob, 0x68, 1)
-    _write_u32(runtime_blob, 0x6C, 0)
-    _write_u32(runtime_blob, 0x70, 0)
-    _write_s32(runtime_blob, 0xB4, 0)
+    _install_transport_state(
+        runtime_blob,
+        phase=4,
+        last_ios_result=0,
+        pending_operation=4,
+        pending_generation=1,
+        callback_generation=0,
+        callback_count=0,
+    )
     _install_diagnostics(
         runtime_blob,
         hook_wrapper_entry_count=1,
@@ -709,10 +978,11 @@ def test_observe_probe_reports_waiting_for_callback_boundary() -> None:
         retail_veneer_exit_count=1,
         c_after_veneer_call_count=1,
         last_execution_marker=0xC0DE000A,
-        last_transport_phase_before_step=1,
-        last_transport_phase_after_step=2,
+        last_transport_phase_before_step=7,
+        last_transport_phase_after_step=8,
         callback_result=0,
     )
+    _install_abi_probe_state(runtime_blob)
     payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob)
     manifest = _relocated_manifest(payload_bytes)
     config = module.ProbeObservationConfig(
@@ -734,12 +1004,97 @@ def test_observe_probe_reports_waiting_for_callback_boundary() -> None:
 
     assert result["relocated_runtime"]["diagnostics"]["ios_submission_returned"] is True
     assert result["relocated_runtime"]["diagnostics"]["callback_observed"] is False
-    assert result["probable_stop_boundary"] == "callback_pending"
+    assert result["probable_stop_boundary"] == "waiting_nwc24_callback"
+
+
+def test_observe_probe_reports_abi_probe_pass_boundary() -> None:
+    module = _load_module()
+    runtime_blob = bytearray(b"R" * 0x2F0)
+    _write_u32(runtime_blob, 0x38, 0x434F5059)
+    _write_u32(runtime_blob, 0x3C, 0x52554E21)
+    _write_u32(runtime_blob, 0x40, 1)
+    _write_u32(runtime_blob, 0x44, 0x52544F4B)
+    _write_u32(runtime_blob, 0x48, 0x4252544E)
+    _write_u32(runtime_blob, 0x4C, 4)
+    _write_u32(runtime_blob, 0x50, 4)
+    _write_u32(runtime_blob, 0x54, 4)
+    _install_transport_state(runtime_blob, phase=0xFE)
+    _install_diagnostics(
+        runtime_blob,
+        hook_wrapper_entry_count=4,
+        hook_wrapper_before_poll_count=4,
+        runtime_poll_entry_count=4,
+        runtime_poll_exit_count=4,
+        state_machine_entry_count=4,
+        state_machine_exit_count=4,
+        ios_submit_attempt_count=0,
+        ios_submit_return_count=0,
+        ios_submit_return_value=0,
+        callback_entry_count=0,
+        callback_exit_count=0,
+        hook_wrapper_after_poll_count=4,
+        hook_wrapper_exit_count=4,
+        last_execution_marker=0xC0DE000D,
+        last_transport_phase_before_step=0xFE,
+        last_transport_phase_after_step=0xFE,
+        callback_result=0,
+    )
+    expected_args = (
+        0x11111111,
+        0x22222222,
+        0x33333333,
+        0x44444444,
+        0x55555555,
+        0x66666666,
+        0x77777777,
+        0x88888888,
+    )
+    _install_abi_probe_state(
+        runtime_blob,
+        supplied_args=expected_args,
+        pre_call_args=expected_args,
+        target_args=expected_args,
+        return_value=0x13579BDF,
+        result_flags=0x003FFFFF,
+        stack_pointer_before=0x817E3F00,
+        stack_pointer_after=0x817E3F00,
+        saved_lr=0x80001234,
+        restored_lr=0x80001234,
+        saved_r2=0x80400000,
+        restored_r2=0x80400000,
+        saved_r13=0x80500000,
+        restored_r13=0x80500000,
+        target_ctr=0x817E1800,
+        after_call_flag=1,
+    )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob)
+    manifest = _relocated_manifest(payload_bytes)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+    )
+    memory = _memory_for_config(module, config)
+    _install_bootstrap_diagnostic(memory)
+    memory[0x817E1000] = bytes(runtime_blob)
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "abi_probe_passed"
+    assert result["relocated_runtime"]["abi_probe"]["pass"] is True
+    assert result["relocated_runtime"]["abi_probe"]["target_called"] is True
+    assert result["relocated_runtime"]["abi_probe"]["supplied_args"] == list(expected_args)
 
 
 def test_observe_probe_reports_contradictory_diagnostic_counters() -> None:
     module = _load_module()
-    runtime_blob = bytearray(b"R" * 0x140)
+    runtime_blob = bytearray(b"R" * 0x2F0)
     _write_u32(runtime_blob, 0x38, 0x434F5059)
     _write_u32(runtime_blob, 0x3C, 0x52554E21)
     _write_u32(runtime_blob, 0x40, 1)
@@ -748,6 +1103,7 @@ def test_observe_probe_reports_contradictory_diagnostic_counters() -> None:
     _write_u32(runtime_blob, 0x4C, 1)
     _write_u32(runtime_blob, 0x50, 1)
     _write_u32(runtime_blob, 0x54, 1)
+    _install_transport_state(runtime_blob, phase=0)
     _install_diagnostics(
         runtime_blob,
         hook_wrapper_entry_count=1,
@@ -881,10 +1237,42 @@ def test_diagnostic_stop_boundary_classifies_new_veneer_boundaries(
     result = module._diagnostic_stop_boundary(
         diagnostics=diagnostics,
         transport=None,
+        abi_probe=None,
         recurring_execution_continuing=False,
     )
 
     assert result == expected
+
+
+def test_diagnostic_stop_boundary_classifies_abi_probe_states() -> None:
+    module = _load_module()
+    diagnostics = {
+        "counter_consistency": "consistent",
+        "last_execution_marker_name": "wrapper_returning_to_game",
+    }
+
+    passed = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport=None,
+        abi_probe={"pass": True, "target_called": True},
+        recurring_execution_continuing=True,
+    )
+    failed = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport=None,
+        abi_probe={"pass": False, "target_called": True},
+        recurring_execution_continuing=True,
+    )
+    incomplete = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport=None,
+        abi_probe={"pass": False, "target_called": False, "result_flags": 1},
+        recurring_execution_continuing=True,
+    )
+
+    assert passed == "abi_probe_passed"
+    assert failed == "abi_probe_failed"
+    assert incomplete == "abi_probe_incomplete"
 
 
 def test_observe_probe_rejects_short_payload_read() -> None:

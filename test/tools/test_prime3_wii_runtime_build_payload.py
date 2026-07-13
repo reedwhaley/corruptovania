@@ -352,6 +352,27 @@ def test_build_prime3_runtime_payload_relocated_continue_diagnostics_manifest(tm
     assert manifest.relocated_runtime.retail_ios_wrapper.open_async_address == 0x80504668
 
 
+def test_build_prime3_runtime_payload_relocated_continue_abi_probe_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_abi_probe_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="retail_wrapper_ioctl_async_abi_probe",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.abi_probe is not None
+    assert manifest.relocated_runtime.abi_probe.mode == "retail_wrapper_ioctl_async_abi_probe"
+    assert manifest.relocated_runtime.abi_probe.expected_return_value == 0x13579BDF
+
+
 def test_main_rejects_failed_direct_ios_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_failed_direct_flag")
     monkeypatch.setattr(sys, "argv", ["build_payload.py", "--ios-open-kd-once"])
@@ -405,5 +426,60 @@ def test_validate_retail_call_veneer_instructions_rejects_missing_lr_restore() -
                 (0x1018, "bctrl", ""),
                 (0x101C, "addi", "r1,r1,32"),
                 (0x1020, "blr", ""),
+            ],
+        )
+
+
+def test_validate_retail_call_veneer_instructions_rejects_pre_bctrl_argument_clobber() -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_veneer_validator_clobber")
+
+    with pytest.raises(RuntimeError, match="clobbers r9 before bctrl"):
+        module._validate_retail_call_veneer_instructions(
+            veneer_name="runtime_call_retail_read_async",
+            expected_target=0x80504A08,
+            instructions=[
+                (0x1000, "stwu", "r1,-32(r1)"),
+                (0x1004, "mflr", "r0"),
+                (0x1008, "stw", "r0,8(r1)"),
+                (0x100C, "stw", "r2,12(r1)"),
+                (0x1010, "stw", "r13,16(r1)"),
+                (0x1014, "mr", "r9,r2"),
+                (0x1018, "lis", "r12,-32688"),
+                (0x101C, "ori", "r12,r12,18952"),
+                (0x1020, "mtctr", "r12"),
+                (0x1024, "bctrl", ""),
+                (0x1028, "lwz", "r2,12(r1)"),
+                (0x102C, "lwz", "r13,16(r1)"),
+                (0x1030, "lwz", "r0,8(r1)"),
+                (0x1034, "mtlr", "r0"),
+                (0x1038, "addi", "r1,r1,32"),
+                (0x103C, "blr", ""),
+            ],
+        )
+
+
+def test_validate_retail_call_veneer_instructions_rejects_argument_register_target_load() -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_veneer_validator_bad_target_reg")
+
+    with pytest.raises(RuntimeError, match="must not use argument register r10"):
+        module._validate_retail_call_veneer_instructions(
+            veneer_name="runtime_call_retail_read_async",
+            expected_target=0x80504A08,
+            instructions=[
+                (0x1000, "stwu", "r1,-32(r1)"),
+                (0x1004, "mflr", "r0"),
+                (0x1008, "stw", "r0,8(r1)"),
+                (0x100C, "stw", "r2,12(r1)"),
+                (0x1010, "stw", "r13,16(r1)"),
+                (0x1014, "lis", "r10,-32688"),
+                (0x1018, "ori", "r10,r10,18952"),
+                (0x101C, "mtctr", "r10"),
+                (0x1020, "bctrl", ""),
+                (0x1024, "lwz", "r2,12(r1)"),
+                (0x1028, "lwz", "r13,16(r1)"),
+                (0x102C, "lwz", "r0,8(r1)"),
+                (0x1030, "mtlr", "r0"),
+                (0x1034, "addi", "r1,r1,32"),
+                (0x1038, "blr", ""),
             ],
         )

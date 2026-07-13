@@ -119,8 +119,8 @@ def _make_relocated_manifest(
         "low_bootstrap_size": 0x60,
         "low_bootstrap_sha256": probe_delivery._sha256_bytes(payload_bytes[:0x60]),
         "embedded_runtime_blob_offset": 0x60,
-        "embedded_runtime_blob_size": 0x140,
-        "embedded_runtime_blob_sha256": probe_delivery._sha256_bytes(payload_bytes[0x60:0x1A0]),
+        "embedded_runtime_blob_size": 0x260,
+        "embedded_runtime_blob_sha256": probe_delivery._sha256_bytes(payload_bytes[0x60:0x2C0]),
         "runtime_destination_address": 0x817E1000,
         "runtime_entry_address": 0x817E1000,
         "runtime_poll_entry_address": 0x817E1004,
@@ -128,14 +128,14 @@ def _make_relocated_manifest(
         "runtime_code_start": 0x817E1000,
         "runtime_code_end": 0x817E102C,
         "runtime_state_start": 0x817E1030,
-        "runtime_state_end": 0x817E1130,
+        "runtime_state_end": 0x817E1260,
         "runtime_stack_start": None,
         "runtime_stack_end": None,
         "required_source_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
         "required_destination_alignment": runtime_payload.PRIME3_RUNTIME_REQUIRED_ALIGNMENT,
         "cache_line_size": 0x20,
         "cache_range_start": 0x817E1000,
-        "cache_range_size": 0x140,
+        "cache_range_size": 0x260,
         "runtime_canary_address": 0x817E1030,
         "runtime_canary_size": 0x04,
         "runtime_canary_sha256": probe_delivery._sha256_bytes(payload_bytes[0x70:0x74]),
@@ -157,57 +157,122 @@ def _make_relocated_manifest(
         "runtime_poll_last_sequence_size": 4,
         "ios_udp_diagnostic_enabled": enable_ios_udp_diagnostic,
         "transport": {
+            "mode": "normal",
+            "initialization_enabled": True,
+            "receive_enabled": False,
+            "send_enabled": False,
+            "nwc24_startup_enabled": True,
+            "kd_close_enabled": True,
+            "ip_close_on_success": False,
+            "socket_close_on_success": False,
+            "terminal_phase_value": 17,
+            "terminal_phase_name": "BOUND_NO_RECV",
             "phase_address": 0x817E1054,
             "phase_size": 4,
             "last_error_address": 0x817E1058,
             "last_error_size": 4,
-            "last_ios_result_address": 0x817E105C,
+            "last_socket_error_address": 0x817E105C,
+            "last_socket_error_size": 4,
+            "last_ios_result_address": 0x817E1060,
             "last_ios_result_size": 4,
-            "pending_operation_address": 0x817E1060,
+            "pending_operation_address": 0x817E1064,
             "pending_operation_size": 4,
-            "pending_generation_address": 0x817E1064,
+            "pending_generation_address": 0x817E1068,
             "pending_generation_size": 4,
-            "callback_generation_address": 0x817E1068,
+            "callback_generation_address": 0x817E106C,
             "callback_generation_size": 4,
-            "callback_count_address": 0x817E106C,
+            "callback_count_address": 0x817E1070,
             "callback_count_size": 4,
-            "callback_pending_address": 0x817E1070,
+            "rejected_callback_count_address": 0x817E1074,
+            "rejected_callback_count_size": 4,
+            "callback_pending_address": 0x817E1078,
             "callback_pending_size": 4,
-            "kd_fd_address": 0x817E1074,
+            "open_kd_submit_count_address": 0x817E107C,
+            "open_kd_submit_count_size": 4,
+            "open_kd_callback_count_address": 0x817E1080,
+            "open_kd_callback_count_size": 4,
+            "nwc24_output_buffer_address": 0x817E10A0,
+            "nwc24_output_buffer_size": 0x20,
+            "nwc24_output_buffer_alignment": 0x20,
+            "nwc24_submit_count_address": 0x817E1084,
+            "nwc24_submit_count_size": 4,
+            "nwc24_callback_count_address": 0x817E1088,
+            "nwc24_callback_count_size": 4,
+            "nwc24_synchronous_result_address": 0x817E10C0,
+            "nwc24_synchronous_result_size": 4,
+            "nwc24_callback_result_address": 0x817E10C4,
+            "nwc24_callback_result_size": 4,
+            "nwc24_output_digest_address": 0x817E10C8,
+            "nwc24_output_digest_size": 4,
+            "open_ip_submit_count_address": 0x817E10CC,
+            "open_ip_submit_count_size": 4,
+            "open_ip_callback_count_address": 0x817E10D0,
+            "open_ip_callback_count_size": 4,
+            "kd_close_submit_count_address": 0x817E10D4,
+            "kd_close_submit_count_size": 4,
+            "kd_close_callback_count_address": 0x817E10D8,
+            "kd_close_callback_count_size": 4,
+            "startup_submit_count_address": 0x817E10DC,
+            "startup_submit_count_size": 4,
+            "startup_callback_count_address": 0x817E10E0,
+            "startup_callback_count_size": 4,
+            "get_host_id_submit_count_address": 0x817E10E4,
+            "get_host_id_submit_count_size": 4,
+            "get_host_id_callback_count_address": 0x817E10E8,
+            "get_host_id_callback_count_size": 4,
+            "socket_submit_count_address": 0x817E10EC,
+            "socket_submit_count_size": 4,
+            "socket_callback_count_address": 0x817E10F0,
+            "socket_callback_count_size": 4,
+            "bind_submit_count_address": 0x817E10F4,
+            "bind_submit_count_size": 4,
+            "bind_callback_count_address": 0x817E10F8,
+            "bind_callback_count_size": 4,
+            "kd_fd_address": 0x817E10FC,
             "kd_fd_size": 4,
-            "ip_fd_address": 0x817E1078,
+            "kd_closed_address": 0x817E1100,
+            "kd_closed_size": 4,
+            "ip_fd_address": 0x817E1104,
             "ip_fd_size": 4,
-            "socket_fd_address": 0x817E107C,
+            "socket_fd_address": 0x817E1108,
             "socket_fd_size": 4,
-            "host_id_address": 0x817E1080,
+            "host_id_address": 0x817E110C,
             "host_id_size": 4,
-            "bound_port_address": 0x817E1084,
+            "bound_port_address": 0x817E1110,
             "bound_port_size": 4,
-            "receive_count_address": 0x817E1088,
+            "receive_submit_count_address": 0x817E1114,
+            "receive_submit_count_size": 4,
+            "send_submit_count_address": 0x817E1118,
+            "send_submit_count_size": 4,
+            "ip_close_submit_count_address": 0x817E111C,
+            "ip_close_submit_count_size": 4,
+            "socket_close_submit_count_address": 0x817E1120,
+            "socket_close_submit_count_size": 4,
+            "receive_count_address": 0x817E1124,
             "receive_count_size": 4,
-            "receive_bytes_address": 0x817E108C,
+            "receive_bytes_address": 0x817E1128,
             "receive_bytes_size": 4,
-            "send_count_address": 0x817E1090,
+            "send_count_address": 0x817E112C,
             "send_count_size": 4,
-            "send_bytes_address": 0x817E1094,
+            "send_bytes_address": 0x817E1130,
             "send_bytes_size": 4,
-            "last_receive_length_address": 0x817E1098,
+            "last_receive_length_address": 0x817E1134,
             "last_receive_length_size": 4,
-            "last_send_length_address": 0x817E109C,
+            "last_send_length_address": 0x817E1138,
             "last_send_length_size": 4,
-            "last_peer_ipv4_address": 0x817E10A0,
+            "last_peer_ipv4_address": 0x817E113C,
             "last_peer_ipv4_size": 4,
-            "last_peer_port_address": 0x817E10A4,
+            "last_peer_port_address": 0x817E1140,
             "last_peer_port_size": 4,
-            "last_peer_family_address": 0x817E10A8,
+            "last_peer_family_address": 0x817E1144,
             "last_peer_family_size": 4,
-            "last_poll_action_address": 0x817E10AC,
+            "last_poll_action_address": 0x817E1148,
             "last_poll_action_size": 4,
-            "last_submit_result_address": 0x817E10B0,
+            "last_submit_result_address": 0x817E114C,
             "last_submit_result_size": 4,
-            "last_receive_preview_address": 0x817E10C0,
+            "last_receive_preview_address": 0x817E1150,
             "last_receive_preview_size": 16,
-            "last_send_preview_address": 0x817E10D0,
+            "last_send_preview_address": 0x817E1160,
             "last_send_preview_size": 16,
         } if enable_ios_udp_diagnostic else None,
     }
@@ -416,7 +481,7 @@ def test_build_unhooked_probe_dol_supports_entry_bootstrap_install() -> None:
 
 
 def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -436,13 +501,13 @@ def test_build_unhooked_probe_dol_supports_relocated_runtime_install() -> None:
     assert result.relocated_runtime.runtime_destination == 0x817E1000
     assert result.relocated_runtime.runtime_entry == 0x817E1000
     assert result.relocated_runtime.runtime_blob_offset == 0x60
-    assert result.relocated_runtime.runtime_blob_size == 0x140
+    assert result.relocated_runtime.runtime_blob_size == 0x260
     assert result.relocated_runtime.cache_range_start == 0x817E1000
-    assert result.relocated_runtime.cache_range_size == 0x140
+    assert result.relocated_runtime.cache_range_size == 0x260
 
 
 def test_build_unhooked_probe_dol_supports_recurring_poll_hook_install() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -466,7 +531,7 @@ def test_build_unhooked_probe_dol_supports_recurring_poll_hook_install() -> None
 
 
 def test_build_unhooked_probe_dol_accepts_explicit_ios_udp_transport_enable() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -487,7 +552,7 @@ def test_build_unhooked_probe_dol_accepts_explicit_ios_udp_transport_enable() ->
 
 
 def test_build_unhooked_probe_dol_rejects_ios_udp_transport_without_recurring_hook() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -507,7 +572,7 @@ def test_build_unhooked_probe_dol_rejects_ios_udp_transport_without_recurring_ho
 
 
 def test_build_unhooked_probe_dol_rejects_ios_udp_transport_when_manifest_disabled() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -657,7 +722,7 @@ def test_build_unhooked_probe_dol_rejects_entry_bootstrap_with_checkpoint_gate()
 
 
 def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -676,7 +741,7 @@ def test_build_unhooked_probe_dol_rejects_relocated_runtime_with_checkpoint_gate
 
 
 def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -695,7 +760,7 @@ def test_build_unhooked_probe_dol_rejects_dual_bootstrap_install_modes() -> None
 
 
 def test_build_unhooked_probe_dol_rejects_recurring_hook_with_checkpoint_gate() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -714,7 +779,7 @@ def test_build_unhooked_probe_dol_rejects_recurring_hook_with_checkpoint_gate() 
 
 
 def test_build_unhooked_probe_dol_rejects_recurring_hook_with_other_bootstrap_mode() -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -856,7 +921,7 @@ def test_verify_probe_delivery_accepts_entry_bootstrap_chain(tmp_path: Path) -> 
 
 
 def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -899,7 +964,7 @@ def test_verify_probe_delivery_accepts_relocated_runtime_chain(tmp_path: Path) -
 
 
 def test_verify_probe_delivery_accepts_recurring_poll_hook_chain(tmp_path: Path) -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -941,7 +1006,7 @@ def test_verify_probe_delivery_accepts_recurring_poll_hook_chain(tmp_path: Path)
 
 
 def test_verify_probe_delivery_accepts_explicit_ios_udp_transport_chain(tmp_path: Path) -> None:
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
@@ -1259,7 +1324,7 @@ def test_build_probe_dol_script_writes_entry_bootstrap_report(tmp_path: Path) ->
 
 def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) -> None:
     module = _load_build_probe_module()
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT,
@@ -1300,12 +1365,12 @@ def test_build_probe_dol_script_writes_relocated_runtime_report(tmp_path: Path) 
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["relocated_runtime"]["runtime_destination"] == 0x817E1000
-    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x140
+    assert payload["relocated_runtime"]["runtime_blob_size"] == 0x260
 
 
 def test_build_probe_dol_script_writes_recurring_poll_hook_report(tmp_path: Path) -> None:
     module = _load_build_probe_module()
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_RETURN_HALT,
@@ -1351,7 +1416,7 @@ def test_build_probe_dol_script_writes_recurring_poll_hook_report(tmp_path: Path
 
 def test_build_probe_dol_script_reports_explicit_ios_udp_transport_enable(tmp_path: Path) -> None:
     module = _load_build_probe_module()
-    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x140
+    payload_bytes = b"\xaa" * 0x60 + b"\xbb" * 0x260
     manifest = _make_relocated_manifest(
         payload_bytes,
         mode=runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,

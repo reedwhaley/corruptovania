@@ -159,14 +159,15 @@ Current PR 19 call graph:
 3. `net_init_stuff` enters `server_loop`
 4. `server_loop` opens `/dev/net/kd/request`
 5. `server_loop` issues `IOCTL_NWC24_STARTUP`
-6. `server_loop` opens `/dev/net/ip/top`
-7. `server_loop` issues `IOCTL_SO_STARTUP`
-8. `server_loop` issues `IOCTL_SO_GETHOSTID`
-9. `server_loop` issues `IOCTL_SO_SOCKET` for UDP
-10. `server_loop` issues `IOCTL_SO_BIND`
-11. loop repeatedly issues `IOCTL_SO_RECV`
-12. loop responds with `IOCTL_SO_SEND`
-13. each async completion re-enters the pinned future through the IOS callback `post_ios`
+6. the request-device callback completes and the request descriptor is closed
+7. `server_loop` opens `/dev/net/ip/top`
+8. `server_loop` issues `IOCTL_SO_STARTUP`
+9. `server_loop` issues `IOCTL_SO_GETHOSTID`
+10. `server_loop` issues `IOCTL_SO_SOCKET` for UDP
+11. `server_loop` issues `IOCTL_SO_BIND`
+12. loop repeatedly issues `IOCTL_SO_RECV`
+13. loop responds with `IOCTL_SO_SEND`
+14. each async completion re-enters the pinned future through the IOS callback `post_ios`
 
 Historical `rvl_os.rs` in PR 14 also includes a more elaborate async initialization chain plus a TCP accept path, but the transport actually used by the newer implementation is the simpler `rando/networking.rs` server loop.
 
@@ -449,6 +450,7 @@ Recommended minimal direct-IOS interface for Prime 3:
 
 - open `/dev/net/kd/request`
 - issue `IOCTL_NWC24_STARTUP`
+- close the temporary request descriptor after the callback completes
 - open `/dev/net/ip/top`
 - issue `IOCTL_SO_STARTUP`
 - optionally read host IP with `IOCTL_SO_GETHOSTID`
@@ -487,3 +489,17 @@ Skyward Sword proves that a Wii UDP transport can be built without blindly linki
 - it is not structured as one bounded network step per Prime 3 recurring poll
 
 So the blocker before CP3W integration is no longer transport provenance. The blocker is that Prime 3 still needs its own bounded, fixed-storage, no-allocation direct-IOS state machine built from this evidence.
+
+## Prime 3 retail IPC wrapper classification
+
+Static analysis of the guarded NTSC retail DOL confirms that the sequence beginning at `0x80504A08` follows Wii IPC operation numbers rather than the previously inferred ioctl ordering:
+
+- `0x80504A08` / `0x80504B08`: asynchronous / synchronous read, operation `3`
+- `0x80504C10` / `0x80504D10`: asynchronous / synchronous write, operation `4`
+- `0x80504E18` / `0x80504EF8`: asynchronous / synchronous seek, operation `5`
+- `0x80504FE0` / `0x80505118`: asynchronous / synchronous ioctl, operation `6`
+- `0x80505384` / `0x80505468`: asynchronous / synchronous vector ioctl, operation `7`
+
+The `0x140`-byte higher-level context used around `0x80504A08` and `0x80504C10` is therefore read/write callback and optional bounce-buffer state, not an ioctl descriptor. Its completion adapter at `0x805007AC` calls the stored user callback and frees the context after callback return.
+
+The proven asynchronous ioctl prototype at `0x80504FE0` consumes all eight register arguments `r3` through `r10`: fd, command, input pointer and length, output pointer and length, completion function, and completion userdata. No stack arguments are consumed. This static pass did not add a runtime veneer or submit an IOS request; the rejected `0x80504A08` eight-argument transport path remains disabled.

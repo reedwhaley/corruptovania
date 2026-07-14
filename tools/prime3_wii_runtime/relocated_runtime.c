@@ -72,6 +72,7 @@ enum {
     RUNTIME_TRANSPORT_PHASE_BIND_SOCKET = 15,
     RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET = 16,
     RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV = 17,
+    RUNTIME_TRANSPORT_PHASE_SO_STARTED = 18,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -112,6 +113,7 @@ enum {
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_IOCTL_ASYNC_ABI_PROBE = 10,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_KD_ONCE = 11,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_OPEN_IP_ONCE = 12,
+    RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_OPEN_IP_STARTUP_ONCE = 13,
 };
 
 enum {
@@ -143,6 +145,7 @@ enum {
     RUNTIME_UDP_PORT = 43674,
     RUNTIME_PREVIEW_SIZE = 16,
     RUNTIME_WII_SOCKADDR_IN_SIZE = 8,
+    RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS = 0x80504FE0,
 };
 
 static const char runtime_kd_path[] __attribute_section_rodata__ = "/dev/net/kd/request";
@@ -254,6 +257,25 @@ volatile s32 runtime_transport_startup_submit_result __attribute_section_state__
 volatile s32 runtime_transport_startup_callback_result __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_startup_submit_generation __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_startup_callback_generation __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_target_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_command __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_startup_submitted_fd __attribute_section_state__ __attribute_used__ = -1;
+volatile u32 runtime_transport_startup_callback_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_context_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_callback_exit_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_stale_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_duplicate_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_service_started_before_submit __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_service_started_after_completion __attribute_section_state__ __attribute_used__
+    = 0;
+volatile s32 runtime_transport_ip_fd_before_startup __attribute_section_state__ __attribute_used__ = -1;
+volatile s32 runtime_transport_ip_fd_after_startup __attribute_section_state__ __attribute_used__ = -1;
+volatile u32 runtime_transport_startup_pending_before_submit __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_pending_after_completion __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_phase_before_submit __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_phase_after_completion __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_startup_pre_call_args[8] __attribute_section_state_aligned_32__ __attribute_used__
+    = {0};
 volatile u32 runtime_transport_get_host_id_submit_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_get_host_id_callback_count __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_get_host_id_submit_result __attribute_section_state__ __attribute_used__ = 0;
@@ -277,6 +299,7 @@ volatile u32 runtime_transport_kd_closed __attribute_section_state__ __attribute
 volatile s32 runtime_transport_ip_fd __attribute_section_state__ __attribute_used__ = -1;
 volatile s32 runtime_transport_socket_fd __attribute_section_state__ __attribute_used__ = -1;
 volatile u32 runtime_transport_host_id __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_service_started __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_bound_port __attribute_section_state__ __attribute_used__ = RUNTIME_UDP_PORT;
 volatile u32 runtime_transport_receive_submit_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_send_submit_count __attribute_section_state__ __attribute_used__ = 0;
@@ -304,6 +327,8 @@ static volatile runtime_operation_context runtime_transport_kd_close_context
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static volatile runtime_operation_context runtime_transport_open_ip_context
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+static volatile runtime_operation_context runtime_transport_startup_context
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static u32 runtime_transport_socket_params[3] __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static runtime_bind_params runtime_transport_bind_params __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 
@@ -322,6 +347,7 @@ static u32 runtime_transport_is_nwc24_once_mode(void) __attribute_section_code__
 static u32 runtime_transport_is_close_kd_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_nwc24_close_kd_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_nwc24_close_open_ip_once_mode(void) __attribute_section_code__;
+static u32 runtime_transport_is_nwc24_close_open_ip_startup_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_open_ip_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_startup_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_get_host_id_once_mode(void) __attribute_section_code__;
@@ -383,6 +409,7 @@ static void runtime_record_operation_callback(void) __attribute_section_code__;
 static void runtime_record_submit_evidence(u32 operation, s32 result, u32 generation) __attribute_section_code__;
 static void runtime_record_callback_evidence(u32 operation, s32 result, u32 generation) __attribute_section_code__;
 static void runtime_sync_open_ip_context_evidence(void) __attribute_section_code__;
+static void runtime_sync_startup_context_evidence(void) __attribute_section_code__;
 static u32 runtime_digest_words(const volatile u8* source, u32 size) __attribute_section_code__;
 u32 runtime_abi_probe_expected_return_value __attribute_section_state__ __attribute_used__ = 0x13579BDFU;
 s32 runtime_local_veneer_selftest_target(
@@ -607,6 +634,13 @@ static u32 runtime_transport_is_nwc24_close_open_ip_once_mode(void)
         && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_OPEN_IP_ONCE;
 }
 
+static u32 runtime_transport_is_nwc24_close_open_ip_startup_once_mode(void)
+{
+    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE
+            == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_OPEN_IP_STARTUP_ONCE;
+}
+
 static u32 runtime_transport_is_open_ip_once_mode(void)
 {
     return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
@@ -690,15 +724,20 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
             runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP
             || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_KD
             || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_OPEN_IP
+            || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_STARTUP
         ) {
             volatile runtime_operation_context* context = runtime_transport_pending_operation
                 == RUNTIME_TRANSPORT_OP_NWC24_STARTUP ? &runtime_transport_nwc24_context
                 : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_KD
-                    ? &runtime_transport_kd_close_context : &runtime_transport_open_ip_context;
+                    ? &runtime_transport_kd_close_context
+                    : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_OPEN_IP
+                        ? &runtime_transport_open_ip_context : &runtime_transport_startup_context;
             if (usrdata == (void*)context) {
                 context->duplicate_callback_count += 1;
                 if (context == &runtime_transport_open_ip_context) {
                     runtime_sync_open_ip_context_evidence();
+                } else if (context == &runtime_transport_startup_context) {
+                    runtime_sync_startup_context_evidence();
                 }
             }
         }
@@ -710,15 +749,20 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
         runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP
         || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_KD
         || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_OPEN_IP
+        || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_STARTUP
     ) {
         volatile runtime_operation_context* context = runtime_transport_pending_operation
             == RUNTIME_TRANSPORT_OP_NWC24_STARTUP ? &runtime_transport_nwc24_context
             : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_KD
-                ? &runtime_transport_kd_close_context : &runtime_transport_open_ip_context;
+                ? &runtime_transport_kd_close_context
+                : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_OPEN_IP
+                    ? &runtime_transport_open_ip_context : &runtime_transport_startup_context;
         if (usrdata != (void*)context) {
             context->stale_callback_count += 1;
             if (context == &runtime_transport_open_ip_context) {
                 runtime_sync_open_ip_context_evidence();
+            } else if (context == &runtime_transport_startup_context) {
+                runtime_sync_startup_context_evidence();
             }
             runtime_transport_rejected_callback_count += 1;
             return 0;
@@ -728,6 +772,8 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
             context->stale_callback_count += 1;
             if (context == &runtime_transport_open_ip_context) {
                 runtime_sync_open_ip_context_evidence();
+            } else if (context == &runtime_transport_startup_context) {
+                runtime_sync_startup_context_evidence();
             }
             runtime_transport_rejected_callback_count += 1;
             return 0;
@@ -736,6 +782,8 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
             context->duplicate_callback_count += 1;
             if (context == &runtime_transport_open_ip_context) {
                 runtime_sync_open_ip_context_evidence();
+            } else if (context == &runtime_transport_startup_context) {
+                runtime_sync_startup_context_evidence();
             }
             runtime_transport_rejected_callback_count += 1;
             return 0;
@@ -756,6 +804,9 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_OPEN_IP) {
         runtime_transport_open_ip_context.callback_exit_count += 1;
         runtime_sync_open_ip_context_evidence();
+    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_STARTUP) {
+        runtime_transport_startup_context.callback_exit_count += 1;
+        runtime_sync_startup_context_evidence();
     }
     runtime_diag_increment(&runtime_callback_exit_count);
     return 0;
@@ -783,7 +834,8 @@ static s32 runtime_submit_open(const char* path, u32 operation, u32 next_phase)
     runtime_transport_last_ios_result = 0;
     if (operation == RUNTIME_TRANSPORT_OP_OPEN_IP) {
         if (
-            !runtime_transport_is_nwc24_close_open_ip_once_mode()
+            !(runtime_transport_is_nwc24_close_open_ip_once_mode()
+                || runtime_transport_is_nwc24_close_open_ip_startup_once_mode())
             || runtime_transport_kd_fd != -1 || runtime_transport_kd_closed == 0 || runtime_transport_ip_fd != -1
         ) {
             runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
@@ -840,7 +892,8 @@ static s32 runtime_submit_close(s32 fd, u32 operation, u32 next_phase)
     }
 
     if (
-        !(runtime_transport_is_nwc24_close_kd_once_mode() || runtime_transport_is_nwc24_close_open_ip_once_mode())
+        !(runtime_transport_is_nwc24_close_kd_once_mode() || runtime_transport_is_nwc24_close_open_ip_once_mode()
+            || runtime_transport_is_nwc24_close_open_ip_startup_once_mode())
         || operation != RUNTIME_TRANSPORT_OP_CLOSE_KD
         || fd < 0
         || fd != runtime_transport_kd_fd
@@ -899,18 +952,68 @@ static s32 runtime_submit_ioctl(
         runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
         return 0;
     }
-    if (
-        !(runtime_transport_is_nwc24_once_mode() || runtime_transport_is_nwc24_close_kd_once_mode()
-            || runtime_transport_is_nwc24_close_open_ip_once_mode())
-        || operation != RUNTIME_TRANSPORT_OP_NWC24_STARTUP
-        || fd < 0
-        || ioctl != IOCTL_NWC24_STARTUP
-        || buffer_in != 0
-        || len_in != 0
-        || buffer_io != runtime_transport_nwc24_output_buffer
-        || len_io != 0x20
-        || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
-    ) {
+    if (operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP) {
+        if (
+            !(runtime_transport_is_nwc24_once_mode() || runtime_transport_is_nwc24_close_kd_once_mode()
+                || runtime_transport_is_nwc24_close_open_ip_once_mode()
+                || runtime_transport_is_nwc24_close_open_ip_startup_once_mode())
+            || fd < 0
+            || ioctl != IOCTL_NWC24_STARTUP
+            || buffer_in != 0
+            || len_in != 0
+            || buffer_io != runtime_transport_nwc24_output_buffer
+            || len_io != 0x20
+            || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
+        ) {
+            runtime_transport_last_ios_result = -1;
+            runtime_transport_last_submit_result = -1;
+            runtime_record_submit_evidence(operation, -1, runtime_transport_pending_generation);
+            runtime_diag_record_submit_return(-1);
+            return -1;
+        }
+    } else if (operation == RUNTIME_TRANSPORT_OP_STARTUP) {
+        if (
+            !(runtime_transport_is_startup_once_mode() || runtime_transport_is_nwc24_close_open_ip_startup_once_mode())
+            || fd < 0
+            || fd != runtime_transport_ip_fd
+            || ioctl != IOCTL_SO_STARTUP
+            || buffer_in != 0
+            || len_in != 0
+            || buffer_io != 0
+            || len_io != 0
+            || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
+            || runtime_transport_startup_submit_count != 1
+            || runtime_transport_kd_fd != -1
+            || runtime_transport_kd_closed == 0
+            || runtime_transport_service_started != 0
+        ) {
+            runtime_transport_last_ios_result = -1;
+            runtime_transport_last_submit_result = -1;
+            runtime_record_submit_evidence(operation, -1, runtime_transport_pending_generation);
+            runtime_diag_record_submit_return(-1);
+            return -1;
+        }
+        runtime_transport_startup_target_address = RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS;
+        runtime_transport_startup_command = (u32)ioctl;
+        runtime_transport_startup_submitted_fd = fd;
+        runtime_transport_startup_callback_pointer = (u32)runtime_ios_callback;
+        runtime_transport_startup_context_pointer = (u32)&runtime_transport_startup_context;
+        runtime_transport_startup_service_started_before_submit = runtime_transport_service_started;
+        runtime_transport_ip_fd_before_startup = runtime_transport_ip_fd;
+        runtime_transport_startup_pending_before_submit = runtime_transport_pending_operation;
+        runtime_transport_startup_phase_before_submit = runtime_transport_phase;
+        runtime_transport_startup_pre_call_args[0] = (u32)fd;
+        runtime_transport_startup_pre_call_args[1] = (u32)ioctl;
+        runtime_transport_startup_pre_call_args[2] = (u32)buffer_in;
+        runtime_transport_startup_pre_call_args[3] = (u32)len_in;
+        runtime_transport_startup_pre_call_args[4] = (u32)buffer_io;
+        runtime_transport_startup_pre_call_args[5] = (u32)len_io;
+        runtime_transport_startup_pre_call_args[6] = (u32)runtime_ios_callback;
+        runtime_transport_startup_pre_call_args[7] = (u32)&runtime_transport_startup_context;
+        runtime_memzero(&runtime_transport_startup_context, sizeof(runtime_transport_startup_context));
+        runtime_transport_startup_context.expected_generation = runtime_transport_pending_generation + 1;
+        runtime_sync_startup_context_evidence();
+    } else {
         runtime_transport_last_ios_result = -1;
         runtime_transport_last_submit_result = -1;
         runtime_record_submit_evidence(operation, -1, runtime_transport_pending_generation);
@@ -921,14 +1024,25 @@ static s32 runtime_submit_ioctl(
     runtime_transport_pending_generation += 1;
     runtime_transport_callback_pending = 0;
     runtime_transport_last_ios_result = 0;
-    runtime_transport_nwc24_context.expected_generation = runtime_transport_pending_generation;
-    runtime_transport_nwc24_context.completion_generation = 0;
-    runtime_transport_nwc24_context.completion_flag = 0;
-    runtime_transport_nwc24_context.completion_result = 0;
-    runtime_transport_nwc24_context.callback_entry_count = 0;
-    runtime_transport_nwc24_context.callback_exit_count = 0;
-    runtime_transport_nwc24_context.stale_callback_count = 0;
-    runtime_transport_nwc24_context.duplicate_callback_count = 0;
+    if (operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP) {
+        runtime_transport_nwc24_context.expected_generation = runtime_transport_pending_generation;
+        runtime_transport_nwc24_context.completion_generation = 0;
+        runtime_transport_nwc24_context.completion_flag = 0;
+        runtime_transport_nwc24_context.completion_result = 0;
+        runtime_transport_nwc24_context.callback_entry_count = 0;
+        runtime_transport_nwc24_context.callback_exit_count = 0;
+        runtime_transport_nwc24_context.stale_callback_count = 0;
+        runtime_transport_nwc24_context.duplicate_callback_count = 0;
+    } else {
+        runtime_transport_startup_context.expected_generation = runtime_transport_pending_generation;
+        runtime_transport_startup_context.completion_generation = 0;
+        runtime_transport_startup_context.completion_flag = 0;
+        runtime_transport_startup_context.completion_result = 0;
+        runtime_transport_startup_context.callback_entry_count = 0;
+        runtime_transport_startup_context.callback_exit_count = 0;
+        runtime_transport_startup_context.stale_callback_count = 0;
+        runtime_transport_startup_context.duplicate_callback_count = 0;
+    }
     result = runtime_call_retail_ios_ioctl_async(
         fd,
         (u32)ioctl,
@@ -937,7 +1051,8 @@ static s32 runtime_submit_ioctl(
         (void*)buffer_io,
         (u32)len_io,
         runtime_ios_callback,
-        (void*)&runtime_transport_nwc24_context
+        operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP
+            ? (void*)&runtime_transport_nwc24_context : (void*)&runtime_transport_startup_context
     );
     runtime_diag_increment(&runtime_c_after_veneer_call_count);
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_C_AFTER_VENEER_CALL);
@@ -1013,6 +1128,14 @@ static void runtime_record_operation_callback(void)
         runtime_transport_open_ip_callback_count += 1;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_STARTUP) {
         runtime_transport_startup_callback_count += 1;
+        runtime_transport_startup_service_started_after_completion = runtime_transport_service_started;
+        runtime_transport_ip_fd_after_startup = runtime_transport_ip_fd;
+        runtime_transport_startup_pending_after_completion = runtime_transport_pending_operation;
+        runtime_transport_startup_phase_after_completion = runtime_transport_phase;
+        if (runtime_transport_last_ios_result == 0) {
+            runtime_transport_service_started = 1;
+            runtime_transport_startup_service_started_after_completion = runtime_transport_service_started;
+        }
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_GETHOSTID) {
         runtime_transport_get_host_id_callback_count += 1;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET) {
@@ -1085,6 +1208,13 @@ static void runtime_sync_open_ip_context_evidence(void)
     runtime_transport_open_ip_callback_exit_count = runtime_transport_open_ip_context.callback_exit_count;
     runtime_transport_open_ip_stale_callback_count = runtime_transport_open_ip_context.stale_callback_count;
     runtime_transport_open_ip_duplicate_callback_count = runtime_transport_open_ip_context.duplicate_callback_count;
+}
+
+static void runtime_sync_startup_context_evidence(void)
+{
+    runtime_transport_startup_callback_exit_count = runtime_transport_startup_context.callback_exit_count;
+    runtime_transport_startup_stale_callback_count = runtime_transport_startup_context.stale_callback_count;
+    runtime_transport_startup_duplicate_callback_count = runtime_transport_startup_context.duplicate_callback_count;
 }
 #endif
 
@@ -1189,6 +1319,23 @@ void runtime_entry_impl(void)
     runtime_transport_startup_callback_result = 0;
     runtime_transport_startup_submit_generation = 0;
     runtime_transport_startup_callback_generation = 0;
+    runtime_transport_startup_target_address = 0;
+    runtime_transport_startup_command = 0;
+    runtime_transport_startup_submitted_fd = -1;
+    runtime_transport_startup_callback_pointer = 0;
+    runtime_transport_startup_context_pointer = 0;
+    runtime_transport_startup_callback_exit_count = 0;
+    runtime_transport_startup_stale_callback_count = 0;
+    runtime_transport_startup_duplicate_callback_count = 0;
+    runtime_transport_startup_service_started_before_submit = 0;
+    runtime_transport_startup_service_started_after_completion = 0;
+    runtime_transport_ip_fd_before_startup = -1;
+    runtime_transport_ip_fd_after_startup = -1;
+    runtime_transport_startup_pending_before_submit = 0;
+    runtime_transport_startup_pending_after_completion = 0;
+    runtime_transport_startup_phase_before_submit = 0;
+    runtime_transport_startup_phase_after_completion = 0;
+    runtime_memzero(runtime_transport_startup_pre_call_args, sizeof(runtime_transport_startup_pre_call_args));
     runtime_transport_get_host_id_submit_count = 0;
     runtime_transport_get_host_id_callback_count = 0;
     runtime_transport_get_host_id_submit_result = 0;
@@ -1212,6 +1359,7 @@ void runtime_entry_impl(void)
     runtime_transport_ip_fd = -1;
     runtime_transport_socket_fd = -1;
     runtime_transport_host_id = 0;
+    runtime_transport_service_started = 0;
     runtime_transport_bound_port = RUNTIME_UDP_PORT;
     runtime_transport_receive_submit_count = 0;
     runtime_transport_send_submit_count = 0;
@@ -1231,6 +1379,7 @@ void runtime_entry_impl(void)
     runtime_memzero(&runtime_transport_nwc24_context, sizeof(runtime_transport_nwc24_context));
     runtime_memzero(&runtime_transport_kd_close_context, sizeof(runtime_transport_kd_close_context));
     runtime_memzero(&runtime_transport_open_ip_context, sizeof(runtime_transport_open_ip_context));
+    runtime_memzero(&runtime_transport_startup_context, sizeof(runtime_transport_startup_context));
     runtime_memzero(runtime_transport_socket_params, sizeof(runtime_transport_socket_params));
     runtime_memzero(&runtime_transport_bind_params, sizeof(runtime_transport_bind_params));
 #if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
@@ -1261,7 +1410,10 @@ void runtime_poll_entry_impl(void)
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_STATE_MACHINE_ENTRY);
     state_machine_entered = 1;
 
-    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE) {
+    if (
+        runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SO_STARTED
+    ) {
         runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
         goto runtime_poll_exit;
     }
@@ -1338,6 +1490,15 @@ void runtime_poll_entry_impl(void)
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP) {
             if (runtime_transport_last_ios_result < 0) {
                 runtime_record_socket_error(runtime_transport_last_ios_result);
+                goto runtime_poll_exit;
+            }
+            runtime_transport_service_started = 1;
+            runtime_transport_startup_service_started_after_completion = runtime_transport_service_started;
+            runtime_transport_ip_fd_after_startup = runtime_transport_ip_fd;
+            runtime_transport_startup_pending_after_completion = runtime_transport_pending_operation;
+            runtime_transport_startup_phase_after_completion = runtime_transport_phase;
+            if (runtime_transport_is_nwc24_close_open_ip_startup_once_mode()) {
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SO_STARTED, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
                 goto runtime_poll_exit;
             }
             if (runtime_transport_is_startup_once_mode()) {
@@ -1535,6 +1696,10 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV) {
+        runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SO_STARTED) {
         runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
         goto runtime_poll_exit;
     }

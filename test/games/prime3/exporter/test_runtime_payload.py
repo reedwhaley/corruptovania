@@ -250,6 +250,8 @@ def _make_relocated_manifest(payload_bytes: bytes) -> runtime_payload.Prime3Runt
             "socket_fd_size": 4,
             "host_id_address": 0x817E11EC,
             "host_id_size": 4,
+            "service_started_address": 0x817E1250,
+            "service_started_size": 4,
             "bound_port_address": 0x817E11F0,
             "bound_port_size": 4,
             "receive_submit_count_address": 0x817E11F4,
@@ -580,6 +582,66 @@ def test_runtime_payload_manifest_accepts_nwc24_close_open_ip_terminal_metadata(
     assert parsed.relocated_runtime.transport is not None
     assert parsed.relocated_runtime.transport.kd_close_enabled is True
     assert parsed.relocated_runtime.transport.terminal_phase_name == "IP_OPEN"
+
+
+def test_runtime_payload_manifest_accepts_nwc24_close_open_ip_startup_terminal_metadata() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_nwc24_close_open_ip_startup_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_nwc24_close_open_ip_startup_once"
+    transport["kd_close_enabled"] = True
+    transport["terminal_phase_value"] = 18
+    transport["terminal_phase_name"] = "SO_STARTED"
+    transport["service_started_address"] = 0x817E1254
+    transport["service_started_size"] = 4
+    transport["startup_target_address"] = 0x817E1258
+    transport["startup_target_size"] = 4
+    transport["startup_command_address"] = 0x817E125C
+    transport["startup_command_size"] = 4
+    transport["startup_submitted_fd_address"] = 0x817E1260
+    transport["startup_submitted_fd_size"] = 4
+    transport["startup_callback_pointer_address"] = 0x817E1264
+    transport["startup_callback_pointer_size"] = 4
+    transport["startup_context_pointer_address"] = 0x817E1268
+    transport["startup_context_pointer_size"] = 4
+    transport["startup_callback_exit_count_address"] = 0x817E126C
+    transport["startup_callback_exit_count_size"] = 4
+    transport["startup_stale_callback_count_address"] = 0x817E1270
+    transport["startup_stale_callback_count_size"] = 4
+    transport["startup_duplicate_callback_count_address"] = 0x817E1274
+    transport["startup_duplicate_callback_count_size"] = 4
+    transport["startup_service_started_before_submit_address"] = 0x817E1278
+    transport["startup_service_started_before_submit_size"] = 4
+    transport["startup_service_started_after_completion_address"] = 0x817E127C
+    transport["startup_service_started_after_completion_size"] = 4
+    transport["ip_fd_before_startup_address"] = 0x817E1280
+    transport["ip_fd_before_startup_size"] = 4
+    transport["ip_fd_after_startup_address"] = 0x817E1284
+    transport["ip_fd_after_startup_size"] = 4
+    transport["startup_pending_before_submit_address"] = 0x817E1288
+    transport["startup_pending_before_submit_size"] = 4
+    transport["startup_pending_after_completion_address"] = 0x817E128C
+    transport["startup_pending_after_completion_size"] = 4
+    transport["startup_phase_before_submit_address"] = 0x817E1290
+    transport["startup_phase_before_submit_size"] = 4
+    transport["startup_phase_after_completion_address"] = 0x817E1294
+    transport["startup_phase_after_completion_size"] = 4
+    transport["startup_pre_call_args_address"] = 0x817E12A8
+    transport["startup_pre_call_args_size"] = 0x20
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "SO_STARTED"
+    assert parsed.relocated_runtime.transport.startup_pre_call_args_size == 0x20
 
 
 def test_runtime_payload_manifest_rejects_abi_probe_outside_runtime_state() -> None:

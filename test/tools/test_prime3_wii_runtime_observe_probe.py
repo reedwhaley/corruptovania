@@ -415,6 +415,7 @@ def _install_transport_state(
     ip_fd: int = -1,
     socket_fd: int = -1,
     host_id: int = 0,
+    service_started: int = 0,
     bound_port: int = 43674,
     receive_submit_count: int = 0,
     send_submit_count: int = 0,
@@ -469,6 +470,7 @@ def _install_transport_state(
     _write_s32(blob, 0x1E4, ip_fd)
     _write_s32(blob, 0x1E8, socket_fd)
     _write_u32(blob, 0x1EC, host_id)
+    _write_u32(blob, 0x250, service_started)
     _write_u32(blob, 0x1F0, bound_port)
     _write_u32(blob, 0x1F4, receive_submit_count)
     _write_u32(blob, 0x1F8, send_submit_count)
@@ -1313,6 +1315,182 @@ def test_observe_probe_reports_terminal_ip_open_state() -> None:
     assert result["relocated_runtime"]["transport"]["kd_close_submitted_fd"] == 11
     assert result["relocated_runtime"]["transport"]["kd_fd_before_close"] == 11
     assert result["relocated_runtime"]["transport"]["kd_fd_after_close"] == -1
+
+
+def test_observe_probe_reports_terminal_so_started_state() -> None:
+    module = _load_module()
+    runtime_blob_first = bytearray(b"R" * 0x2F0)
+    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    for runtime_blob, poll_value in ((runtime_blob_first, 7), (runtime_blob_second, 11)):
+        _write_u32(runtime_blob, 0x38, 0x434F5059)
+        _write_u32(runtime_blob, 0x3C, 0x52554E21)
+        _write_u32(runtime_blob, 0x40, 1)
+        _write_u32(runtime_blob, 0x44, 0x52544F4B)
+        _write_u32(runtime_blob, 0x48, 0x4252544E)
+        _write_u32(runtime_blob, 0x4C, poll_value)
+        _write_u32(runtime_blob, 0x50, poll_value)
+        _write_u32(runtime_blob, 0x54, poll_value)
+        _install_transport_state(
+            runtime_blob,
+            phase=18,
+            pending_operation=0,
+            open_kd_submit_count=1,
+            open_kd_callback_count=1,
+            nwc24_submit_count=1,
+            nwc24_callback_count=1,
+            nwc24_synchronous_result=0,
+            nwc24_callback_result=0,
+            open_ip_submit_count=1,
+            open_ip_callback_count=1,
+            kd_close_submit_count=1,
+            kd_close_callback_count=1,
+            startup_submit_count=1,
+            startup_callback_count=1,
+            kd_fd=-1,
+            kd_closed=1,
+            ip_fd=11,
+            service_started=1,
+            get_host_id_submit_count=0,
+            socket_submit_count=0,
+            bind_submit_count=0,
+            receive_count=0,
+            send_count=0,
+        )
+        _write_u32(runtime_blob, 0x254, 0x80504FE0)
+        _write_u32(runtime_blob, 0x258, 31)
+        _write_s32(runtime_blob, 0x25C, 11)
+        _write_u32(runtime_blob, 0x260, 0x817E1010)
+        _write_u32(runtime_blob, 0x264, 0x817E1280)
+        _write_u32(runtime_blob, 0x268, 1)
+        _write_u32(runtime_blob, 0x26C, 0)
+        _write_u32(runtime_blob, 0x270, 0)
+        _write_u32(runtime_blob, 0x274, 0)
+        _write_u32(runtime_blob, 0x278, 1)
+        _write_s32(runtime_blob, 0x27C, 11)
+        _write_s32(runtime_blob, 0x280, 11)
+        _write_u32(runtime_blob, 0x284, 0)
+        _write_u32(runtime_blob, 0x288, 0)
+        _write_u32(runtime_blob, 0x28C, 9)
+        _write_u32(runtime_blob, 0x290, 10)
+        for offset, value in enumerate((11, 31, 0, 0, 0, 0, 0x817E1010, 0x817E1280)):
+            _write_u32(runtime_blob, 0x2A4 + offset * 4, value)
+        _write_u32(runtime_blob, 0x2C4, 1)
+        _write_s32(runtime_blob, 0x294, 0)
+        _write_s32(runtime_blob, 0x298, 0)
+        _write_u32(runtime_blob, 0x29C, 1)
+        _write_u32(runtime_blob, 0x2A0, 1)
+        _install_diagnostics(
+            runtime_blob,
+            hook_wrapper_entry_count=poll_value,
+            hook_wrapper_before_poll_count=poll_value,
+            runtime_poll_entry_count=poll_value,
+            runtime_poll_exit_count=poll_value,
+            state_machine_entry_count=poll_value,
+            state_machine_exit_count=poll_value,
+            ios_submit_attempt_count=4,
+            ios_submit_return_count=4,
+            ios_submit_return_value=0,
+            callback_entry_count=4,
+            callback_exit_count=4,
+            hook_wrapper_after_poll_count=poll_value,
+            hook_wrapper_exit_count=poll_value,
+            last_execution_marker=0xC0DE000D,
+            last_transport_phase_before_step=18,
+            last_transport_phase_after_step=18,
+            callback_result=0,
+        )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob_first)
+    raw = _relocated_manifest(payload_bytes).to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_nwc24_close_open_ip_startup_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_nwc24_close_open_ip_startup_once"
+    transport["terminal_phase_value"] = 18
+    transport["terminal_phase_name"] = "SO_STARTED"
+    transport["service_started_address"] = 0x817E12C4
+    transport["service_started_size"] = 4
+    transport["startup_target_address"] = 0x817E1254
+    transport["startup_target_size"] = 4
+    transport["startup_command_address"] = 0x817E1258
+    transport["startup_command_size"] = 4
+    transport["startup_submitted_fd_address"] = 0x817E125C
+    transport["startup_submitted_fd_size"] = 4
+    transport["startup_callback_pointer_address"] = 0x817E1260
+    transport["startup_callback_pointer_size"] = 4
+    transport["startup_context_pointer_address"] = 0x817E1264
+    transport["startup_context_pointer_size"] = 4
+    transport["startup_callback_exit_count_address"] = 0x817E1268
+    transport["startup_callback_exit_count_size"] = 4
+    transport["startup_stale_callback_count_address"] = 0x817E126C
+    transport["startup_stale_callback_count_size"] = 4
+    transport["startup_duplicate_callback_count_address"] = 0x817E1270
+    transport["startup_duplicate_callback_count_size"] = 4
+    transport["startup_service_started_before_submit_address"] = 0x817E1274
+    transport["startup_service_started_before_submit_size"] = 4
+    transport["startup_service_started_after_completion_address"] = 0x817E1278
+    transport["startup_service_started_after_completion_size"] = 4
+    transport["ip_fd_before_startup_address"] = 0x817E127C
+    transport["ip_fd_before_startup_size"] = 4
+    transport["ip_fd_after_startup_address"] = 0x817E1280
+    transport["ip_fd_after_startup_size"] = 4
+    transport["startup_pending_before_submit_address"] = 0x817E1284
+    transport["startup_pending_before_submit_size"] = 4
+    transport["startup_pending_after_completion_address"] = 0x817E1288
+    transport["startup_pending_after_completion_size"] = 4
+    transport["startup_phase_before_submit_address"] = 0x817E128C
+    transport["startup_phase_before_submit_size"] = 4
+    transport["startup_phase_after_completion_address"] = 0x817E1290
+    transport["startup_phase_after_completion_size"] = 4
+    transport["startup_submit_result_address"] = 0x817E1294
+    transport["startup_submit_result_size"] = 4
+    transport["startup_callback_result_address"] = 0x817E1298
+    transport["startup_callback_result_size"] = 4
+    transport["startup_submit_generation_address"] = 0x817E129C
+    transport["startup_submit_generation_size"] = 4
+    transport["startup_callback_generation_address"] = 0x817E12A0
+    transport["startup_callback_generation_size"] = 4
+    transport["startup_pre_call_args_address"] = 0x817E12A4
+    transport["startup_pre_call_args_size"] = 0x20
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+    manifest = Prime3RuntimePayloadManifest.from_json_dict(raw)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+        repeat_delay_seconds=0.25,
+    )
+    first_memory = _memory_for_config(module, config)
+    second_memory = _memory_for_config(module, config)
+    for memory, runtime_blob in ((first_memory, runtime_blob_first), (second_memory, runtime_blob_second)):
+        _install_bootstrap_diagnostic(memory)
+        memory[0x817E1000] = bytes(runtime_blob)
+    backend = FakeBackend([first_memory, second_memory])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "so_started"
+    assert result["recurring_execution_continuing"] is True
+    assert result["relocated_runtime"]["transport"]["startup_target_address"] == 0x80504FE0
+    assert result["relocated_runtime"]["transport"]["startup_command"] == 31
+    assert result["relocated_runtime"]["transport"]["startup_pre_call_args"] == [
+        11,
+        31,
+        0,
+        0,
+        0,
+        0,
+        0x817E1010,
+        0x817E1280,
+    ]
 
 
 @pytest.mark.parametrize(

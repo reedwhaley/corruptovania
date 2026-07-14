@@ -56,6 +56,7 @@ TRANSPORT_PHASE_NAMES = {
     8: "WAIT_OPEN_IP",
     9: "SO_STARTUP",
     10: "WAIT_SO_STARTUP",
+    18: "SO_STARTED",
     11: "GET_HOST_ID",
     12: "WAIT_GETHOSTID",
     13: "CREATE_SOCKET",
@@ -681,43 +682,49 @@ def _read_probe_state(
                 "pass": result_flags & 0x003FFFFF == 0x003FFFFF,
             }
         if runtime_metadata.transport is not None:
-            transport = runtime_metadata.transport
+                transport = runtime_metadata.transport
 
-            def optional_u32(address: int | None) -> int | None:
-                if address is None:
-                    return None
-                return _runtime_u32(address)
+                def read_transport_u32_vector(address: int, size: int) -> list[int]:
+                    count = size // 4
+                    return [_runtime_u32(address + index * 4) for index in range(count)]
 
-            def optional_s32(address: int | None) -> int | None:
-                if address is None:
-                    return None
-                return _runtime_s32(address)
+                def optional_u32(address: int | None) -> int | None:
+                    if address is None:
+                        return None
+                    return _runtime_u32(address)
 
-            phase_value = _runtime_u32(transport.phase_address)
-            previous_phase = None
-            previous_phase_name = None
-            if runtime_metadata.diagnostics is not None:
-                previous_phase = _runtime_u32(runtime_metadata.diagnostics.last_transport_phase_before_step_address)
-                previous_phase_name = _phase_name(previous_phase)
-            receive_preview_offset = (
-                transport.last_receive_preview_address - runtime_metadata.runtime_destination_address
-            )
-            send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
-            nwc24_output_offset = transport.nwc24_output_buffer_address - runtime_metadata.runtime_destination_address
-            open_ip_path_address = optional_u32(transport.open_ip_path_pointer_address)
-            open_ip_path_length = optional_u32(transport.open_ip_path_length_address)
-            open_ip_path_bounded_string = None
-            open_ip_path_bytes_hex = None
-            if open_ip_path_address is not None and open_ip_path_length is not None:
-                raw_path = _read_exact(
-                    backend,
-                    open_ip_path_address,
-                    min(open_ip_path_length + 1, 0x80),
-                    f"open-ip path 0x{open_ip_path_address:08x}",
+                def optional_s32(address: int | None) -> int | None:
+                    if address is None:
+                        return None
+                    return _runtime_s32(address)
+
+                phase_value = _runtime_u32(transport.phase_address)
+                previous_phase = None
+                previous_phase_name = None
+                if runtime_metadata.diagnostics is not None:
+                    previous_phase = _runtime_u32(runtime_metadata.diagnostics.last_transport_phase_before_step_address)
+                    previous_phase_name = _phase_name(previous_phase)
+                receive_preview_offset = (
+                    transport.last_receive_preview_address - runtime_metadata.runtime_destination_address
                 )
-                open_ip_path_bytes_hex = raw_path.hex()
-                open_ip_path_bounded_string = raw_path.split(b"\0", 1)[0].decode("ascii", errors="replace")
-            relocated_runtime["transport"] = {
+                send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
+                nwc24_output_offset = (
+                    transport.nwc24_output_buffer_address - runtime_metadata.runtime_destination_address
+                )
+                open_ip_path_address = optional_u32(transport.open_ip_path_pointer_address)
+                open_ip_path_length = optional_u32(transport.open_ip_path_length_address)
+                open_ip_path_bounded_string = None
+                open_ip_path_bytes_hex = None
+                if open_ip_path_address is not None and open_ip_path_length is not None:
+                    raw_path = _read_exact(
+                        backend,
+                        open_ip_path_address,
+                        min(open_ip_path_length + 1, 0x80),
+                        f"open-ip path 0x{open_ip_path_address:08x}",
+                    )
+                    open_ip_path_bytes_hex = raw_path.hex()
+                    open_ip_path_bounded_string = raw_path.split(b"\0", 1)[0].decode("ascii", errors="replace")
+                relocated_runtime["transport"] = {
                 "mode": transport.mode,
                 "initialization_enabled": transport.initialization_enabled,
                 "receive_enabled": transport.receive_enabled,
@@ -772,6 +779,7 @@ def _read_probe_state(
                 "ip_fd": _runtime_s32(transport.ip_fd_address),
                 "socket_fd": _runtime_s32(transport.socket_fd_address),
                 "host_id": _runtime_u32(transport.host_id_address),
+                "service_started": optional_u32(transport.service_started_address),
                 "bound_port": _runtime_u32(transport.bound_port_address),
                 "receive_submit_count": _runtime_u32(transport.receive_submit_count_address),
                 "send_submit_count": _runtime_u32(transport.send_submit_count_address),
@@ -834,6 +842,36 @@ def _read_probe_state(
                 "startup_callback_result": optional_s32(transport.startup_callback_result_address),
                 "startup_submit_generation": optional_u32(transport.startup_submit_generation_address),
                 "startup_callback_generation": optional_u32(transport.startup_callback_generation_address),
+                "startup_target_address": optional_u32(transport.startup_target_address),
+                "startup_command": optional_u32(transport.startup_command_address),
+                "startup_submitted_fd": optional_s32(transport.startup_submitted_fd_address),
+                "startup_callback_pointer": optional_u32(transport.startup_callback_pointer_address),
+                "startup_context_pointer": optional_u32(transport.startup_context_pointer_address),
+                "startup_callback_exit_count": optional_u32(transport.startup_callback_exit_count_address),
+                "startup_stale_callback_count": optional_u32(transport.startup_stale_callback_count_address),
+                "startup_duplicate_callback_count": optional_u32(transport.startup_duplicate_callback_count_address),
+                "startup_service_started_before_submit": optional_u32(
+                    transport.startup_service_started_before_submit_address
+                ),
+                "startup_service_started_after_completion": optional_u32(
+                    transport.startup_service_started_after_completion_address
+                ),
+                "ip_fd_before_startup": optional_s32(transport.ip_fd_before_startup_address),
+                "ip_fd_after_startup": optional_s32(transport.ip_fd_after_startup_address),
+                "startup_pending_before_submit": optional_u32(transport.startup_pending_before_submit_address),
+                "startup_pending_after_completion": optional_u32(transport.startup_pending_after_completion_address),
+                "startup_phase_before_submit": optional_u32(transport.startup_phase_before_submit_address),
+                "startup_phase_after_completion": optional_u32(transport.startup_phase_after_completion_address),
+                "startup_pre_call_args": (
+                    read_transport_u32_vector(
+                        transport.startup_pre_call_args_address, transport.startup_pre_call_args_size
+                    )
+                    if (
+                        transport.startup_pre_call_args_address is not None
+                        and transport.startup_pre_call_args_size is not None
+                    )
+                    else None
+                ),
                 "host_id_submit_result": optional_s32(transport.get_host_id_submit_result_address),
                 "host_id_callback_result": optional_s32(transport.get_host_id_callback_result_address),
                 "host_id_submit_generation": optional_u32(transport.get_host_id_submit_generation_address),
@@ -1042,6 +1080,80 @@ def _diagnostic_stop_boundary(  # noqa: C901
             ):
                 return "nwc24_completed"
             return "nwc24_callback_missing"
+        if phase == 18:
+            if transport.get("mode") == "retail_wrapper_nwc24_close_open_ip_startup_once":
+                if (
+                    _object_as_int(transport["open_kd_callback_count"]) == 1
+                    and _object_as_int(transport["nwc24_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_callback_count"]) == 1
+                    and _object_as_int(transport["open_ip_callback_count"]) == 1
+                    and _object_as_int(transport["startup_submit_result"]) == 0
+                    and _object_as_int(transport["startup_callback_count"]) == 1
+                    and _object_as_int(transport["startup_callback_exit_count"]) == 1
+                    and _object_as_int(transport["startup_callback_result"]) == 0
+                    and _object_as_int(transport["startup_submit_generation"])
+                    == _object_as_int(transport["startup_callback_generation"])
+                    and _object_as_int(transport["startup_target_address"]) == 0x80504FE0
+                    and _object_as_int(transport["startup_command"]) == 31
+                    and _object_as_int(transport["startup_submitted_fd"]) == _object_as_int(transport["ip_fd"])
+                    and transport.get("startup_pre_call_args") == [
+                        _object_as_int(transport["ip_fd"]),
+                        31,
+                        0,
+                        0,
+                        0,
+                        0,
+                        _object_as_int(transport["startup_callback_pointer"]),
+                        _object_as_int(transport["startup_context_pointer"]),
+                    ]
+                    and _object_as_int(transport["startup_service_started_before_submit"]) == 0
+                    and _object_as_int(transport["startup_service_started_after_completion"]) != 0
+                    and _object_as_int(transport["service_started"]) != 0
+                    and _object_as_int(transport["ip_fd_before_startup"]) == _object_as_int(transport["ip_fd"])
+                    and _object_as_int(transport["ip_fd_after_startup"]) == _object_as_int(transport["ip_fd"])
+                    and _object_as_int(transport["startup_pending_before_submit"]) == 0
+                    and _object_as_int(transport["startup_pending_after_completion"]) == 0
+                    and _object_as_int(transport["startup_phase_before_submit"]) == 9
+                    and _object_as_int(transport["startup_phase_after_completion"]) == 10
+                    and _object_as_int(transport["pending_operation"]) == 0
+                    and _object_as_int(transport["get_host_id_submit_count"]) == 0
+                    and _object_as_int(transport["socket_submit_count"]) == 0
+                    and _object_as_int(transport["bind_submit_count"]) == 0
+                    and _object_as_int(transport["receive_count"]) == 0
+                    and _object_as_int(transport["send_count"]) == 0
+                    and recurring_execution_continuing
+                    and (
+                        transport.get("kd_close_submit_result") is None
+                        or _object_as_int(transport["kd_close_submit_result"]) == 0
+                    )
+                    and (
+                        transport.get("kd_close_callback_result") is None
+                        or _object_as_int(transport["kd_close_callback_result"]) == 0
+                    )
+                    and (
+                        transport.get("kd_close_submit_generation") is None
+                        or transport.get("kd_close_callback_generation") is None
+                        or _object_as_int(transport["kd_close_submit_generation"])
+                        == _object_as_int(transport["kd_close_callback_generation"])
+                    )
+                    and (
+                        transport.get("open_ip_submit_result") is None
+                        or _object_as_int(transport["open_ip_submit_result"]) == 0
+                    )
+                    and (
+                        transport.get("open_ip_callback_result") is None
+                        or _object_as_int(transport["open_ip_callback_result"]) >= 0
+                    )
+                    and (
+                        transport.get("open_ip_submit_generation") is None
+                        or transport.get("open_ip_callback_generation") is None
+                        or _object_as_int(transport["open_ip_submit_generation"])
+                        == _object_as_int(transport["open_ip_callback_generation"])
+                    )
+                ):
+                    return "so_started"
+                return "so_startup_callback_failed"
+            return "startup_completed"
         if phase == 6:
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_kd_close_callback"
@@ -1055,10 +1167,20 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 return "waiting_open_ip_callback"
             return "inside_open_ip_call"
         if phase == 9:
+            if transport.get("mode") == "retail_wrapper_nwc24_close_open_ip_startup_once":
+                if _object_as_int(transport["last_submit_result"]) < 0:
+                    return "so_startup_submission_failed"
+                if _object_as_int(transport["startup_submit_count"]) == 0:
+                    return "waiting_so_startup_submission"
+                return "inside_so_startup_call"
             if _object_as_int(transport["last_submit_result"]) < 0:
                 return "startup_submission_failed"
             return "startup_completed"
         if phase == 10:
+            if transport.get("mode") == "retail_wrapper_nwc24_close_open_ip_startup_once":
+                if _object_as_int(transport["pending_operation"]) != 0:
+                    return "waiting_so_startup_callback"
+                return "inside_so_startup_call"
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_startup_callback"
             return "inside_startup_call"

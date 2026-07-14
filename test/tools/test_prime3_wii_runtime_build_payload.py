@@ -424,6 +424,33 @@ def test_build_prime3_runtime_payload_relocated_continue_so_startup_manifest(tmp
     assert manifest.relocated_runtime.transport.service_started_address is not None
 
 
+def test_build_prime3_runtime_payload_relocated_continue_create_socket_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_create_socket_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="retail_wrapper_create_socket_once",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    assert manifest.relocated_runtime.transport.mode == "retail_wrapper_create_socket_once"
+    assert manifest.relocated_runtime.transport.terminal_phase_name == "SOCKET_READY"
+    assert manifest.relocated_runtime.transport.socket_target_address is not None
+    assert manifest.relocated_runtime.transport.socket_command_address is not None
+    assert manifest.relocated_runtime.transport.socket_request_address_address is not None
+    assert manifest.relocated_runtime.transport.socket_request_bytes_address is not None
+    assert manifest.relocated_runtime.transport.socket_request_bytes_size == 12
+    assert manifest.relocated_runtime.transport.socket_pre_call_args_size == 0x20
+
+
 def test_main_rejects_failed_direct_ios_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_failed_direct_flag")
     monkeypatch.setattr(sys, "argv", ["build_payload.py", "--ios-open-kd-once"])

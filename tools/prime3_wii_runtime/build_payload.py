@@ -291,6 +291,27 @@ RUNTIME_TRANSPORT_SOCKET_SUBMIT_RESULT_SYMBOL = "runtime_transport_socket_submit
 RUNTIME_TRANSPORT_SOCKET_CALLBACK_RESULT_SYMBOL = "runtime_transport_socket_callback_result"
 RUNTIME_TRANSPORT_SOCKET_SUBMIT_GENERATION_SYMBOL = "runtime_transport_socket_submit_generation"
 RUNTIME_TRANSPORT_SOCKET_CALLBACK_GENERATION_SYMBOL = "runtime_transport_socket_callback_generation"
+RUNTIME_TRANSPORT_SOCKET_TARGET_ADDRESS_SYMBOL = "runtime_transport_socket_target_address"
+RUNTIME_TRANSPORT_SOCKET_COMMAND_SYMBOL = "runtime_transport_socket_command"
+RUNTIME_TRANSPORT_SOCKET_SUBMITTED_FD_SYMBOL = "runtime_transport_socket_submitted_fd"
+RUNTIME_TRANSPORT_SOCKET_CALLBACK_POINTER_SYMBOL = "runtime_transport_socket_callback_pointer"
+RUNTIME_TRANSPORT_SOCKET_CONTEXT_POINTER_SYMBOL = "runtime_transport_socket_context_pointer"
+RUNTIME_TRANSPORT_SOCKET_CALLBACK_EXIT_COUNT_SYMBOL = "runtime_transport_socket_callback_exit_count"
+RUNTIME_TRANSPORT_SOCKET_STALE_CALLBACK_COUNT_SYMBOL = "runtime_transport_socket_stale_callback_count"
+RUNTIME_TRANSPORT_SOCKET_DUPLICATE_CALLBACK_COUNT_SYMBOL = "runtime_transport_socket_duplicate_callback_count"
+RUNTIME_TRANSPORT_SOCKET_FD_BEFORE_SUBMIT_SYMBOL = "runtime_transport_socket_fd_before_submit"
+RUNTIME_TRANSPORT_SOCKET_FD_AFTER_COMPLETION_SYMBOL = "runtime_transport_socket_fd_after_completion"
+RUNTIME_TRANSPORT_SOCKET_REQUEST_ADDRESS_SYMBOL = "runtime_transport_socket_request_address"
+RUNTIME_TRANSPORT_SOCKET_REQUEST_STORAGE_SIZE_SYMBOL = "runtime_transport_socket_request_storage_size"
+RUNTIME_TRANSPORT_SOCKET_REQUEST_LOGICAL_SIZE_SYMBOL = "runtime_transport_socket_request_logical_size"
+RUNTIME_TRANSPORT_SOCKET_REQUEST_ALIGNMENT_SYMBOL = "runtime_transport_socket_request_alignment"
+RUNTIME_TRANSPORT_SOCKET_FAMILY_VALUE_SYMBOL = "runtime_transport_socket_family_value"
+RUNTIME_TRANSPORT_SOCKET_TYPE_VALUE_SYMBOL = "runtime_transport_socket_type_value"
+RUNTIME_TRANSPORT_SOCKET_PROTOCOL_VALUE_SYMBOL = "runtime_transport_socket_protocol_value"
+RUNTIME_TRANSPORT_SOCKET_DESCRIPTOR_VALID_SYMBOL = "runtime_transport_socket_descriptor_valid"
+RUNTIME_TRANSPORT_SOCKET_READY_SYMBOL = "runtime_transport_socket_ready"
+RUNTIME_TRANSPORT_SOCKET_REQUEST_BYTES_SYMBOL = "runtime_transport_socket_request_bytes"
+RUNTIME_TRANSPORT_SOCKET_PRE_CALL_ARGS_SYMBOL = "runtime_transport_socket_pre_call_args"
 RUNTIME_TRANSPORT_BIND_SUBMIT_COUNT_SYMBOL = "runtime_transport_bind_submit_count"
 RUNTIME_TRANSPORT_BIND_CALLBACK_COUNT_SYMBOL = "runtime_transport_bind_callback_count"
 RUNTIME_TRANSPORT_BIND_SUBMIT_RESULT_SYMBOL = "runtime_transport_bind_submit_result"
@@ -522,6 +543,29 @@ class RelocatedRuntimeBuildResult:
     transport_socket_callback_result_address: int
     transport_socket_submit_generation_address: int
     transport_socket_callback_generation_address: int
+    transport_socket_target_address: int
+    transport_socket_command_address: int
+    transport_socket_submitted_fd_address: int
+    transport_socket_callback_pointer_address: int
+    transport_socket_context_pointer_address: int
+    transport_socket_callback_exit_count_address: int
+    transport_socket_stale_callback_count_address: int
+    transport_socket_duplicate_callback_count_address: int
+    transport_socket_fd_before_submit_address: int
+    transport_socket_fd_after_completion_address: int
+    transport_socket_request_address_address: int
+    transport_socket_request_storage_size_address: int
+    transport_socket_request_logical_size_address: int
+    transport_socket_request_alignment_address: int
+    transport_socket_family_value_address: int
+    transport_socket_type_value_address: int
+    transport_socket_protocol_value_address: int
+    transport_socket_descriptor_valid_address: int
+    transport_socket_ready_address: int
+    transport_socket_request_bytes_address: int
+    transport_socket_request_bytes_size: int
+    transport_socket_pre_call_args_address: int
+    transport_socket_pre_call_args_size: int
     transport_bind_submit_result_address: int
     transport_bind_callback_result_address: int
     transport_bind_submit_generation_address: int
@@ -1042,6 +1086,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             open_ip_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_once"
             so_startup_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
             get_host_id_once = ios_udp_mode == "retail_wrapper_get_host_id_once"
+            create_socket_once = ios_udp_mode == "retail_wrapper_create_socket_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
@@ -1058,6 +1103,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if so_startup_once
                     else 19
                     if get_host_id_once
+                    else 20
+                    if create_socket_once
                     else 0x11
                 ),
                 terminal_phase_name=(
@@ -1071,6 +1118,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if so_startup_once
                     else "HOST_ID_READY"
                     if get_host_id_once
+                    else "SOCKET_READY"
+                    if create_socket_once
                     else "BOUND_NO_RECV"
                 ),
                 phase_address=relocated_runtime.transport_phase_address,
@@ -1364,6 +1413,50 @@ def build_prime3_runtime_payload(  # noqa: C901
                 socket_submit_generation_size=4,
                 socket_callback_generation_address=relocated_runtime.transport_socket_callback_generation_address,
                 socket_callback_generation_size=4,
+                socket_target_address=relocated_runtime.transport_socket_target_address,
+                socket_target_size=4,
+                socket_command_address=relocated_runtime.transport_socket_command_address,
+                socket_command_size=4,
+                socket_submitted_fd_address=relocated_runtime.transport_socket_submitted_fd_address,
+                socket_submitted_fd_size=4,
+                socket_callback_pointer_address=relocated_runtime.transport_socket_callback_pointer_address,
+                socket_callback_pointer_size=4,
+                socket_context_pointer_address=relocated_runtime.transport_socket_context_pointer_address,
+                socket_context_pointer_size=4,
+                socket_callback_exit_count_address=relocated_runtime.transport_socket_callback_exit_count_address,
+                socket_callback_exit_count_size=4,
+                socket_stale_callback_count_address=relocated_runtime.transport_socket_stale_callback_count_address,
+                socket_stale_callback_count_size=4,
+                socket_duplicate_callback_count_address=(
+                    relocated_runtime.transport_socket_duplicate_callback_count_address
+                ),
+                socket_duplicate_callback_count_size=4,
+                socket_fd_before_submit_address=relocated_runtime.transport_socket_fd_before_submit_address,
+                socket_fd_before_submit_size=4,
+                socket_fd_after_completion_address=relocated_runtime.transport_socket_fd_after_completion_address,
+                socket_fd_after_completion_size=4,
+                socket_request_address_address=relocated_runtime.transport_socket_request_address_address,
+                socket_request_address_size=4,
+                socket_request_storage_size_address=relocated_runtime.transport_socket_request_storage_size_address,
+                socket_request_storage_size_size=4,
+                socket_request_logical_size_address=relocated_runtime.transport_socket_request_logical_size_address,
+                socket_request_logical_size_size=4,
+                socket_request_alignment_address=relocated_runtime.transport_socket_request_alignment_address,
+                socket_request_alignment_size=4,
+                socket_family_value_address=relocated_runtime.transport_socket_family_value_address,
+                socket_family_value_size=4,
+                socket_type_value_address=relocated_runtime.transport_socket_type_value_address,
+                socket_type_value_size=4,
+                socket_protocol_value_address=relocated_runtime.transport_socket_protocol_value_address,
+                socket_protocol_value_size=4,
+                socket_descriptor_valid_address=relocated_runtime.transport_socket_descriptor_valid_address,
+                socket_descriptor_valid_size=4,
+                socket_ready_address=relocated_runtime.transport_socket_ready_address,
+                socket_ready_size=4,
+                socket_request_bytes_address=relocated_runtime.transport_socket_request_bytes_address,
+                socket_request_bytes_size=relocated_runtime.transport_socket_request_bytes_size,
+                socket_pre_call_args_address=relocated_runtime.transport_socket_pre_call_args_address,
+                socket_pre_call_args_size=relocated_runtime.transport_socket_pre_call_args_size,
                 bind_submit_result_address=relocated_runtime.transport_bind_submit_result_address,
                 bind_submit_result_size=4,
                 bind_callback_result_address=relocated_runtime.transport_bind_callback_result_address,
@@ -1997,6 +2090,73 @@ def _build_relocated_runtime(
     transport_socket_callback_generation_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CALLBACK_GENERATION_SYMBOL
     )
+    transport_socket_target_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_TARGET_ADDRESS_SYMBOL
+    )
+    transport_socket_command_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_COMMAND_SYMBOL
+    )
+    transport_socket_submitted_fd_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_SUBMITTED_FD_SYMBOL
+    )
+    transport_socket_callback_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CALLBACK_POINTER_SYMBOL
+    )
+    transport_socket_context_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CONTEXT_POINTER_SYMBOL
+    )
+    transport_socket_callback_exit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CALLBACK_EXIT_COUNT_SYMBOL
+    )
+    transport_socket_stale_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_STALE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_socket_duplicate_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_DUPLICATE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_socket_fd_before_submit_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_FD_BEFORE_SUBMIT_SYMBOL
+    )
+    transport_socket_fd_after_completion_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_FD_AFTER_COMPLETION_SYMBOL
+    )
+    transport_socket_request_address_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_REQUEST_ADDRESS_SYMBOL
+    )
+    transport_socket_request_storage_size_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_REQUEST_STORAGE_SIZE_SYMBOL
+    )
+    transport_socket_request_logical_size_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_REQUEST_LOGICAL_SIZE_SYMBOL
+    )
+    transport_socket_request_alignment_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_REQUEST_ALIGNMENT_SYMBOL
+    )
+    transport_socket_family_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_FAMILY_VALUE_SYMBOL
+    )
+    transport_socket_type_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_TYPE_VALUE_SYMBOL
+    )
+    transport_socket_protocol_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_PROTOCOL_VALUE_SYMBOL
+    )
+    transport_socket_descriptor_valid_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_DESCRIPTOR_VALID_SYMBOL
+    )
+    transport_socket_ready_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SOCKET_READY_SYMBOL)
+    transport_socket_request_bytes_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_REQUEST_BYTES_SYMBOL
+    )
+    transport_socket_request_bytes_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_REQUEST_BYTES_SYMBOL
+    )
+    transport_socket_pre_call_args_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_PRE_CALL_ARGS_SYMBOL
+    )
+    transport_socket_pre_call_args_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_PRE_CALL_ARGS_SYMBOL
+    )
     transport_bind_submit_count_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_BIND_SUBMIT_COUNT_SYMBOL
     )
@@ -2277,6 +2437,29 @@ def _build_relocated_runtime(
         transport_socket_callback_result_address=transport_socket_callback_result_address,
         transport_socket_submit_generation_address=transport_socket_submit_generation_address,
         transport_socket_callback_generation_address=transport_socket_callback_generation_address,
+        transport_socket_target_address=transport_socket_target_address,
+        transport_socket_command_address=transport_socket_command_address,
+        transport_socket_submitted_fd_address=transport_socket_submitted_fd_address,
+        transport_socket_callback_pointer_address=transport_socket_callback_pointer_address,
+        transport_socket_context_pointer_address=transport_socket_context_pointer_address,
+        transport_socket_callback_exit_count_address=transport_socket_callback_exit_count_address,
+        transport_socket_stale_callback_count_address=transport_socket_stale_callback_count_address,
+        transport_socket_duplicate_callback_count_address=transport_socket_duplicate_callback_count_address,
+        transport_socket_fd_before_submit_address=transport_socket_fd_before_submit_address,
+        transport_socket_fd_after_completion_address=transport_socket_fd_after_completion_address,
+        transport_socket_request_address_address=transport_socket_request_address_address,
+        transport_socket_request_storage_size_address=transport_socket_request_storage_size_address,
+        transport_socket_request_logical_size_address=transport_socket_request_logical_size_address,
+        transport_socket_request_alignment_address=transport_socket_request_alignment_address,
+        transport_socket_family_value_address=transport_socket_family_value_address,
+        transport_socket_type_value_address=transport_socket_type_value_address,
+        transport_socket_protocol_value_address=transport_socket_protocol_value_address,
+        transport_socket_descriptor_valid_address=transport_socket_descriptor_valid_address,
+        transport_socket_ready_address=transport_socket_ready_address,
+        transport_socket_request_bytes_address=transport_socket_request_bytes_address,
+        transport_socket_request_bytes_size=transport_socket_request_bytes_size,
+        transport_socket_pre_call_args_address=transport_socket_pre_call_args_address,
+        transport_socket_pre_call_args_size=transport_socket_pre_call_args_size,
         transport_bind_submit_result_address=transport_bind_submit_result_address,
         transport_bind_callback_result_address=transport_bind_callback_result_address,
         transport_bind_submit_generation_address=transport_bind_submit_generation_address,

@@ -445,6 +445,48 @@ class Prime3RuntimeTransportMetadata:
     socket_submit_generation_size: int | None = None
     socket_callback_generation_address: int | None = None
     socket_callback_generation_size: int | None = None
+    socket_target_address: int | None = None
+    socket_target_size: int | None = None
+    socket_command_address: int | None = None
+    socket_command_size: int | None = None
+    socket_submitted_fd_address: int | None = None
+    socket_submitted_fd_size: int | None = None
+    socket_callback_pointer_address: int | None = None
+    socket_callback_pointer_size: int | None = None
+    socket_context_pointer_address: int | None = None
+    socket_context_pointer_size: int | None = None
+    socket_callback_exit_count_address: int | None = None
+    socket_callback_exit_count_size: int | None = None
+    socket_stale_callback_count_address: int | None = None
+    socket_stale_callback_count_size: int | None = None
+    socket_duplicate_callback_count_address: int | None = None
+    socket_duplicate_callback_count_size: int | None = None
+    socket_fd_before_submit_address: int | None = None
+    socket_fd_before_submit_size: int | None = None
+    socket_fd_after_completion_address: int | None = None
+    socket_fd_after_completion_size: int | None = None
+    socket_request_address_address: int | None = None
+    socket_request_address_size: int | None = None
+    socket_request_storage_size_address: int | None = None
+    socket_request_storage_size_size: int | None = None
+    socket_request_logical_size_address: int | None = None
+    socket_request_logical_size_size: int | None = None
+    socket_request_alignment_address: int | None = None
+    socket_request_alignment_size: int | None = None
+    socket_family_value_address: int | None = None
+    socket_family_value_size: int | None = None
+    socket_type_value_address: int | None = None
+    socket_type_value_size: int | None = None
+    socket_protocol_value_address: int | None = None
+    socket_protocol_value_size: int | None = None
+    socket_descriptor_valid_address: int | None = None
+    socket_descriptor_valid_size: int | None = None
+    socket_ready_address: int | None = None
+    socket_ready_size: int | None = None
+    socket_request_bytes_address: int | None = None
+    socket_request_bytes_size: int | None = None
+    socket_pre_call_args_address: int | None = None
+    socket_pre_call_args_size: int | None = None
     bind_submit_result_address: int | None = None
     bind_submit_result_size: int | None = None
     bind_callback_result_address: int | None = None
@@ -941,6 +983,79 @@ class Prime3RuntimeTransportMetadata:
                 self.socket_callback_generation_address,
                 self.socket_callback_generation_size,
             ),
+            ("transport_socket_target", self.socket_target_address, self.socket_target_size),
+            ("transport_socket_command", self.socket_command_address, self.socket_command_size),
+            ("transport_socket_submitted_fd", self.socket_submitted_fd_address, self.socket_submitted_fd_size),
+            (
+                "transport_socket_callback_pointer",
+                self.socket_callback_pointer_address,
+                self.socket_callback_pointer_size,
+            ),
+            (
+                "transport_socket_context_pointer",
+                self.socket_context_pointer_address,
+                self.socket_context_pointer_size,
+            ),
+            (
+                "transport_socket_callback_exit_count",
+                self.socket_callback_exit_count_address,
+                self.socket_callback_exit_count_size,
+            ),
+            (
+                "transport_socket_stale_callback_count",
+                self.socket_stale_callback_count_address,
+                self.socket_stale_callback_count_size,
+            ),
+            (
+                "transport_socket_duplicate_callback_count",
+                self.socket_duplicate_callback_count_address,
+                self.socket_duplicate_callback_count_size,
+            ),
+            (
+                "transport_socket_fd_before_submit",
+                self.socket_fd_before_submit_address,
+                self.socket_fd_before_submit_size,
+            ),
+            (
+                "transport_socket_fd_after_completion",
+                self.socket_fd_after_completion_address,
+                self.socket_fd_after_completion_size,
+            ),
+            (
+                "transport_socket_request_address",
+                self.socket_request_address_address,
+                self.socket_request_address_size,
+            ),
+            (
+                "transport_socket_request_storage_size",
+                self.socket_request_storage_size_address,
+                self.socket_request_storage_size_size,
+            ),
+            (
+                "transport_socket_request_logical_size",
+                self.socket_request_logical_size_address,
+                self.socket_request_logical_size_size,
+            ),
+            (
+                "transport_socket_request_alignment",
+                self.socket_request_alignment_address,
+                self.socket_request_alignment_size,
+            ),
+            ("transport_socket_family_value", self.socket_family_value_address, self.socket_family_value_size),
+            ("transport_socket_type_value", self.socket_type_value_address, self.socket_type_value_size),
+            (
+                "transport_socket_protocol_value",
+                self.socket_protocol_value_address,
+                self.socket_protocol_value_size,
+            ),
+            (
+                "transport_socket_descriptor_valid",
+                self.socket_descriptor_valid_address,
+                self.socket_descriptor_valid_size,
+            ),
+            ("transport_socket_ready", self.socket_ready_address, self.socket_ready_size),
+            ("transport_socket_request_bytes", self.socket_request_bytes_address, self.socket_request_bytes_size),
+            ("transport_socket_pre_call_args", self.socket_pre_call_args_address, self.socket_pre_call_args_size),
             ("transport_bind_submit_result", self.bind_submit_result_address, self.bind_submit_result_size),
             (
                 "transport_bind_callback_result",
@@ -1297,6 +1412,50 @@ class Prime3RuntimeTransportMetadata:
             socket_submit_generation_size=_json_optional_int(data, "socket_submit_generation_size"),
             socket_callback_generation_address=_json_optional_int(data, "socket_callback_generation_address"),
             socket_callback_generation_size=_json_optional_int(data, "socket_callback_generation_size"),
+            socket_target_address=_json_optional_int(data, "socket_target_address"),
+            socket_target_size=_json_optional_int(data, "socket_target_size"),
+            socket_command_address=_json_optional_int(data, "socket_command_address"),
+            socket_command_size=_json_optional_int(data, "socket_command_size"),
+            socket_submitted_fd_address=_json_optional_int(data, "socket_submitted_fd_address"),
+            socket_submitted_fd_size=_json_optional_int(data, "socket_submitted_fd_size"),
+            socket_callback_pointer_address=_json_optional_int(data, "socket_callback_pointer_address"),
+            socket_callback_pointer_size=_json_optional_int(data, "socket_callback_pointer_size"),
+            socket_context_pointer_address=_json_optional_int(data, "socket_context_pointer_address"),
+            socket_context_pointer_size=_json_optional_int(data, "socket_context_pointer_size"),
+            socket_callback_exit_count_address=_json_optional_int(data, "socket_callback_exit_count_address"),
+            socket_callback_exit_count_size=_json_optional_int(data, "socket_callback_exit_count_size"),
+            socket_stale_callback_count_address=_json_optional_int(data, "socket_stale_callback_count_address"),
+            socket_stale_callback_count_size=_json_optional_int(data, "socket_stale_callback_count_size"),
+            socket_duplicate_callback_count_address=_json_optional_int(
+                data, "socket_duplicate_callback_count_address"
+            ),
+            socket_duplicate_callback_count_size=_json_optional_int(data, "socket_duplicate_callback_count_size"),
+            socket_fd_before_submit_address=_json_optional_int(data, "socket_fd_before_submit_address"),
+            socket_fd_before_submit_size=_json_optional_int(data, "socket_fd_before_submit_size"),
+            socket_fd_after_completion_address=_json_optional_int(data, "socket_fd_after_completion_address"),
+            socket_fd_after_completion_size=_json_optional_int(data, "socket_fd_after_completion_size"),
+            socket_request_address_address=_json_optional_int(data, "socket_request_address_address"),
+            socket_request_address_size=_json_optional_int(data, "socket_request_address_size"),
+            socket_request_storage_size_address=_json_optional_int(data, "socket_request_storage_size_address"),
+            socket_request_storage_size_size=_json_optional_int(data, "socket_request_storage_size_size"),
+            socket_request_logical_size_address=_json_optional_int(data, "socket_request_logical_size_address"),
+            socket_request_logical_size_size=_json_optional_int(data, "socket_request_logical_size_size"),
+            socket_request_alignment_address=_json_optional_int(data, "socket_request_alignment_address"),
+            socket_request_alignment_size=_json_optional_int(data, "socket_request_alignment_size"),
+            socket_family_value_address=_json_optional_int(data, "socket_family_value_address"),
+            socket_family_value_size=_json_optional_int(data, "socket_family_value_size"),
+            socket_type_value_address=_json_optional_int(data, "socket_type_value_address"),
+            socket_type_value_size=_json_optional_int(data, "socket_type_value_size"),
+            socket_protocol_value_address=_json_optional_int(data, "socket_protocol_value_address"),
+            socket_protocol_value_size=_json_optional_int(data, "socket_protocol_value_size"),
+            socket_descriptor_valid_address=_json_optional_int(data, "socket_descriptor_valid_address"),
+            socket_descriptor_valid_size=_json_optional_int(data, "socket_descriptor_valid_size"),
+            socket_ready_address=_json_optional_int(data, "socket_ready_address"),
+            socket_ready_size=_json_optional_int(data, "socket_ready_size"),
+            socket_request_bytes_address=_json_optional_int(data, "socket_request_bytes_address"),
+            socket_request_bytes_size=_json_optional_int(data, "socket_request_bytes_size"),
+            socket_pre_call_args_address=_json_optional_int(data, "socket_pre_call_args_address"),
+            socket_pre_call_args_size=_json_optional_int(data, "socket_pre_call_args_size"),
             bind_submit_result_address=_json_optional_int(data, "bind_submit_result_address"),
             bind_submit_result_size=_json_optional_int(data, "bind_submit_result_size"),
             bind_callback_result_address=_json_optional_int(data, "bind_callback_result_address"),

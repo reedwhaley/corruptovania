@@ -27,6 +27,7 @@ Implemented code now covers:
 - devkitPPC discovery and version validation in [`randovania/games/prime3/exporter/runtime_toolchain.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/runtime_toolchain.py:1)
 - payload manifest loading and validation in [`randovania/games/prime3/exporter/runtime_payload.py`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/randovania/games/prime3/exporter/runtime_payload.py:1)
 - a return-only source payload project in [`tools/prime3_wii_runtime/`](/C:/Users/Reed%20Whaley/Documents/MP3%20Networking/tools/prime3_wii_runtime)
+- developer-only recurring-poll transport proofs through `OPEN_IP`, `SO_STARTED`, `HOST_ID_READY`, and now `SOCKET_READY` without bind, receive, or send
 
 ## Selected toolchain strategy
 
@@ -94,6 +95,10 @@ Additional transport evidence now documented:
   - close the temporary request descriptor after the callback completes
   - open `/dev/net/ip/top`
   - issue `IOCTL_SO_STARTUP`
+- command `15` socket creation on `/dev/net/ip/top` using a persistent `0x20`-aligned request object whose first 12 bytes are the big-endian signed values `2`, `2`, and `0`
+- command `15` submission length fixed at `12` bytes even though the persistent request storage occupies `32` bytes
+- no output buffer or host-ID payload is used during socket creation
+- socket callback results are signed descriptors; `0` is valid and negative values remain errors
 - successful bind-only completion now requires `kd_fd = -1` plus a separate `kd_closed` flag; retaining `kd_fd` after bind is no longer considered correct
 
 The minimal payload:

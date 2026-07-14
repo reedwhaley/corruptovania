@@ -67,6 +67,7 @@ TRANSPORT_PHASE_NAMES = {
     17: "BOUND_NO_RECV",
     0xFE: "DIAGNOSTIC_COMPLETE",
     0xFF: "FAILED",
+    20: "SOCKET_READY",
 }
 TRANSPORT_OPERATION_NAMES = {
     0: "none",
@@ -726,6 +727,16 @@ def _read_probe_state(  # noqa: C901
                     (host_id_value >> 8) & 0xFF,
                     host_id_value & 0xFF,
                 ]
+                socket_request_address = optional_u32(transport.socket_request_address_address)
+                socket_request_logical_size = optional_u32(transport.socket_request_logical_size_address)
+                socket_request_bytes_hex = None
+                if socket_request_address is not None and socket_request_logical_size is not None:
+                    socket_request_bytes_hex = _read_exact(
+                        backend,
+                        socket_request_address,
+                        socket_request_logical_size,
+                        f"socket request 0x{socket_request_address:08x}",
+                    ).hex()
                 open_ip_path_bounded_string = None
                 open_ip_path_bytes_hex = None
                 if open_ip_path_address is not None and open_ip_path_length is not None:
@@ -936,8 +947,41 @@ def _read_probe_state(  # noqa: C901
                 ),
                 "socket_submit_result": optional_s32(transport.socket_submit_result_address),
                 "socket_callback_result": optional_s32(transport.socket_callback_result_address),
+                "socket_callback_result_u32": optional_u32_bits_from_s32(transport.socket_callback_result_address),
                 "socket_submit_generation": optional_u32(transport.socket_submit_generation_address),
                 "socket_callback_generation": optional_u32(transport.socket_callback_generation_address),
+                "socket_target_address": optional_u32(transport.socket_target_address),
+                "socket_command": optional_u32(transport.socket_command_address),
+                "socket_submitted_fd": optional_s32(transport.socket_submitted_fd_address),
+                "socket_callback_pointer": optional_u32(transport.socket_callback_pointer_address),
+                "socket_context_pointer": optional_u32(transport.socket_context_pointer_address),
+                "socket_callback_exit_count": optional_u32(transport.socket_callback_exit_count_address),
+                "socket_stale_callback_count": optional_u32(transport.socket_stale_callback_count_address),
+                "socket_duplicate_callback_count": optional_u32(transport.socket_duplicate_callback_count_address),
+                "socket_fd_before_submit": optional_s32(transport.socket_fd_before_submit_address),
+                "socket_fd_after_completion": optional_s32(transport.socket_fd_after_completion_address),
+                "socket_request_address": socket_request_address,
+                "socket_request_storage_size": optional_u32(transport.socket_request_storage_size_address),
+                "socket_request_logical_size": socket_request_logical_size,
+                "socket_request_alignment": optional_u32(transport.socket_request_alignment_address),
+                "socket_family_value": optional_u32(transport.socket_family_value_address),
+                "socket_type_value": optional_u32(transport.socket_type_value_address),
+                "socket_protocol_value": optional_u32(transport.socket_protocol_value_address),
+                "socket_descriptor_valid": optional_u32(transport.socket_descriptor_valid_address),
+                "socket_ready": optional_u32(transport.socket_ready_address),
+                "socket_request_bytes_hex": socket_request_bytes_hex,
+                "socket_request_bytes_address": optional_u32(transport.socket_request_bytes_address),
+                "socket_request_bytes_size": transport.socket_request_bytes_size,
+                "socket_pre_call_args": (
+                    read_transport_u32_vector(
+                        transport.socket_pre_call_args_address, transport.socket_pre_call_args_size
+                    )
+                    if (
+                        transport.socket_pre_call_args_address is not None
+                        and transport.socket_pre_call_args_size is not None
+                    )
+                    else None
+                ),
                 "bind_submit_result": optional_s32(transport.bind_submit_result_address),
                 "bind_callback_result": optional_s32(transport.bind_callback_result_address),
                 "bind_submit_generation": optional_u32(transport.bind_submit_generation_address),
@@ -1248,6 +1292,14 @@ def _diagnostic_stop_boundary(  # noqa: C901
             if _object_as_int(transport["get_host_id_submit_count"]) == 0:
                 return "waiting_get_host_id_submission"
             return "inside_get_host_id_call"
+        if phase == 13:
+            if transport.get("mode") == "retail_wrapper_create_socket_once":
+                if _object_as_int(transport["last_submit_result"]) != 0:
+                    return "create_socket_submission_failed"
+                if _object_as_int(transport["socket_submit_count"]) == 0:
+                    return "waiting_create_socket_submission"
+                return "inside_create_socket_call"
+            return "inside_get_host_id_call"
         if phase == 12:
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_host_id_callback"
@@ -1299,14 +1351,75 @@ def _diagnostic_stop_boundary(  # noqa: C901
                     return "host_id_ready"
             return "inside_host_id_call"
         if phase == 14:
+            if transport.get("mode") == "retail_wrapper_create_socket_once":
+                if _object_as_int(transport["pending_operation"]) != 0:
+                    return "waiting_create_socket_callback"
+                return "inside_create_socket_call"
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_socket_callback"
+            return "inside_socket_call"
+        if phase == 20:
+            if transport.get("mode") == "retail_wrapper_create_socket_once":
+                if (
+                    _object_as_int(transport["open_kd_callback_count"]) == 1
+                    and _object_as_int(transport["nwc24_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_callback_count"]) == 1
+                    and _object_as_int(transport["open_ip_callback_count"]) == 1
+                    and _object_as_int(transport["startup_callback_count"]) == 1
+                    and _object_as_int(transport["get_host_id_callback_count"]) == 1
+                    and _object_as_int(transport["socket_submit_count"]) == 1
+                    and _object_as_int(transport["socket_callback_count"]) == 1
+                    and _object_as_int(transport["socket_callback_exit_count"]) == 1
+                    and _object_as_int(transport["socket_target_address"]) == 0x80504FE0
+                    and _object_as_int(transport["socket_command"]) == 15
+                    and _object_as_int(transport["socket_submitted_fd"]) == _object_as_int(transport["ip_fd"])
+                    and transport.get("socket_pre_call_args") == [
+                        _object_as_int(transport["ip_fd"]),
+                        15,
+                        _object_as_int(transport["socket_request_address"]),
+                        12,
+                        0,
+                        0,
+                        _object_as_int(transport["socket_callback_pointer"]),
+                        _object_as_int(transport["socket_context_pointer"]),
+                    ]
+                    and _object_as_int(transport["socket_submit_result"]) == 0
+                    and _object_as_int(transport["socket_submit_generation"])
+                    == _object_as_int(transport["socket_callback_generation"])
+                    and _object_as_int(transport["socket_request_logical_size"]) == 12
+                    and _object_as_int(transport["socket_request_alignment"]) == 0x20
+                    and _object_as_int(transport["socket_family_value"]) == 2
+                    and _object_as_int(transport["socket_type_value"]) == 2
+                    and _object_as_int(transport["socket_protocol_value"]) == 0
+                    and transport.get("socket_request_bytes_hex") == "000000020000000200000000"
+                    and _object_as_int(transport["socket_callback_result"]) >= 0
+                    and _object_as_int(transport["socket_fd"]) == _object_as_int(transport["socket_callback_result"])
+                    and _object_as_int(transport["socket_descriptor_valid"]) != 0
+                    and _object_as_int(transport["socket_ready"]) != 0
+                    and _object_as_int(transport["pending_operation"]) == 0
+                    and _object_as_int(transport["kd_fd"]) == -1
+                    and _object_as_int(transport["kd_closed"]) != 0
+                    and _object_as_int(transport["service_started"]) != 0
+                    and _object_as_int(transport["host_id_ready"]) != 0
+                    and _object_as_int(transport["bind_submit_count"]) == 0
+                    and _object_as_int(transport["receive_count"]) == 0
+                    and _object_as_int(transport["send_count"]) == 0
+                    and recurring_execution_continuing
+                ):
+                    return "socket_ready"
+                return "create_socket_callback_failed"
             return "inside_socket_call"
         if phase == 16:
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_bind_callback"
             return "inside_bind_call"
         if phase == 0xFF:
+            if transport.get("mode") == "retail_wrapper_create_socket_once":
+                if _object_as_int(transport["socket_submit_count"]) == 1:
+                    if _object_as_int(transport["socket_submit_result"]) != 0:
+                        return "create_socket_submission_failed"
+                    if _object_as_int(transport["socket_callback_count"]) == 1:
+                        return "create_socket_callback_failed"
             if (
                 transport.get("mode") == "retail_wrapper_get_host_id_once"
                 and _object_as_int(transport["get_host_id_submit_count"]) == 1

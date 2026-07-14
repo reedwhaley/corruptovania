@@ -1891,6 +1891,78 @@ def test_diagnostic_stop_boundary_classifies_abi_probe_states() -> None:
     assert incomplete == "abi_probe_incomplete"
 
 
+def test_diagnostic_stop_boundary_classifies_create_socket_states() -> None:
+    module = _load_module()
+    diagnostics = {
+        "counter_consistency": "consistent",
+        "last_execution_marker_name": "wrapper_returning_to_game",
+    }
+    transport_common = {
+        "mode": "retail_wrapper_create_socket_once",
+        "open_kd_callback_count": 1,
+        "nwc24_callback_count": 1,
+        "kd_close_callback_count": 1,
+        "open_ip_callback_count": 1,
+        "startup_callback_count": 1,
+        "get_host_id_callback_count": 1,
+        "socket_submit_count": 1,
+        "socket_callback_count": 1,
+        "socket_callback_exit_count": 1,
+        "socket_target_address": 0x80504FE0,
+        "socket_command": 15,
+        "socket_submitted_fd": 11,
+        "ip_fd": 11,
+        "socket_callback_pointer": 0x817E1010,
+        "socket_context_pointer": 0x817E1320,
+        "socket_pre_call_args": [11, 15, 0x817E1300, 12, 0, 0, 0x817E1010, 0x817E1320],
+        "socket_request_address": 0x817E1300,
+        "socket_submit_result": 0,
+        "socket_submit_generation": 7,
+        "socket_callback_generation": 7,
+        "socket_request_logical_size": 12,
+        "socket_request_alignment": 0x20,
+        "socket_family_value": 2,
+        "socket_type_value": 2,
+        "socket_protocol_value": 0,
+        "socket_request_bytes_hex": "000000020000000200000000",
+        "socket_callback_result": 0,
+        "socket_fd": 0,
+        "socket_descriptor_valid": 1,
+        "socket_ready": 1,
+        "pending_operation": 0,
+        "kd_fd": -1,
+        "kd_closed": 1,
+        "service_started": 1,
+        "host_id_ready": 1,
+        "bind_submit_count": 0,
+        "receive_count": 0,
+        "send_count": 0,
+    }
+
+    ready = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 20, **transport_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    submission_failed = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 0xFF, **transport_common, "socket_submit_result": 1},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    callback_failed = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 0xFF, **transport_common, "socket_callback_count": 1, "socket_callback_result": -1},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+
+    assert ready == "socket_ready"
+    assert submission_failed == "create_socket_submission_failed"
+    assert callback_failed == "create_socket_callback_failed"
+
+
 def test_observe_probe_rejects_short_payload_read() -> None:
     module = _load_module()
     config = _config(module)

@@ -716,6 +716,78 @@ def test_runtime_payload_manifest_accepts_get_host_id_terminal_metadata() -> Non
     assert parsed.relocated_runtime.transport.get_host_id_pre_call_args_size == 0x20
 
 
+def test_runtime_payload_manifest_accepts_create_socket_terminal_metadata() -> None:
+    payload_bytes = b"\x4e\x80\x00\x20" * 320
+    manifest = _make_relocated_manifest(payload_bytes)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_create_socket_once"
+    relocated["diagnostics"] = diagnostics
+    relocated["embedded_runtime_blob_size"] = 0x360
+    relocated["embedded_runtime_blob_sha256"] = hashlib.sha256(payload_bytes[0x1A0:0x500]).hexdigest()
+    relocated["cache_range_size"] = 0x360
+    relocated["runtime_state_end"] = 0x817E1360
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_create_socket_once"
+    transport["kd_close_enabled"] = True
+    transport["terminal_phase_value"] = 20
+    transport["terminal_phase_name"] = "SOCKET_READY"
+    transport["socket_target_address"] = 0x817E12B4
+    transport["socket_target_size"] = 4
+    transport["socket_command_address"] = 0x817E12B8
+    transport["socket_command_size"] = 4
+    transport["socket_submitted_fd_address"] = 0x817E12BC
+    transport["socket_submitted_fd_size"] = 4
+    transport["socket_callback_pointer_address"] = 0x817E12C0
+    transport["socket_callback_pointer_size"] = 4
+    transport["socket_context_pointer_address"] = 0x817E12C4
+    transport["socket_context_pointer_size"] = 4
+    transport["socket_callback_exit_count_address"] = 0x817E12C8
+    transport["socket_callback_exit_count_size"] = 4
+    transport["socket_stale_callback_count_address"] = 0x817E12CC
+    transport["socket_stale_callback_count_size"] = 4
+    transport["socket_duplicate_callback_count_address"] = 0x817E12D0
+    transport["socket_duplicate_callback_count_size"] = 4
+    transport["socket_fd_before_submit_address"] = 0x817E12D4
+    transport["socket_fd_before_submit_size"] = 4
+    transport["socket_fd_after_completion_address"] = 0x817E12D8
+    transport["socket_fd_after_completion_size"] = 4
+    transport["socket_request_address_address"] = 0x817E12DC
+    transport["socket_request_address_size"] = 4
+    transport["socket_request_storage_size_address"] = 0x817E12E0
+    transport["socket_request_storage_size_size"] = 4
+    transport["socket_request_logical_size_address"] = 0x817E12E4
+    transport["socket_request_logical_size_size"] = 4
+    transport["socket_request_alignment_address"] = 0x817E12E8
+    transport["socket_request_alignment_size"] = 4
+    transport["socket_family_value_address"] = 0x817E12EC
+    transport["socket_family_value_size"] = 4
+    transport["socket_type_value_address"] = 0x817E12F0
+    transport["socket_type_value_size"] = 4
+    transport["socket_protocol_value_address"] = 0x817E12F4
+    transport["socket_protocol_value_size"] = 4
+    transport["socket_descriptor_valid_address"] = 0x817E12F8
+    transport["socket_descriptor_valid_size"] = 4
+    transport["socket_ready_address"] = 0x817E12FC
+    transport["socket_ready_size"] = 4
+    transport["socket_request_bytes_address"] = 0x817E1300
+    transport["socket_request_bytes_size"] = 12
+    transport["socket_pre_call_args_address"] = 0x817E1320
+    transport["socket_pre_call_args_size"] = 0x20
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "SOCKET_READY"
+    assert parsed.relocated_runtime.transport.socket_request_bytes_size == 12
+    assert parsed.relocated_runtime.transport.socket_pre_call_args_size == 0x20
+
+
 def test_runtime_payload_manifest_rejects_abi_probe_outside_runtime_state() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

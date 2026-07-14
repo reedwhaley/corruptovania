@@ -1147,6 +1147,174 @@ def test_observe_probe_reports_contradictory_diagnostic_counters() -> None:
     assert result["probable_stop_boundary"] == "contradictory_counters"
 
 
+def test_observe_probe_reports_terminal_ip_open_state() -> None:
+    module = _load_module()
+    runtime_blob_first = bytearray(b"R" * 0x2F0)
+    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    for runtime_blob, poll_value in ((runtime_blob_first, 7), (runtime_blob_second, 11)):
+        _write_u32(runtime_blob, 0x38, 0x434F5059)
+        _write_u32(runtime_blob, 0x3C, 0x52554E21)
+        _write_u32(runtime_blob, 0x40, 1)
+        _write_u32(runtime_blob, 0x44, 0x52544F4B)
+        _write_u32(runtime_blob, 0x48, 0x4252544E)
+        _write_u32(runtime_blob, 0x4C, poll_value)
+        _write_u32(runtime_blob, 0x50, poll_value)
+        _write_u32(runtime_blob, 0x54, poll_value)
+        _install_transport_state(
+            runtime_blob,
+            phase=0xFE,
+            pending_operation=0,
+            open_kd_submit_count=1,
+            open_kd_callback_count=1,
+            nwc24_submit_count=1,
+            nwc24_callback_count=1,
+            nwc24_synchronous_result=0,
+            nwc24_callback_result=0,
+            open_ip_submit_count=1,
+            open_ip_callback_count=1,
+            kd_close_submit_count=1,
+            kd_close_callback_count=1,
+            kd_fd=-1,
+            kd_closed=1,
+            ip_fd=7,
+            startup_submit_count=0,
+            get_host_id_submit_count=0,
+            socket_submit_count=0,
+            bind_submit_count=0,
+            receive_count=0,
+            send_count=0,
+        )
+        _write_u32(runtime_blob, 0x254, 0x817E12C0)
+        _write_u32(runtime_blob, 0x258, 15)
+        _write_u32(runtime_blob, 0x25C, 0)
+        _write_u32(runtime_blob, 0x260, 0x817E1010)
+        _write_u32(runtime_blob, 0x264, 0x817E1280)
+        _write_u32(runtime_blob, 0x268, 1)
+        _write_u32(runtime_blob, 0x26C, 0)
+        _write_u32(runtime_blob, 0x270, 0)
+        _write_s32(runtime_blob, 0x274, -1)
+        _write_s32(runtime_blob, 0x278, 11)
+        _write_s32(runtime_blob, 0x27C, 11)
+        _write_s32(runtime_blob, 0x280, -1)
+        _write_s32(runtime_blob, 0x284, 0)
+        _write_s32(runtime_blob, 0x288, 7)
+        _write_u32(runtime_blob, 0x28C, 1)
+        _write_u32(runtime_blob, 0x290, 1)
+        _write_s32(runtime_blob, 0x294, 0)
+        _write_s32(runtime_blob, 0x298, 0)
+        _write_u32(runtime_blob, 0x29C, 1)
+        _write_u32(runtime_blob, 0x2A0, 1)
+        _install_diagnostics(
+            runtime_blob,
+            hook_wrapper_entry_count=poll_value,
+            hook_wrapper_before_poll_count=poll_value,
+            runtime_poll_entry_count=poll_value,
+            runtime_poll_exit_count=poll_value,
+            state_machine_entry_count=poll_value,
+            state_machine_exit_count=poll_value,
+            ios_submit_attempt_count=3,
+            ios_submit_return_count=3,
+            ios_submit_return_value=0,
+            callback_entry_count=3,
+            callback_exit_count=3,
+            hook_wrapper_after_poll_count=poll_value,
+            hook_wrapper_exit_count=poll_value,
+            last_execution_marker=0xC0DE000D,
+            last_transport_phase_before_step=0xFE,
+            last_transport_phase_after_step=0xFE,
+            callback_result=7,
+        )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob_first)
+    raw = _relocated_manifest(payload_bytes).to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_nwc24_close_open_ip_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_nwc24_close_open_ip_once"
+    transport["terminal_phase_value"] = 0xFE
+    transport["terminal_phase_name"] = "IP_OPEN"
+    transport["open_ip_path_pointer_address"] = 0x817E1254
+    transport["open_ip_path_pointer_size"] = 4
+    transport["open_ip_path_length_address"] = 0x817E1258
+    transport["open_ip_path_length_size"] = 4
+    transport["open_ip_mode_value_address"] = 0x817E125C
+    transport["open_ip_mode_value_size"] = 4
+    transport["open_ip_callback_pointer_address"] = 0x817E1260
+    transport["open_ip_callback_pointer_size"] = 4
+    transport["open_ip_context_pointer_address"] = 0x817E1264
+    transport["open_ip_context_pointer_size"] = 4
+    transport["open_ip_callback_exit_count_address"] = 0x817E1268
+    transport["open_ip_callback_exit_count_size"] = 4
+    transport["open_ip_stale_callback_count_address"] = 0x817E126C
+    transport["open_ip_stale_callback_count_size"] = 4
+    transport["open_ip_duplicate_callback_count_address"] = 0x817E1270
+    transport["open_ip_duplicate_callback_count_size"] = 4
+    transport["ip_fd_before_open_ip_address"] = 0x817E1274
+    transport["ip_fd_before_open_ip_size"] = 4
+    transport["kd_close_submitted_fd_address"] = 0x817E1278
+    transport["kd_close_submitted_fd_size"] = 4
+    transport["kd_fd_before_close_address"] = 0x817E127C
+    transport["kd_fd_before_close_size"] = 4
+    transport["kd_fd_after_close_address"] = 0x817E1280
+    transport["kd_fd_after_close_size"] = 4
+    transport["open_ip_submit_result_address"] = 0x817E1284
+    transport["open_ip_submit_result_size"] = 4
+    transport["open_ip_callback_result_address"] = 0x817E1288
+    transport["open_ip_callback_result_size"] = 4
+    transport["open_ip_submit_generation_address"] = 0x817E128C
+    transport["open_ip_submit_generation_size"] = 4
+    transport["open_ip_callback_generation_address"] = 0x817E1290
+    transport["open_ip_callback_generation_size"] = 4
+    transport["kd_close_submit_result_address"] = 0x817E1294
+    transport["kd_close_submit_result_size"] = 4
+    transport["kd_close_callback_result_address"] = 0x817E1298
+    transport["kd_close_callback_result_size"] = 4
+    transport["kd_close_submit_generation_address"] = 0x817E129C
+    transport["kd_close_submit_generation_size"] = 4
+    transport["kd_close_callback_generation_address"] = 0x817E12A0
+    transport["kd_close_callback_generation_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+    manifest = Prime3RuntimePayloadManifest.from_json_dict(raw)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+        repeat_delay_seconds=0.25,
+    )
+    first_memory = _memory_for_config(module, config)
+    second_memory = _memory_for_config(module, config)
+    for memory, runtime_blob in ((first_memory, runtime_blob_first), (second_memory, runtime_blob_second)):
+        _install_bootstrap_diagnostic(memory)
+        memory[0x817E1000] = bytes(runtime_blob)
+        memory[0x817E12C0] = b"/dev/net/ip/top\x00"
+    backend = FakeBackend([first_memory, second_memory])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "ip_open"
+    assert result["poll_counter_delta"] == 4
+    assert result["recurring_execution_continuing"] is True
+    assert result["relocated_runtime"]["transport"]["open_ip_path_address"] == 0x817E12C0
+    assert result["relocated_runtime"]["transport"]["open_ip_path_length"] == 15
+    assert result["relocated_runtime"]["transport"]["open_ip_path_bounded_string"] == "/dev/net/ip/top"
+    assert result["relocated_runtime"]["transport"]["open_ip_mode"] == 0
+    assert result["relocated_runtime"]["transport"]["open_ip_callback_pointer"] == 0x817E1010
+    assert result["relocated_runtime"]["transport"]["open_ip_context_pointer"] == 0x817E1280
+    assert result["relocated_runtime"]["transport"]["open_ip_callback_exit_count"] == 1
+    assert result["relocated_runtime"]["transport"]["ip_fd_before_open_ip"] == -1
+    assert result["relocated_runtime"]["transport"]["kd_close_submitted_fd"] == 11
+    assert result["relocated_runtime"]["transport"]["kd_fd_before_close"] == 11
+    assert result["relocated_runtime"]["transport"]["kd_fd_after_close"] == -1
+
+
 @pytest.mark.parametrize(
     ("diagnostics", "expected"),
     [

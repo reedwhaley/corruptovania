@@ -315,6 +315,24 @@ class Prime3RuntimeTransportMetadata:
     open_ip_submit_generation_size: int | None = None
     open_ip_callback_generation_address: int | None = None
     open_ip_callback_generation_size: int | None = None
+    open_ip_path_pointer_address: int | None = None
+    open_ip_path_pointer_size: int | None = None
+    open_ip_path_length_address: int | None = None
+    open_ip_path_length_size: int | None = None
+    open_ip_mode_value_address: int | None = None
+    open_ip_mode_value_size: int | None = None
+    open_ip_callback_pointer_address: int | None = None
+    open_ip_callback_pointer_size: int | None = None
+    open_ip_context_pointer_address: int | None = None
+    open_ip_context_pointer_size: int | None = None
+    open_ip_callback_exit_count_address: int | None = None
+    open_ip_callback_exit_count_size: int | None = None
+    open_ip_stale_callback_count_address: int | None = None
+    open_ip_stale_callback_count_size: int | None = None
+    open_ip_duplicate_callback_count_address: int | None = None
+    open_ip_duplicate_callback_count_size: int | None = None
+    ip_fd_before_open_ip_address: int | None = None
+    ip_fd_before_open_ip_size: int | None = None
     kd_close_submit_result_address: int | None = None
     kd_close_submit_result_size: int | None = None
     kd_close_callback_result_address: int | None = None
@@ -323,6 +341,12 @@ class Prime3RuntimeTransportMetadata:
     kd_close_submit_generation_size: int | None = None
     kd_close_callback_generation_address: int | None = None
     kd_close_callback_generation_size: int | None = None
+    kd_close_submitted_fd_address: int | None = None
+    kd_close_submitted_fd_size: int | None = None
+    kd_fd_before_close_address: int | None = None
+    kd_fd_before_close_size: int | None = None
+    kd_fd_after_close_address: int | None = None
+    kd_fd_after_close_size: int | None = None
     startup_submit_result_address: int | None = None
     startup_submit_result_size: int | None = None
     startup_callback_result_address: int | None = None
@@ -371,6 +395,7 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
         is_nwc24_ioctl_once = self.mode == "retail_wrapper_nwc24_startup_once"
         is_nwc24_close_once = self.mode == "retail_wrapper_nwc24_close_kd_once"
+        is_nwc24_close_open_ip_once = self.mode == "retail_wrapper_nwc24_close_open_ip_once"
         if is_nwc24_ioctl_once:
             if self.kd_close_enabled:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must not enable kd close.")
@@ -382,6 +407,10 @@ class Prime3RuntimeTransportMetadata:
             self.terminal_phase_value != 0xFE or self.terminal_phase_name != "KD_CLOSED"
         ):
             raise Prime3DolPatchError("NWC24 close-once metadata must use the KD_CLOSED terminal phase.")
+        if is_nwc24_close_open_ip_once and (
+            self.terminal_phase_value != 0xFE or self.terminal_phase_name != "IP_OPEN"
+        ):
+            raise Prime3DolPatchError("NWC24 close-open-ip metadata must use the IP_OPEN terminal phase.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -558,6 +587,51 @@ class Prime3RuntimeTransportMetadata:
                 self.open_ip_callback_generation_size,
             ),
             (
+                "transport_open_ip_path_pointer",
+                self.open_ip_path_pointer_address,
+                self.open_ip_path_pointer_size,
+            ),
+            (
+                "transport_open_ip_path_length",
+                self.open_ip_path_length_address,
+                self.open_ip_path_length_size,
+            ),
+            (
+                "transport_open_ip_mode_value",
+                self.open_ip_mode_value_address,
+                self.open_ip_mode_value_size,
+            ),
+            (
+                "transport_open_ip_callback_pointer",
+                self.open_ip_callback_pointer_address,
+                self.open_ip_callback_pointer_size,
+            ),
+            (
+                "transport_open_ip_context_pointer",
+                self.open_ip_context_pointer_address,
+                self.open_ip_context_pointer_size,
+            ),
+            (
+                "transport_open_ip_callback_exit_count",
+                self.open_ip_callback_exit_count_address,
+                self.open_ip_callback_exit_count_size,
+            ),
+            (
+                "transport_open_ip_stale_callback_count",
+                self.open_ip_stale_callback_count_address,
+                self.open_ip_stale_callback_count_size,
+            ),
+            (
+                "transport_open_ip_duplicate_callback_count",
+                self.open_ip_duplicate_callback_count_address,
+                self.open_ip_duplicate_callback_count_size,
+            ),
+            (
+                "transport_ip_fd_before_open_ip",
+                self.ip_fd_before_open_ip_address,
+                self.ip_fd_before_open_ip_size,
+            ),
+            (
                 "transport_kd_close_submit_result",
                 self.kd_close_submit_result_address,
                 self.kd_close_submit_result_size,
@@ -576,6 +650,21 @@ class Prime3RuntimeTransportMetadata:
                 "transport_kd_close_callback_generation",
                 self.kd_close_callback_generation_address,
                 self.kd_close_callback_generation_size,
+            ),
+            (
+                "transport_kd_close_submitted_fd",
+                self.kd_close_submitted_fd_address,
+                self.kd_close_submitted_fd_size,
+            ),
+            (
+                "transport_kd_fd_before_close",
+                self.kd_fd_before_close_address,
+                self.kd_fd_before_close_size,
+            ),
+            (
+                "transport_kd_fd_after_close",
+                self.kd_fd_after_close_address,
+                self.kd_fd_after_close_size,
             ),
             ("transport_startup_submit_result", self.startup_submit_result_address, self.startup_submit_result_size),
             (
@@ -813,6 +902,26 @@ class Prime3RuntimeTransportMetadata:
             open_ip_submit_generation_size=_json_optional_int(data, "open_ip_submit_generation_size"),
             open_ip_callback_generation_address=_json_optional_int(data, "open_ip_callback_generation_address"),
             open_ip_callback_generation_size=_json_optional_int(data, "open_ip_callback_generation_size"),
+            open_ip_path_pointer_address=_json_optional_int(data, "open_ip_path_pointer_address"),
+            open_ip_path_pointer_size=_json_optional_int(data, "open_ip_path_pointer_size"),
+            open_ip_path_length_address=_json_optional_int(data, "open_ip_path_length_address"),
+            open_ip_path_length_size=_json_optional_int(data, "open_ip_path_length_size"),
+            open_ip_mode_value_address=_json_optional_int(data, "open_ip_mode_value_address"),
+            open_ip_mode_value_size=_json_optional_int(data, "open_ip_mode_value_size"),
+            open_ip_callback_pointer_address=_json_optional_int(data, "open_ip_callback_pointer_address"),
+            open_ip_callback_pointer_size=_json_optional_int(data, "open_ip_callback_pointer_size"),
+            open_ip_context_pointer_address=_json_optional_int(data, "open_ip_context_pointer_address"),
+            open_ip_context_pointer_size=_json_optional_int(data, "open_ip_context_pointer_size"),
+            open_ip_callback_exit_count_address=_json_optional_int(data, "open_ip_callback_exit_count_address"),
+            open_ip_callback_exit_count_size=_json_optional_int(data, "open_ip_callback_exit_count_size"),
+            open_ip_stale_callback_count_address=_json_optional_int(data, "open_ip_stale_callback_count_address"),
+            open_ip_stale_callback_count_size=_json_optional_int(data, "open_ip_stale_callback_count_size"),
+            open_ip_duplicate_callback_count_address=_json_optional_int(
+                data, "open_ip_duplicate_callback_count_address"
+            ),
+            open_ip_duplicate_callback_count_size=_json_optional_int(data, "open_ip_duplicate_callback_count_size"),
+            ip_fd_before_open_ip_address=_json_optional_int(data, "ip_fd_before_open_ip_address"),
+            ip_fd_before_open_ip_size=_json_optional_int(data, "ip_fd_before_open_ip_size"),
             kd_close_submit_result_address=_json_optional_int(data, "kd_close_submit_result_address"),
             kd_close_submit_result_size=_json_optional_int(data, "kd_close_submit_result_size"),
             kd_close_callback_result_address=_json_optional_int(data, "kd_close_callback_result_address"),
@@ -821,6 +930,12 @@ class Prime3RuntimeTransportMetadata:
             kd_close_submit_generation_size=_json_optional_int(data, "kd_close_submit_generation_size"),
             kd_close_callback_generation_address=_json_optional_int(data, "kd_close_callback_generation_address"),
             kd_close_callback_generation_size=_json_optional_int(data, "kd_close_callback_generation_size"),
+            kd_close_submitted_fd_address=_json_optional_int(data, "kd_close_submitted_fd_address"),
+            kd_close_submitted_fd_size=_json_optional_int(data, "kd_close_submitted_fd_size"),
+            kd_fd_before_close_address=_json_optional_int(data, "kd_fd_before_close_address"),
+            kd_fd_before_close_size=_json_optional_int(data, "kd_fd_before_close_size"),
+            kd_fd_after_close_address=_json_optional_int(data, "kd_fd_after_close_address"),
+            kd_fd_after_close_size=_json_optional_int(data, "kd_fd_after_close_size"),
             startup_submit_result_address=_json_optional_int(data, "startup_submit_result_address"),
             startup_submit_result_size=_json_optional_int(data, "startup_submit_result_size"),
             startup_callback_result_address=_json_optional_int(data, "startup_callback_result_address"),

@@ -559,6 +559,29 @@ def test_runtime_payload_manifest_accepts_nwc24_ioctl_once_terminal_metadata() -
     assert parsed.relocated_runtime.transport.terminal_phase_name == "NWC24_COMPLETE"
 
 
+def test_runtime_payload_manifest_accepts_nwc24_close_open_ip_terminal_metadata() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_nwc24_close_open_ip_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_nwc24_close_open_ip_once"
+    transport["kd_close_enabled"] = True
+    transport["terminal_phase_value"] = 0xFE
+    transport["terminal_phase_name"] = "IP_OPEN"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.kd_close_enabled is True
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "IP_OPEN"
+
+
 def test_runtime_payload_manifest_rejects_abi_probe_outside_runtime_state() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

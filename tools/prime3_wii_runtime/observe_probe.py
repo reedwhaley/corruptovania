@@ -704,6 +704,19 @@ def _read_probe_state(
             )
             send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
             nwc24_output_offset = transport.nwc24_output_buffer_address - runtime_metadata.runtime_destination_address
+            open_ip_path_address = optional_u32(transport.open_ip_path_pointer_address)
+            open_ip_path_length = optional_u32(transport.open_ip_path_length_address)
+            open_ip_path_bounded_string = None
+            open_ip_path_bytes_hex = None
+            if open_ip_path_address is not None and open_ip_path_length is not None:
+                raw_path = _read_exact(
+                    backend,
+                    open_ip_path_address,
+                    min(open_ip_path_length + 1, 0x80),
+                    f"open-ip path 0x{open_ip_path_address:08x}",
+                )
+                open_ip_path_bytes_hex = raw_path.hex()
+                open_ip_path_bounded_string = raw_path.split(b"\0", 1)[0].decode("ascii", errors="replace")
             relocated_runtime["transport"] = {
                 "mode": transport.mode,
                 "initialization_enabled": transport.initialization_enabled,
@@ -792,10 +805,31 @@ def _read_probe_state(
                 "open_ip_callback_result": optional_s32(transport.open_ip_callback_result_address),
                 "open_ip_submit_generation": optional_u32(transport.open_ip_submit_generation_address),
                 "open_ip_callback_generation": optional_u32(transport.open_ip_callback_generation_address),
+                "open_ip_path_address": open_ip_path_address,
+                "open_ip_path_length": open_ip_path_length,
+                "open_ip_path_bounded_string": open_ip_path_bounded_string,
+                "open_ip_path_bytes_hex": open_ip_path_bytes_hex,
+                "open_ip_mode": optional_u32(transport.open_ip_mode_value_address),
+                "open_ip_callback_pointer": optional_u32(transport.open_ip_callback_pointer_address),
+                "open_ip_context_pointer": optional_u32(transport.open_ip_context_pointer_address),
+                "open_ip_callback_exit_count": optional_u32(transport.open_ip_callback_exit_count_address),
+                "open_ip_stale_callback_count": optional_u32(transport.open_ip_stale_callback_count_address),
+                "open_ip_duplicate_callback_count": optional_u32(
+                    transport.open_ip_duplicate_callback_count_address
+                ),
+                "ip_fd_before_open_ip": optional_s32(transport.ip_fd_before_open_ip_address),
+                "open_ip_target_address": (
+                    runtime_metadata.retail_ios_wrapper.open_async_address
+                    if runtime_metadata.retail_ios_wrapper is not None
+                    else None
+                ),
                 "kd_close_submit_result": optional_s32(transport.kd_close_submit_result_address),
                 "kd_close_callback_result": optional_s32(transport.kd_close_callback_result_address),
                 "kd_close_submit_generation": optional_u32(transport.kd_close_submit_generation_address),
                 "kd_close_callback_generation": optional_u32(transport.kd_close_callback_generation_address),
+                "kd_close_submitted_fd": optional_s32(transport.kd_close_submitted_fd_address),
+                "kd_fd_before_close": optional_s32(transport.kd_fd_before_close_address),
+                "kd_fd_after_close": optional_s32(transport.kd_fd_after_close_address),
                 "startup_submit_result": optional_s32(transport.startup_submit_result_address),
                 "startup_callback_result": optional_s32(transport.startup_callback_result_address),
                 "startup_submit_generation": optional_u32(transport.startup_submit_generation_address),
@@ -943,6 +977,36 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 return "waiting_nwc24_callback"
             return "inside_nwc24_call"
         if phase == 0xFE:
+            if transport.get("mode") == "retail_wrapper_nwc24_close_open_ip_once":
+                if (
+                    _object_as_int(transport["open_kd_callback_count"]) == 1
+                    and _object_as_int(transport["nwc24_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_submit_result"]) == 0
+                    and _object_as_int(transport["kd_close_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_callback_result"]) == 0
+                    and _object_as_int(transport["kd_close_submit_generation"])
+                    == _object_as_int(transport["kd_close_callback_generation"])
+                    and _object_as_int(transport["kd_fd"]) == -1
+                    and _object_as_int(transport["kd_closed"]) != 0
+                    and _object_as_int(transport["open_ip_submit_result"]) == 0
+                    and _object_as_int(transport["open_ip_callback_count"]) == 1
+                    and _object_as_int(transport["open_ip_callback_exit_count"]) == 1
+                    and _object_as_int(transport["open_ip_callback_result"]) >= 0
+                    and _object_as_int(transport["open_ip_submit_generation"])
+                    == _object_as_int(transport["open_ip_callback_generation"])
+                    and _object_as_int(transport["ip_fd_before_open_ip"]) == -1
+                    and _object_as_int(transport["ip_fd"]) == _object_as_int(transport["open_ip_callback_result"])
+                    and _object_as_int(transport["pending_operation"]) == 0
+                    and _object_as_int(transport["startup_submit_count"]) == 0
+                    and _object_as_int(transport["get_host_id_submit_count"]) == 0
+                    and _object_as_int(transport["socket_submit_count"]) == 0
+                    and _object_as_int(transport["bind_submit_count"]) == 0
+                    and _object_as_int(transport["receive_count"]) == 0
+                    and _object_as_int(transport["send_count"]) == 0
+                    and recurring_execution_continuing
+                ):
+                    return "ip_open"
+                return "open_ip_callback_failed"
             if transport.get("mode") == "retail_wrapper_nwc24_close_kd_once":
                 if (
                     _object_as_int(transport["open_kd_callback_count"]) == 1

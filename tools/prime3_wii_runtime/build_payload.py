@@ -209,12 +209,24 @@ RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_RESULT_SYMBOL = "runtime_transport_open_ip_subm
 RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_RESULT_SYMBOL = "runtime_transport_open_ip_callback_result"
 RUNTIME_TRANSPORT_OPEN_IP_SUBMIT_GENERATION_SYMBOL = "runtime_transport_open_ip_submit_generation"
 RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_GENERATION_SYMBOL = "runtime_transport_open_ip_callback_generation"
+RUNTIME_TRANSPORT_OPEN_IP_PATH_POINTER_SYMBOL = "runtime_transport_open_ip_path_pointer"
+RUNTIME_TRANSPORT_OPEN_IP_PATH_LENGTH_SYMBOL = "runtime_transport_open_ip_path_length"
+RUNTIME_TRANSPORT_OPEN_IP_MODE_VALUE_SYMBOL = "runtime_transport_open_ip_mode_value"
+RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_POINTER_SYMBOL = "runtime_transport_open_ip_callback_pointer"
+RUNTIME_TRANSPORT_OPEN_IP_CONTEXT_POINTER_SYMBOL = "runtime_transport_open_ip_context_pointer"
+RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_EXIT_COUNT_SYMBOL = "runtime_transport_open_ip_callback_exit_count"
+RUNTIME_TRANSPORT_OPEN_IP_STALE_CALLBACK_COUNT_SYMBOL = "runtime_transport_open_ip_stale_callback_count"
+RUNTIME_TRANSPORT_OPEN_IP_DUPLICATE_CALLBACK_COUNT_SYMBOL = "runtime_transport_open_ip_duplicate_callback_count"
+RUNTIME_TRANSPORT_IP_FD_BEFORE_OPEN_IP_SYMBOL = "runtime_transport_ip_fd_before_open_ip"
 RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_COUNT_SYMBOL = "runtime_transport_kd_close_submit_count"
 RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_COUNT_SYMBOL = "runtime_transport_kd_close_callback_count"
 RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_RESULT_SYMBOL = "runtime_transport_kd_close_submit_result"
 RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_RESULT_SYMBOL = "runtime_transport_kd_close_callback_result"
 RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_GENERATION_SYMBOL = "runtime_transport_kd_close_submit_generation"
 RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_GENERATION_SYMBOL = "runtime_transport_kd_close_callback_generation"
+RUNTIME_TRANSPORT_KD_CLOSE_SUBMITTED_FD_SYMBOL = "runtime_transport_kd_close_submitted_fd"
+RUNTIME_TRANSPORT_KD_FD_BEFORE_CLOSE_SYMBOL = "runtime_transport_kd_fd_before_close"
+RUNTIME_TRANSPORT_KD_FD_AFTER_CLOSE_SYMBOL = "runtime_transport_kd_fd_after_close"
 RUNTIME_TRANSPORT_IP_CLOSE_SUBMIT_COUNT_SYMBOL = "runtime_transport_ip_close_submit_count"
 RUNTIME_TRANSPORT_SOCKET_CLOSE_SUBMIT_COUNT_SYMBOL = "runtime_transport_socket_close_submit_count"
 RUNTIME_TRANSPORT_STARTUP_SUBMIT_COUNT_SYMBOL = "runtime_transport_startup_submit_count"
@@ -396,10 +408,22 @@ class RelocatedRuntimeBuildResult:
     transport_open_ip_callback_result_address: int
     transport_open_ip_submit_generation_address: int
     transport_open_ip_callback_generation_address: int
+    transport_open_ip_path_pointer_address: int
+    transport_open_ip_path_length_address: int
+    transport_open_ip_mode_value_address: int
+    transport_open_ip_callback_pointer_address: int
+    transport_open_ip_context_pointer_address: int
+    transport_open_ip_callback_exit_count_address: int
+    transport_open_ip_stale_callback_count_address: int
+    transport_open_ip_duplicate_callback_count_address: int
+    transport_ip_fd_before_open_ip_address: int
     transport_kd_close_submit_result_address: int
     transport_kd_close_callback_result_address: int
     transport_kd_close_submit_generation_address: int
     transport_kd_close_callback_generation_address: int
+    transport_kd_close_submitted_fd_address: int
+    transport_kd_fd_before_close_address: int
+    transport_kd_fd_after_close_address: int
     transport_startup_submit_result_address: int
     transport_startup_callback_result_address: int
     transport_startup_submit_generation_address: int
@@ -562,6 +586,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_open_kd_once",
         "retail_wrapper_nwc24_startup_once",
         "retail_wrapper_nwc24_close_kd_once",
+        "retail_wrapper_nwc24_close_open_ip_once",
         "retail_wrapper_close_kd_once",
         "retail_wrapper_open_ip_once",
         "retail_wrapper_startup_once",
@@ -926,6 +951,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         if enable_ios_udp_diagnostic:
             nwc24_ioctl_once = ios_udp_mode == "retail_wrapper_nwc24_startup_once"
             nwc24_close_once = ios_udp_mode == "retail_wrapper_nwc24_close_kd_once"
+            open_ip_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
@@ -935,11 +961,11 @@ def build_prime3_runtime_payload(  # noqa: C901
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
                 socket_close_on_success=False,
-                terminal_phase_value=0xFE if nwc24_ioctl_once or nwc24_close_once else 0x11,
+                terminal_phase_value=0xFE if nwc24_ioctl_once or nwc24_close_once or open_ip_once else 0x11,
                 terminal_phase_name=(
                     "NWC24_COMPLETE"
                     if nwc24_ioctl_once
-                    else "KD_CLOSED" if nwc24_close_once else "BOUND_NO_RECV"
+                    else "KD_CLOSED" if nwc24_close_once else "IP_OPEN" if open_ip_once else "BOUND_NO_RECV"
                 ),
                 phase_address=relocated_runtime.transport_phase_address,
                 phase_size=4,
@@ -1068,6 +1094,26 @@ def build_prime3_runtime_payload(  # noqa: C901
                 open_ip_submit_generation_size=4,
                 open_ip_callback_generation_address=relocated_runtime.transport_open_ip_callback_generation_address,
                 open_ip_callback_generation_size=4,
+                open_ip_path_pointer_address=relocated_runtime.transport_open_ip_path_pointer_address,
+                open_ip_path_pointer_size=4,
+                open_ip_path_length_address=relocated_runtime.transport_open_ip_path_length_address,
+                open_ip_path_length_size=4,
+                open_ip_mode_value_address=relocated_runtime.transport_open_ip_mode_value_address,
+                open_ip_mode_value_size=4,
+                open_ip_callback_pointer_address=relocated_runtime.transport_open_ip_callback_pointer_address,
+                open_ip_callback_pointer_size=4,
+                open_ip_context_pointer_address=relocated_runtime.transport_open_ip_context_pointer_address,
+                open_ip_context_pointer_size=4,
+                open_ip_callback_exit_count_address=relocated_runtime.transport_open_ip_callback_exit_count_address,
+                open_ip_callback_exit_count_size=4,
+                open_ip_stale_callback_count_address=relocated_runtime.transport_open_ip_stale_callback_count_address,
+                open_ip_stale_callback_count_size=4,
+                open_ip_duplicate_callback_count_address=(
+                    relocated_runtime.transport_open_ip_duplicate_callback_count_address
+                ),
+                open_ip_duplicate_callback_count_size=4,
+                ip_fd_before_open_ip_address=relocated_runtime.transport_ip_fd_before_open_ip_address,
+                ip_fd_before_open_ip_size=4,
                 kd_close_submit_result_address=relocated_runtime.transport_kd_close_submit_result_address,
                 kd_close_submit_result_size=4,
                 kd_close_callback_result_address=relocated_runtime.transport_kd_close_callback_result_address,
@@ -1076,6 +1122,12 @@ def build_prime3_runtime_payload(  # noqa: C901
                 kd_close_submit_generation_size=4,
                 kd_close_callback_generation_address=relocated_runtime.transport_kd_close_callback_generation_address,
                 kd_close_callback_generation_size=4,
+                kd_close_submitted_fd_address=relocated_runtime.transport_kd_close_submitted_fd_address,
+                kd_close_submitted_fd_size=4,
+                kd_fd_before_close_address=relocated_runtime.transport_kd_fd_before_close_address,
+                kd_fd_before_close_size=4,
+                kd_fd_after_close_address=relocated_runtime.transport_kd_fd_after_close_address,
+                kd_fd_after_close_size=4,
                 startup_submit_result_address=relocated_runtime.transport_startup_submit_result_address,
                 startup_submit_result_size=4,
                 startup_callback_result_address=relocated_runtime.transport_startup_callback_result_address,
@@ -1225,6 +1277,7 @@ def _build_relocated_runtime(
                 "retail_wrapper_open_kd_once": "2",
                 "retail_wrapper_nwc24_startup_once": "3",
                 "retail_wrapper_nwc24_close_kd_once": "11",
+                "retail_wrapper_nwc24_close_open_ip_once": "12",
                 "retail_wrapper_close_kd_once": "4",
                 "retail_wrapper_open_ip_once": "5",
                 "retail_wrapper_startup_once": "6",
@@ -1511,6 +1564,33 @@ def _build_relocated_runtime(
     transport_open_ip_callback_generation_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_GENERATION_SYMBOL
     )
+    transport_open_ip_path_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_PATH_POINTER_SYMBOL
+    )
+    transport_open_ip_path_length_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_PATH_LENGTH_SYMBOL
+    )
+    transport_open_ip_mode_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_MODE_VALUE_SYMBOL
+    )
+    transport_open_ip_callback_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_POINTER_SYMBOL
+    )
+    transport_open_ip_context_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CONTEXT_POINTER_SYMBOL
+    )
+    transport_open_ip_callback_exit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_CALLBACK_EXIT_COUNT_SYMBOL
+    )
+    transport_open_ip_stale_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_STALE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_open_ip_duplicate_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_OPEN_IP_DUPLICATE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_ip_fd_before_open_ip_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_IP_FD_BEFORE_OPEN_IP_SYMBOL
+    )
     transport_kd_close_submit_count_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_SUBMIT_COUNT_SYMBOL
     )
@@ -1528,6 +1608,15 @@ def _build_relocated_runtime(
     )
     transport_kd_close_callback_generation_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_kd_close_submitted_fd_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSE_SUBMITTED_FD_SYMBOL
+    )
+    transport_kd_fd_before_close_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_FD_BEFORE_CLOSE_SYMBOL
+    )
+    transport_kd_fd_after_close_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_KD_FD_AFTER_CLOSE_SYMBOL
     )
     transport_ip_close_submit_count_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_IP_CLOSE_SUBMIT_COUNT_SYMBOL
@@ -1787,10 +1876,22 @@ def _build_relocated_runtime(
         transport_open_ip_callback_result_address=transport_open_ip_callback_result_address,
         transport_open_ip_submit_generation_address=transport_open_ip_submit_generation_address,
         transport_open_ip_callback_generation_address=transport_open_ip_callback_generation_address,
+        transport_open_ip_path_pointer_address=transport_open_ip_path_pointer_address,
+        transport_open_ip_path_length_address=transport_open_ip_path_length_address,
+        transport_open_ip_mode_value_address=transport_open_ip_mode_value_address,
+        transport_open_ip_callback_pointer_address=transport_open_ip_callback_pointer_address,
+        transport_open_ip_context_pointer_address=transport_open_ip_context_pointer_address,
+        transport_open_ip_callback_exit_count_address=transport_open_ip_callback_exit_count_address,
+        transport_open_ip_stale_callback_count_address=transport_open_ip_stale_callback_count_address,
+        transport_open_ip_duplicate_callback_count_address=transport_open_ip_duplicate_callback_count_address,
+        transport_ip_fd_before_open_ip_address=transport_ip_fd_before_open_ip_address,
         transport_kd_close_submit_result_address=transport_kd_close_submit_result_address,
         transport_kd_close_callback_result_address=transport_kd_close_callback_result_address,
         transport_kd_close_submit_generation_address=transport_kd_close_submit_generation_address,
         transport_kd_close_callback_generation_address=transport_kd_close_callback_generation_address,
+        transport_kd_close_submitted_fd_address=transport_kd_close_submitted_fd_address,
+        transport_kd_fd_before_close_address=transport_kd_fd_before_close_address,
+        transport_kd_fd_after_close_address=transport_kd_fd_after_close_address,
         transport_startup_submit_result_address=transport_startup_submit_result_address,
         transport_startup_callback_result_address=transport_startup_callback_result_address,
         transport_startup_submit_generation_address=transport_startup_submit_generation_address,
@@ -2172,7 +2273,7 @@ def main() -> None:
     elif args.ios_close_kd_once:
         ios_udp_mode = "retail_wrapper_nwc24_close_kd_once"
     elif args.ios_open_ip_once:
-        ios_udp_mode = "retail_wrapper_open_ip_once"
+        ios_udp_mode = "retail_wrapper_nwc24_close_open_ip_once"
     elif args.ios_startup_once:
         ios_udp_mode = "retail_wrapper_startup_once"
     elif args.ios_get_host_id_once:

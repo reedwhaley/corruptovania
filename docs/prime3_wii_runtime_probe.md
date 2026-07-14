@@ -254,6 +254,8 @@ For `--ios-nwc24-via-retail-ioctl-once`, the narrower terminal state is `NWC24_C
 
 For `--ios-close-kd-once`, the sequence extends only through `KD_CLOSED` (`0xFE`). The verified async close wrapper is `0x805048A0..0x80504960`, operation `2`, with `r3=fd`, `r4=completion`, and `r5=userdata`. The retail dispatcher owns the lower request; the relocated close context remains allocated until its callback. The successful local proof returned `0` synchronously and through one callback, then retained `kd_fd=-1`, `kd_closed=true`, and zero IP/receive/send submissions.
 
+For `--ios-open-ip-once`, the prerequisite lifecycle is now proven through `IP_OPEN` (`0xFE`) without entering any later socket startup phase. The runtime opens `/dev/net/kd/request`, submits the verified async ioctl wrapper at `0x80504FE0`, closes the retained KD descriptor through `0x805048A0`, and then calls verified `open_async` at `0x80504668` for the persistent NUL-terminated `/dev/net/ip/top` path. The live Dolphin proof recorded `r3 = 0x817E3970` for `/dev/net/ip/top\0`, `r4 = 0`, `r5 = 0x817E1B5C`, and `r6 = 0x817E3A60` immediately before the retail call. The `OPEN_IP` submission returned `0`, exactly one callback returned descriptor `11`, generations matched at `4`, `ip_fd` transitioned from `-1` to `11`, and the terminal reports remained stable for more than fifteen seconds with `kd_fd = -1`, `kd_closed = true`, recurring polling still advancing, balanced hook/poll counters, and zero `SO_STARTUP`, `GET_HOST_ID`, socket, bind, receive, or send activity.
+
 ## Cleanup
 
 - remove repository-local build artifacts

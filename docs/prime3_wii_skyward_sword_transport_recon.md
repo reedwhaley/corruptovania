@@ -206,7 +206,8 @@ Verified command numbers:
 - request device `/dev/net/kd/request`
   - `6`: `IOCTL_NWC24_STARTUP`
 - socket device `/dev/net/ip/top`
-  - `31`: `IOCTL_SO_STARTUP`
+- `31`: `IOCTL_SO_STARTUP`
+- `16`: `IOCTL_SO_GETHOSTID`
   - `16`: `IOCTL_SO_GETHOSTID`
   - `15`: `IOCTL_SO_SOCKET`
   - `3`: `IOCTL_SO_CLOSE`
@@ -453,6 +454,9 @@ Recommended minimal direct-IOS interface for Prime 3:
 - close the temporary request descriptor after the callback completes
 - open `/dev/net/ip/top`
 - issue `IOCTL_SO_STARTUP`
+- after startup, issue `IOCTL_SO_GETHOSTID` with `NULL, 0, NULL, 0`
+
+Prime 3's validated developer-only `GET_HOST_ID` proof now matches the reconstructed contract exactly: it submits command `16` to `/dev/net/ip/top` through the verified retail async ioctl wrapper at `0x80504FE0` with `r3 = ip_fd`, `r4 = 16`, `r5 = 0`, `r6 = 0`, `r7 = 0`, `r8 = 0`, `r9 = callback`, and `r10 = userdata`. The asynchronous callback result itself carries the logical unsigned 32-bit IPv4 host ID. Callback result `0` means unavailable; any nonzero 32-bit pattern is preserved exactly and must not be rejected by signed `< 0` logic.
 - optionally read host IP with `IOCTL_SO_GETHOSTID`
 - issue `IOCTL_SO_SOCKET` for UDP
 - issue `IOCTL_SO_BIND`

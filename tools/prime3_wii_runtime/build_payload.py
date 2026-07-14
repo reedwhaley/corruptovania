@@ -262,6 +262,29 @@ RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_RESULT_SYMBOL = "runtime_transport_get_host
 RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_RESULT_SYMBOL = "runtime_transport_get_host_id_callback_result"
 RUNTIME_TRANSPORT_GET_HOST_ID_SUBMIT_GENERATION_SYMBOL = "runtime_transport_get_host_id_submit_generation"
 RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_GENERATION_SYMBOL = "runtime_transport_get_host_id_callback_generation"
+RUNTIME_TRANSPORT_GET_HOST_ID_TARGET_ADDRESS_SYMBOL = "runtime_transport_get_host_id_target_address"
+RUNTIME_TRANSPORT_GET_HOST_ID_COMMAND_SYMBOL = "runtime_transport_get_host_id_command"
+RUNTIME_TRANSPORT_GET_HOST_ID_SUBMITTED_FD_SYMBOL = "runtime_transport_get_host_id_submitted_fd"
+RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_POINTER_SYMBOL = "runtime_transport_get_host_id_callback_pointer"
+RUNTIME_TRANSPORT_GET_HOST_ID_CONTEXT_POINTER_SYMBOL = "runtime_transport_get_host_id_context_pointer"
+RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_EXIT_COUNT_SYMBOL = "runtime_transport_get_host_id_callback_exit_count"
+RUNTIME_TRANSPORT_GET_HOST_ID_STALE_CALLBACK_COUNT_SYMBOL = "runtime_transport_get_host_id_stale_callback_count"
+RUNTIME_TRANSPORT_GET_HOST_ID_DUPLICATE_CALLBACK_COUNT_SYMBOL = "runtime_transport_get_host_id_duplicate_callback_count"
+RUNTIME_TRANSPORT_GET_HOST_ID_SERVICE_STARTED_BEFORE_SUBMIT_SYMBOL = (
+    "runtime_transport_get_host_id_service_started_before_submit"
+)
+RUNTIME_TRANSPORT_GET_HOST_ID_SERVICE_STARTED_AFTER_COMPLETION_SYMBOL = (
+    "runtime_transport_get_host_id_service_started_after_completion"
+)
+RUNTIME_TRANSPORT_IP_FD_BEFORE_GET_HOST_ID_SYMBOL = "runtime_transport_ip_fd_before_get_host_id"
+RUNTIME_TRANSPORT_IP_FD_AFTER_GET_HOST_ID_SYMBOL = "runtime_transport_ip_fd_after_get_host_id"
+RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_BEFORE_SUBMIT_SYMBOL = "runtime_transport_get_host_id_pending_before_submit"
+RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_AFTER_COMPLETION_SYMBOL = (
+    "runtime_transport_get_host_id_pending_after_completion"
+)
+RUNTIME_TRANSPORT_GET_HOST_ID_PHASE_BEFORE_SUBMIT_SYMBOL = "runtime_transport_get_host_id_phase_before_submit"
+RUNTIME_TRANSPORT_GET_HOST_ID_PHASE_AFTER_COMPLETION_SYMBOL = "runtime_transport_get_host_id_phase_after_completion"
+RUNTIME_TRANSPORT_GET_HOST_ID_PRE_CALL_ARGS_SYMBOL = "runtime_transport_get_host_id_pre_call_args"
 RUNTIME_TRANSPORT_SOCKET_SUBMIT_COUNT_SYMBOL = "runtime_transport_socket_submit_count"
 RUNTIME_TRANSPORT_SOCKET_CALLBACK_COUNT_SYMBOL = "runtime_transport_socket_callback_count"
 RUNTIME_TRANSPORT_SOCKET_SUBMIT_RESULT_SYMBOL = "runtime_transport_socket_submit_result"
@@ -279,6 +302,8 @@ RUNTIME_TRANSPORT_KD_CLOSED_SYMBOL = "runtime_transport_kd_closed"
 RUNTIME_TRANSPORT_IP_FD_SYMBOL = "runtime_transport_ip_fd"
 RUNTIME_TRANSPORT_SOCKET_FD_SYMBOL = "runtime_transport_socket_fd"
 RUNTIME_TRANSPORT_HOST_ID_SYMBOL = "runtime_transport_host_id"
+RUNTIME_TRANSPORT_HOST_ID_AVAILABLE_SYMBOL = "runtime_transport_host_id_available"
+RUNTIME_TRANSPORT_HOST_ID_READY_SYMBOL = "runtime_transport_host_id_ready"
 RUNTIME_TRANSPORT_SERVICE_STARTED_SYMBOL = "runtime_transport_service_started"
 RUNTIME_TRANSPORT_BOUND_PORT_SYMBOL = "runtime_transport_bound_port"
 RUNTIME_TRANSPORT_RECEIVE_SUBMIT_COUNT_SYMBOL = "runtime_transport_receive_submit_count"
@@ -402,6 +427,8 @@ class RelocatedRuntimeBuildResult:
     transport_ip_fd_address: int
     transport_socket_fd_address: int
     transport_host_id_address: int
+    transport_host_id_available_address: int
+    transport_host_id_ready_address: int
     transport_service_started_address: int
     transport_bound_port_address: int
     transport_receive_submit_count_address: int
@@ -473,6 +500,24 @@ class RelocatedRuntimeBuildResult:
     transport_get_host_id_callback_result_address: int
     transport_get_host_id_submit_generation_address: int
     transport_get_host_id_callback_generation_address: int
+    transport_get_host_id_target_address: int
+    transport_get_host_id_command_address: int
+    transport_get_host_id_submitted_fd_address: int
+    transport_get_host_id_callback_pointer_address: int
+    transport_get_host_id_context_pointer_address: int
+    transport_get_host_id_callback_exit_count_address: int
+    transport_get_host_id_stale_callback_count_address: int
+    transport_get_host_id_duplicate_callback_count_address: int
+    transport_get_host_id_service_started_before_submit_address: int
+    transport_get_host_id_service_started_after_completion_address: int
+    transport_ip_fd_before_get_host_id_address: int
+    transport_ip_fd_after_get_host_id_address: int
+    transport_get_host_id_pending_before_submit_address: int
+    transport_get_host_id_pending_after_completion_address: int
+    transport_get_host_id_phase_before_submit_address: int
+    transport_get_host_id_phase_after_completion_address: int
+    transport_get_host_id_pre_call_args_address: int
+    transport_get_host_id_pre_call_args_size: int
     transport_socket_submit_result_address: int
     transport_socket_callback_result_address: int
     transport_socket_submit_generation_address: int
@@ -996,6 +1041,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             nwc24_close_once = ios_udp_mode == "retail_wrapper_nwc24_close_kd_once"
             open_ip_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_once"
             so_startup_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
+            get_host_id_once = ios_udp_mode == "retail_wrapper_get_host_id_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
@@ -1006,7 +1052,13 @@ def build_prime3_runtime_payload(  # noqa: C901
                 ip_close_on_success=False,
                 socket_close_on_success=False,
                 terminal_phase_value=(
-                    0xFE if nwc24_ioctl_once or nwc24_close_once or open_ip_once else 18 if so_startup_once else 0x11
+                    0xFE
+                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once
+                    else 18
+                    if so_startup_once
+                    else 19
+                    if get_host_id_once
+                    else 0x11
                 ),
                 terminal_phase_name=(
                     "NWC24_COMPLETE"
@@ -1017,6 +1069,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if open_ip_once
                     else "SO_STARTED"
                     if so_startup_once
+                    else "HOST_ID_READY"
+                    if get_host_id_once
                     else "BOUND_NO_RECV"
                 ),
                 phase_address=relocated_runtime.transport_phase_address,
@@ -1090,6 +1144,10 @@ def build_prime3_runtime_payload(  # noqa: C901
                 socket_fd_size=4,
                 host_id_address=relocated_runtime.transport_host_id_address,
                 host_id_size=4,
+                host_id_available_address=relocated_runtime.transport_host_id_available_address,
+                host_id_available_size=4,
+                host_id_ready_address=relocated_runtime.transport_host_id_ready_address,
+                host_id_ready_size=4,
                 service_started_address=relocated_runtime.transport_service_started_address,
                 service_started_size=4,
                 bound_port_address=relocated_runtime.transport_bound_port_address,
@@ -1246,6 +1304,58 @@ def build_prime3_runtime_payload(  # noqa: C901
                     relocated_runtime.transport_get_host_id_callback_generation_address
                 ),
                 get_host_id_callback_generation_size=4,
+                get_host_id_target_address=relocated_runtime.transport_get_host_id_target_address,
+                get_host_id_target_size=4,
+                get_host_id_command_address=relocated_runtime.transport_get_host_id_command_address,
+                get_host_id_command_size=4,
+                get_host_id_submitted_fd_address=relocated_runtime.transport_get_host_id_submitted_fd_address,
+                get_host_id_submitted_fd_size=4,
+                get_host_id_callback_pointer_address=relocated_runtime.transport_get_host_id_callback_pointer_address,
+                get_host_id_callback_pointer_size=4,
+                get_host_id_context_pointer_address=relocated_runtime.transport_get_host_id_context_pointer_address,
+                get_host_id_context_pointer_size=4,
+                get_host_id_callback_exit_count_address=(
+                    relocated_runtime.transport_get_host_id_callback_exit_count_address
+                ),
+                get_host_id_callback_exit_count_size=4,
+                get_host_id_stale_callback_count_address=(
+                    relocated_runtime.transport_get_host_id_stale_callback_count_address
+                ),
+                get_host_id_stale_callback_count_size=4,
+                get_host_id_duplicate_callback_count_address=(
+                    relocated_runtime.transport_get_host_id_duplicate_callback_count_address
+                ),
+                get_host_id_duplicate_callback_count_size=4,
+                get_host_id_service_started_before_submit_address=(
+                    relocated_runtime.transport_get_host_id_service_started_before_submit_address
+                ),
+                get_host_id_service_started_before_submit_size=4,
+                get_host_id_service_started_after_completion_address=(
+                    relocated_runtime.transport_get_host_id_service_started_after_completion_address
+                ),
+                get_host_id_service_started_after_completion_size=4,
+                ip_fd_before_get_host_id_address=relocated_runtime.transport_ip_fd_before_get_host_id_address,
+                ip_fd_before_get_host_id_size=4,
+                ip_fd_after_get_host_id_address=relocated_runtime.transport_ip_fd_after_get_host_id_address,
+                ip_fd_after_get_host_id_size=4,
+                get_host_id_pending_before_submit_address=(
+                    relocated_runtime.transport_get_host_id_pending_before_submit_address
+                ),
+                get_host_id_pending_before_submit_size=4,
+                get_host_id_pending_after_completion_address=(
+                    relocated_runtime.transport_get_host_id_pending_after_completion_address
+                ),
+                get_host_id_pending_after_completion_size=4,
+                get_host_id_phase_before_submit_address=(
+                    relocated_runtime.transport_get_host_id_phase_before_submit_address
+                ),
+                get_host_id_phase_before_submit_size=4,
+                get_host_id_phase_after_completion_address=(
+                    relocated_runtime.transport_get_host_id_phase_after_completion_address
+                ),
+                get_host_id_phase_after_completion_size=4,
+                get_host_id_pre_call_args_address=relocated_runtime.transport_get_host_id_pre_call_args_address,
+                get_host_id_pre_call_args_size=relocated_runtime.transport_get_host_id_pre_call_args_size,
                 socket_submit_result_address=relocated_runtime.transport_socket_submit_result_address,
                 socket_submit_result_size=4,
                 socket_callback_result_address=relocated_runtime.transport_socket_callback_result_address,
@@ -1815,6 +1925,60 @@ def _build_relocated_runtime(
     transport_get_host_id_callback_generation_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_GENERATION_SYMBOL
     )
+    transport_get_host_id_target_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_TARGET_ADDRESS_SYMBOL
+    )
+    transport_get_host_id_command_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_COMMAND_SYMBOL
+    )
+    transport_get_host_id_submitted_fd_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_SUBMITTED_FD_SYMBOL
+    )
+    transport_get_host_id_callback_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_POINTER_SYMBOL
+    )
+    transport_get_host_id_context_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CONTEXT_POINTER_SYMBOL
+    )
+    transport_get_host_id_callback_exit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_CALLBACK_EXIT_COUNT_SYMBOL
+    )
+    transport_get_host_id_stale_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_STALE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_get_host_id_duplicate_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_DUPLICATE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_get_host_id_service_started_before_submit_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_SERVICE_STARTED_BEFORE_SUBMIT_SYMBOL
+    )
+    transport_get_host_id_service_started_after_completion_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_SERVICE_STARTED_AFTER_COMPLETION_SYMBOL
+    )
+    transport_ip_fd_before_get_host_id_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_IP_FD_BEFORE_GET_HOST_ID_SYMBOL
+    )
+    transport_ip_fd_after_get_host_id_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_IP_FD_AFTER_GET_HOST_ID_SYMBOL
+    )
+    transport_get_host_id_pending_before_submit_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_BEFORE_SUBMIT_SYMBOL
+    )
+    transport_get_host_id_pending_after_completion_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_AFTER_COMPLETION_SYMBOL
+    )
+    transport_get_host_id_phase_before_submit_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_PHASE_BEFORE_SUBMIT_SYMBOL
+    )
+    transport_get_host_id_phase_after_completion_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_PHASE_AFTER_COMPLETION_SYMBOL
+    )
+    transport_get_host_id_pre_call_args_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_PRE_CALL_ARGS_SYMBOL
+    )
+    transport_get_host_id_pre_call_args_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_GET_HOST_ID_PRE_CALL_ARGS_SYMBOL
+    )
     transport_socket_submit_count_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_SOCKET_SUBMIT_COUNT_SYMBOL
     )
@@ -1856,6 +2020,10 @@ def _build_relocated_runtime(
     transport_ip_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_IP_FD_SYMBOL)
     transport_socket_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SOCKET_FD_SYMBOL)
     transport_host_id_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_HOST_ID_SYMBOL)
+    transport_host_id_available_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_HOST_ID_AVAILABLE_SYMBOL
+    )
+    transport_host_id_ready_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_HOST_ID_READY_SYMBOL)
     transport_service_started_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_SERVICE_STARTED_SYMBOL
     )
@@ -2006,6 +2174,8 @@ def _build_relocated_runtime(
         transport_ip_fd_address=transport_ip_fd_address,
         transport_socket_fd_address=transport_socket_fd_address,
         transport_host_id_address=transport_host_id_address,
+        transport_host_id_available_address=transport_host_id_available_address,
+        transport_host_id_ready_address=transport_host_id_ready_address,
         transport_service_started_address=transport_service_started_address,
         transport_bound_port_address=transport_bound_port_address,
         transport_receive_submit_count_address=transport_receive_submit_count_address,
@@ -2079,6 +2249,30 @@ def _build_relocated_runtime(
         transport_get_host_id_callback_result_address=transport_get_host_id_callback_result_address,
         transport_get_host_id_submit_generation_address=transport_get_host_id_submit_generation_address,
         transport_get_host_id_callback_generation_address=transport_get_host_id_callback_generation_address,
+        transport_get_host_id_target_address=transport_get_host_id_target_address,
+        transport_get_host_id_command_address=transport_get_host_id_command_address,
+        transport_get_host_id_submitted_fd_address=transport_get_host_id_submitted_fd_address,
+        transport_get_host_id_callback_pointer_address=transport_get_host_id_callback_pointer_address,
+        transport_get_host_id_context_pointer_address=transport_get_host_id_context_pointer_address,
+        transport_get_host_id_callback_exit_count_address=transport_get_host_id_callback_exit_count_address,
+        transport_get_host_id_stale_callback_count_address=transport_get_host_id_stale_callback_count_address,
+        transport_get_host_id_duplicate_callback_count_address=transport_get_host_id_duplicate_callback_count_address,
+        transport_get_host_id_service_started_before_submit_address=(
+            transport_get_host_id_service_started_before_submit_address
+        ),
+        transport_get_host_id_service_started_after_completion_address=(
+            transport_get_host_id_service_started_after_completion_address
+        ),
+        transport_ip_fd_before_get_host_id_address=transport_ip_fd_before_get_host_id_address,
+        transport_ip_fd_after_get_host_id_address=transport_ip_fd_after_get_host_id_address,
+        transport_get_host_id_pending_before_submit_address=transport_get_host_id_pending_before_submit_address,
+        transport_get_host_id_pending_after_completion_address=(
+            transport_get_host_id_pending_after_completion_address
+        ),
+        transport_get_host_id_phase_before_submit_address=transport_get_host_id_phase_before_submit_address,
+        transport_get_host_id_phase_after_completion_address=transport_get_host_id_phase_after_completion_address,
+        transport_get_host_id_pre_call_args_address=transport_get_host_id_pre_call_args_address,
+        transport_get_host_id_pre_call_args_size=transport_get_host_id_pre_call_args_size,
         transport_socket_submit_result_address=transport_socket_submit_result_address,
         transport_socket_callback_result_address=transport_socket_callback_result_address,
         transport_socket_submit_generation_address=transport_socket_submit_generation_address,

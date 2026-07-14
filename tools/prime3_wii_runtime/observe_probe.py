@@ -56,6 +56,7 @@ TRANSPORT_PHASE_NAMES = {
     8: "WAIT_OPEN_IP",
     9: "SO_STARTUP",
     10: "WAIT_SO_STARTUP",
+    19: "HOST_ID_READY",
     18: "SO_STARTED",
     11: "GET_HOST_ID",
     12: "WAIT_GETHOSTID",
@@ -329,7 +330,7 @@ def observe_probe_memory(
     return result
 
 
-def _read_probe_state(
+def _read_probe_state(  # noqa: C901
     backend: DolphinReadOnlyBackend,
     config: ProbeObservationConfig,
 ) -> ProbeState:
@@ -698,6 +699,11 @@ def _read_probe_state(
                         return None
                     return _runtime_s32(address)
 
+                def optional_u32_bits_from_s32(address: int | None) -> int | None:
+                    if address is None:
+                        return None
+                    return _runtime_s32(address) & 0xFFFFFFFF
+
                 phase_value = _runtime_u32(transport.phase_address)
                 previous_phase = None
                 previous_phase_name = None
@@ -713,6 +719,13 @@ def _read_probe_state(
                 )
                 open_ip_path_address = optional_u32(transport.open_ip_path_pointer_address)
                 open_ip_path_length = optional_u32(transport.open_ip_path_length_address)
+                host_id_value = _runtime_u32(transport.host_id_address)
+                host_id_bytes = [
+                    (host_id_value >> 24) & 0xFF,
+                    (host_id_value >> 16) & 0xFF,
+                    (host_id_value >> 8) & 0xFF,
+                    host_id_value & 0xFF,
+                ]
                 open_ip_path_bounded_string = None
                 open_ip_path_bytes_hex = None
                 if open_ip_path_address is not None and open_ip_path_length is not None:
@@ -778,7 +791,11 @@ def _read_probe_state(
                 "kd_closed": _runtime_u32(transport.kd_closed_address),
                 "ip_fd": _runtime_s32(transport.ip_fd_address),
                 "socket_fd": _runtime_s32(transport.socket_fd_address),
-                "host_id": _runtime_u32(transport.host_id_address),
+                "host_id": host_id_value,
+                "host_id_bytes_be": host_id_bytes,
+                "host_id_dotted_ipv4": ".".join(str(part) for part in host_id_bytes),
+                "host_id_available": optional_u32(transport.host_id_available_address),
+                "host_id_ready": optional_u32(transport.host_id_ready_address),
                 "service_started": optional_u32(transport.service_started_address),
                 "bound_port": _runtime_u32(transport.bound_port_address),
                 "receive_submit_count": _runtime_u32(transport.receive_submit_count_address),
@@ -874,8 +891,49 @@ def _read_probe_state(
                 ),
                 "host_id_submit_result": optional_s32(transport.get_host_id_submit_result_address),
                 "host_id_callback_result": optional_s32(transport.get_host_id_callback_result_address),
+                "host_id_callback_result_u32": optional_u32_bits_from_s32(
+                    transport.get_host_id_callback_result_address
+                ),
                 "host_id_submit_generation": optional_u32(transport.get_host_id_submit_generation_address),
                 "host_id_callback_generation": optional_u32(transport.get_host_id_callback_generation_address),
+                "get_host_id_target_address": optional_u32(transport.get_host_id_target_address),
+                "get_host_id_command": optional_u32(transport.get_host_id_command_address),
+                "get_host_id_submitted_fd": optional_s32(transport.get_host_id_submitted_fd_address),
+                "get_host_id_callback_pointer": optional_u32(transport.get_host_id_callback_pointer_address),
+                "get_host_id_context_pointer": optional_u32(transport.get_host_id_context_pointer_address),
+                "get_host_id_callback_exit_count": optional_u32(transport.get_host_id_callback_exit_count_address),
+                "get_host_id_stale_callback_count": optional_u32(transport.get_host_id_stale_callback_count_address),
+                "get_host_id_duplicate_callback_count": optional_u32(
+                    transport.get_host_id_duplicate_callback_count_address
+                ),
+                "get_host_id_service_started_before_submit": optional_u32(
+                    transport.get_host_id_service_started_before_submit_address
+                ),
+                "get_host_id_service_started_after_completion": optional_u32(
+                    transport.get_host_id_service_started_after_completion_address
+                ),
+                "ip_fd_before_get_host_id": optional_s32(transport.ip_fd_before_get_host_id_address),
+                "ip_fd_after_get_host_id": optional_s32(transport.ip_fd_after_get_host_id_address),
+                "get_host_id_pending_before_submit": optional_u32(
+                    transport.get_host_id_pending_before_submit_address
+                ),
+                "get_host_id_pending_after_completion": optional_u32(
+                    transport.get_host_id_pending_after_completion_address
+                ),
+                "get_host_id_phase_before_submit": optional_u32(transport.get_host_id_phase_before_submit_address),
+                "get_host_id_phase_after_completion": optional_u32(
+                    transport.get_host_id_phase_after_completion_address
+                ),
+                "get_host_id_pre_call_args": (
+                    read_transport_u32_vector(
+                        transport.get_host_id_pre_call_args_address, transport.get_host_id_pre_call_args_size
+                    )
+                    if (
+                        transport.get_host_id_pre_call_args_address is not None
+                        and transport.get_host_id_pre_call_args_size is not None
+                    )
+                    else None
+                ),
                 "socket_submit_result": optional_s32(transport.socket_submit_result_address),
                 "socket_callback_result": optional_s32(transport.socket_callback_result_address),
                 "socket_submit_generation": optional_u32(transport.socket_submit_generation_address),
@@ -1184,9 +1242,61 @@ def _diagnostic_stop_boundary(  # noqa: C901
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_startup_callback"
             return "inside_startup_call"
+        if phase == 11:
+            if _object_as_int(transport["last_submit_result"]) < 0:
+                return "get_host_id_submission_failed"
+            if _object_as_int(transport["get_host_id_submit_count"]) == 0:
+                return "waiting_get_host_id_submission"
+            return "inside_get_host_id_call"
         if phase == 12:
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_host_id_callback"
+            return "inside_host_id_call"
+        if phase == 19:
+            if transport.get("mode") == "retail_wrapper_get_host_id_once":
+                callback_raw_u32 = transport.get("host_id_callback_result_u32")
+                if (
+                    _object_as_int(transport["open_kd_callback_count"]) == 1
+                    and _object_as_int(transport["nwc24_callback_count"]) == 1
+                    and _object_as_int(transport["kd_close_callback_count"]) == 1
+                    and _object_as_int(transport["open_ip_callback_count"]) == 1
+                    and _object_as_int(transport["startup_callback_count"]) == 1
+                    and _object_as_int(transport["get_host_id_submit_count"]) == 1
+                    and _object_as_int(transport["get_host_id_callback_count"]) == 1
+                    and _object_as_int(transport["get_host_id_callback_exit_count"]) == 1
+                    and _object_as_int(transport["get_host_id_target_address"]) == 0x80504FE0
+                    and _object_as_int(transport["get_host_id_command"]) == 16
+                    and _object_as_int(transport["get_host_id_submitted_fd"]) == _object_as_int(transport["ip_fd"])
+                    and transport.get("get_host_id_pre_call_args") == [
+                        _object_as_int(transport["ip_fd"]),
+                        16,
+                        0,
+                        0,
+                        0,
+                        0,
+                        _object_as_int(transport["get_host_id_callback_pointer"]),
+                        _object_as_int(transport["get_host_id_context_pointer"]),
+                    ]
+                    and _object_as_int(transport["host_id_submit_result"]) == 0
+                    and _object_as_int(transport["host_id_submit_generation"])
+                    == _object_as_int(transport["host_id_callback_generation"])
+                    and callback_raw_u32 is not None
+                    and _object_as_int(callback_raw_u32) != 0
+                    and _object_as_int(transport["host_id"]) == _object_as_int(callback_raw_u32)
+                    and _object_as_int(transport["host_id_available"]) != 0
+                    and _object_as_int(transport["host_id_ready"]) != 0
+                    and _object_as_int(transport["kd_fd"]) == -1
+                    and _object_as_int(transport["kd_closed"]) != 0
+                    and _object_as_int(transport["ip_fd"]) >= 0
+                    and _object_as_int(transport["service_started"]) != 0
+                    and _object_as_int(transport["pending_operation"]) == 0
+                    and _object_as_int(transport["socket_submit_count"]) == 0
+                    and _object_as_int(transport["bind_submit_count"]) == 0
+                    and _object_as_int(transport["receive_count"]) == 0
+                    and _object_as_int(transport["send_count"]) == 0
+                    and recurring_execution_continuing
+                ):
+                    return "host_id_ready"
             return "inside_host_id_call"
         if phase == 14:
             if _object_as_int(transport["pending_operation"]) != 0:
@@ -1197,6 +1307,14 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 return "waiting_bind_callback"
             return "inside_bind_call"
         if phase == 0xFF:
+            if (
+                transport.get("mode") == "retail_wrapper_get_host_id_once"
+                and _object_as_int(transport["get_host_id_submit_count"]) == 1
+                and _object_as_int(transport["get_host_id_callback_count"]) == 1
+                and _object_as_int(transport["pending_operation"]) == 0
+                and _object_as_int(transport["host_id"]) == 0
+            ):
+                return "get_host_id_unavailable"
             return "failed_with_result"
     if recurring_execution_continuing:
         return "recurring_execution_continues"

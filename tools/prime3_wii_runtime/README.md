@@ -25,6 +25,7 @@ Transport recon status:
 - `--ios-close-kd-once` is the next developer-only proof: after the successful NWC24 callback, it calls verified `close_async` at `0x805048A0` with `r3=fd`, `r4=callback`, and `r5=project-owned context`, then stops at `KD_CLOSED` without opening IP
 - `--ios-open-ip-once` now selects the combined proof sequence `OPEN_KD -> NWC24_STARTUP -> CLOSE_KD -> OPEN_IP -> IP_OPEN`; it uses `/dev/net/ip/top`, records the `r3..r6` open arguments in runtime state, and stops at terminal `IP_OPEN` without issuing `SO_STARTUP`, `GET_HOST_ID`, socket creation, bind, receive, or send
 - `--ios-so-startup-once` now extends that developer-only sequence through `OPEN_KD -> NWC24_STARTUP -> CLOSE_KD -> OPEN_IP -> SO_STARTUP -> SO_STARTED`; it submits command `31` against the retained `/dev/net/ip/top` descriptor via `0x80504FE0`, records `r3..r10` plus callback/context evidence in runtime state, and stops terminally at `SO_STARTED` without issuing `GET_HOST_ID`, socket creation, bind, receive, or send
+- `--ios-get-host-id-once` now extends that same developer-only sequence through `OPEN_KD -> NWC24_STARTUP -> CLOSE_KD -> OPEN_IP -> SO_STARTUP -> GET_HOST_ID -> HOST_ID_READY`; it submits command `16` against the retained `/dev/net/ip/top` descriptor via `0x80504FE0` with exact `NULL, 0, NULL, 0` request arguments, preserves the callback result as an unsigned 32-bit host ID when nonzero, and stops terminally at `HOST_ID_READY` without issuing socket creation, bind, receive, or send
 - the retail-wrapper metadata is guarded to the NTSC `main.dol` SHA-256 `6b550f221602074747a2e61b0aa064203fd493f6865dfb3b1a912682065e6104`
 
 ## Supported local toolchain
@@ -70,6 +71,7 @@ python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-r
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-close-kd-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-open-ip-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-so-startup-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-get-host-id-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 ```
 
 Artifacts are written to `build/prime3_wii_runtime/` or the requested `--output-dir`:
@@ -104,6 +106,8 @@ This classification is developer-only metadata. The only enabled ioctl consumer 
 The current `--ios-open-ip-once` proof was validated end to end against the rebuilt ISO launched in Dolphin. The live reports show `r3 = 0x817E3970` pointing to `/dev/net/ip/top\0`, `r4 = 0`, `r5 = 0x817E1B5C`, `r6 = 0x817E3A60`, target `0x80504668`, synchronous result `0`, one callback returning descriptor `11`, and stable terminal `IP_OPEN` with `kd_fd = -1`, `kd_closed = true`, `ip_fd = 11`, and zero `SO_STARTUP`, `GET_HOST_ID`, socket, bind, receive, or send submissions.
 
 The current `--ios-so-startup-once` proof was also validated end to end against the rebuilt ISO launched in Dolphin. The live reports show exact async ioctl call shape `r3 = 11`, `r4 = 31`, `r5 = 0`, `r6 = 0`, `r7 = 0`, `r8 = 0`, `r9 = 0x817E1C20`, and `r10 = 0x817E4080` at target `0x80504FE0`, with synchronous result `0`, one callback returning `0`, matching generation `5`, retained `ip_fd = 11`, `service_started = 1`, and stable terminal `SO_STARTED` with zero `GET_HOST_ID`, socket, bind, receive, or send submissions.
+
+The current `--ios-get-host-id-once` proof was also validated end to end against the rebuilt ISO launched in Dolphin. The live reports show exact async ioctl call shape `r3 = 11`, `r4 = 16`, `r5 = 0`, `r6 = 0`, `r7 = 0`, `r8 = 0`, `r9 = 0x817E1C20`, and `r10 = 0x817E4080` at target `0x80504FE0`, with synchronous result `0`, one callback, matching generation `6`, preserved callback bits `0x1AD38AB6`, host-ID bytes `1A D3 8A B6`, dotted IPv4 `26.211.138.182`, retained `ip_fd = 11`, `service_started = 1`, and stable terminal `HOST_ID_READY` with zero socket, bind, receive, or send submissions. For this mode, callback result `0` means host ID unavailable; any nonzero 32-bit bit pattern is preserved exactly and is not rejected because its signed `s32` view could be negative.
 
 ## Manifest contract
 

@@ -644,6 +644,78 @@ def test_runtime_payload_manifest_accepts_nwc24_close_open_ip_startup_terminal_m
     assert parsed.relocated_runtime.transport.startup_pre_call_args_size == 0x20
 
 
+def test_runtime_payload_manifest_accepts_get_host_id_terminal_metadata() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_get_host_id_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_get_host_id_once"
+    transport["kd_close_enabled"] = True
+    transport["terminal_phase_value"] = 19
+    transport["terminal_phase_name"] = "HOST_ID_READY"
+    transport["service_started_address"] = 0x817E1254
+    transport["service_started_size"] = 4
+    transport["host_id_available_address"] = 0x817E1258
+    transport["host_id_available_size"] = 4
+    transport["host_id_ready_address"] = 0x817E125C
+    transport["host_id_ready_size"] = 4
+    transport["get_host_id_submit_result_address"] = 0x817E1260
+    transport["get_host_id_submit_result_size"] = 4
+    transport["get_host_id_callback_result_address"] = 0x817E1264
+    transport["get_host_id_callback_result_size"] = 4
+    transport["get_host_id_submit_generation_address"] = 0x817E1268
+    transport["get_host_id_submit_generation_size"] = 4
+    transport["get_host_id_callback_generation_address"] = 0x817E126C
+    transport["get_host_id_callback_generation_size"] = 4
+    transport["get_host_id_target_address"] = 0x817E1270
+    transport["get_host_id_target_size"] = 4
+    transport["get_host_id_command_address"] = 0x817E1274
+    transport["get_host_id_command_size"] = 4
+    transport["get_host_id_submitted_fd_address"] = 0x817E1278
+    transport["get_host_id_submitted_fd_size"] = 4
+    transport["get_host_id_callback_pointer_address"] = 0x817E127C
+    transport["get_host_id_callback_pointer_size"] = 4
+    transport["get_host_id_context_pointer_address"] = 0x817E1280
+    transport["get_host_id_context_pointer_size"] = 4
+    transport["get_host_id_callback_exit_count_address"] = 0x817E1284
+    transport["get_host_id_callback_exit_count_size"] = 4
+    transport["get_host_id_stale_callback_count_address"] = 0x817E1288
+    transport["get_host_id_stale_callback_count_size"] = 4
+    transport["get_host_id_duplicate_callback_count_address"] = 0x817E128C
+    transport["get_host_id_duplicate_callback_count_size"] = 4
+    transport["get_host_id_service_started_before_submit_address"] = 0x817E1290
+    transport["get_host_id_service_started_before_submit_size"] = 4
+    transport["get_host_id_service_started_after_completion_address"] = 0x817E1294
+    transport["get_host_id_service_started_after_completion_size"] = 4
+    transport["ip_fd_before_get_host_id_address"] = 0x817E1298
+    transport["ip_fd_before_get_host_id_size"] = 4
+    transport["ip_fd_after_get_host_id_address"] = 0x817E129C
+    transport["ip_fd_after_get_host_id_size"] = 4
+    transport["get_host_id_pending_before_submit_address"] = 0x817E12A0
+    transport["get_host_id_pending_before_submit_size"] = 4
+    transport["get_host_id_pending_after_completion_address"] = 0x817E12A4
+    transport["get_host_id_pending_after_completion_size"] = 4
+    transport["get_host_id_phase_before_submit_address"] = 0x817E12A8
+    transport["get_host_id_phase_before_submit_size"] = 4
+    transport["get_host_id_phase_after_completion_address"] = 0x817E12AC
+    transport["get_host_id_phase_after_completion_size"] = 4
+    transport["get_host_id_pre_call_args_address"] = 0x817E12B0
+    transport["get_host_id_pre_call_args_size"] = 0x20
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "HOST_ID_READY"
+    assert parsed.relocated_runtime.transport.get_host_id_pre_call_args_size == 0x20
+
+
 def test_runtime_payload_manifest_rejects_abi_probe_outside_runtime_state() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

@@ -1493,6 +1493,276 @@ def test_observe_probe_reports_terminal_so_started_state() -> None:
     ]
 
 
+def test_observe_probe_reports_host_id_ready_for_high_bit_ipv4() -> None:
+    module = _load_module()
+    runtime_blob_first = bytearray(b"R" * 0x2F0)
+    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    for runtime_blob, poll_value in ((runtime_blob_first, 7), (runtime_blob_second, 11)):
+        _write_u32(runtime_blob, 0x38, 0x434F5059)
+        _write_u32(runtime_blob, 0x3C, 0x52554E21)
+        _write_u32(runtime_blob, 0x40, 1)
+        _write_u32(runtime_blob, 0x44, 0x52544F4B)
+        _write_u32(runtime_blob, 0x48, 0x4252544E)
+        _write_u32(runtime_blob, 0x4C, poll_value)
+        _write_u32(runtime_blob, 0x50, poll_value)
+        _write_u32(runtime_blob, 0x54, poll_value)
+        _install_transport_state(
+            runtime_blob,
+            phase=19,
+            pending_operation=0,
+            open_kd_submit_count=1,
+            open_kd_callback_count=1,
+            nwc24_submit_count=1,
+            nwc24_callback_count=1,
+            nwc24_synchronous_result=0,
+            nwc24_callback_result=0,
+            open_ip_submit_count=1,
+            open_ip_callback_count=1,
+            kd_close_submit_count=1,
+            kd_close_callback_count=1,
+            startup_submit_count=1,
+            startup_callback_count=1,
+            get_host_id_submit_count=1,
+            get_host_id_callback_count=1,
+            kd_fd=-1,
+            kd_closed=1,
+            ip_fd=11,
+            host_id=0xC0A80164,
+            service_started=1,
+        )
+        _write_u32(runtime_blob, 0x254, 0x80504FE0)
+        _write_u32(runtime_blob, 0x258, 16)
+        _write_s32(runtime_blob, 0x25C, 11)
+        _write_u32(runtime_blob, 0x260, 0x817E1010)
+        _write_u32(runtime_blob, 0x264, 0x817E12A0)
+        _write_u32(runtime_blob, 0x268, 1)
+        _write_u32(runtime_blob, 0x26C, 0)
+        _write_u32(runtime_blob, 0x270, 0)
+        _write_u32(runtime_blob, 0x274, 1)
+        _write_u32(runtime_blob, 0x278, 1)
+        _write_s32(runtime_blob, 0x27C, 11)
+        _write_s32(runtime_blob, 0x280, 11)
+        _write_u32(runtime_blob, 0x284, 0)
+        _write_u32(runtime_blob, 0x288, 0)
+        _write_u32(runtime_blob, 0x28C, 11)
+        _write_u32(runtime_blob, 0x290, 12)
+        for offset, value in enumerate((11, 16, 0, 0, 0, 0, 0x817E1010, 0x817E12A0)):
+            _write_u32(runtime_blob, 0x294 + offset * 4, value)
+        _write_u32(runtime_blob, 0x2CC, 1)
+        _write_u32(runtime_blob, 0x2D0, 1)
+        _write_u32(runtime_blob, 0x2D4, 1)
+        _write_s32(runtime_blob, 0x2D8, 0)
+        _write_s32(runtime_blob, 0x2DC, -1062731420)
+        _write_u32(runtime_blob, 0x2E0, 1)
+        _write_u32(runtime_blob, 0x2E4, 1)
+        _install_diagnostics(
+            runtime_blob,
+            hook_wrapper_entry_count=poll_value,
+            hook_wrapper_before_poll_count=poll_value,
+            runtime_poll_entry_count=poll_value,
+            runtime_poll_exit_count=poll_value,
+            state_machine_entry_count=poll_value,
+            state_machine_exit_count=poll_value,
+            ios_submit_attempt_count=5,
+            ios_submit_return_count=5,
+            ios_submit_return_value=0,
+            callback_entry_count=5,
+            callback_exit_count=5,
+            hook_wrapper_after_poll_count=poll_value,
+            hook_wrapper_exit_count=poll_value,
+            last_execution_marker=0xC0DE000D,
+            last_transport_phase_before_step=19,
+            last_transport_phase_after_step=19,
+            callback_result=-1062731420,
+        )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob_first)
+    raw = _relocated_manifest(payload_bytes).to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_get_host_id_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_get_host_id_once"
+    transport["terminal_phase_value"] = 19
+    transport["terminal_phase_name"] = "HOST_ID_READY"
+    transport["service_started_address"] = 0x817E12CC
+    transport["service_started_size"] = 4
+    transport["host_id_available_address"] = 0x817E12D0
+    transport["host_id_available_size"] = 4
+    transport["host_id_ready_address"] = 0x817E12D4
+    transport["host_id_ready_size"] = 4
+    transport["get_host_id_target_address"] = 0x817E1254
+    transport["get_host_id_target_size"] = 4
+    transport["get_host_id_command_address"] = 0x817E1258
+    transport["get_host_id_command_size"] = 4
+    transport["get_host_id_submitted_fd_address"] = 0x817E125C
+    transport["get_host_id_submitted_fd_size"] = 4
+    transport["get_host_id_callback_pointer_address"] = 0x817E1260
+    transport["get_host_id_callback_pointer_size"] = 4
+    transport["get_host_id_context_pointer_address"] = 0x817E1264
+    transport["get_host_id_context_pointer_size"] = 4
+    transport["get_host_id_callback_exit_count_address"] = 0x817E1268
+    transport["get_host_id_callback_exit_count_size"] = 4
+    transport["get_host_id_stale_callback_count_address"] = 0x817E126C
+    transport["get_host_id_stale_callback_count_size"] = 4
+    transport["get_host_id_duplicate_callback_count_address"] = 0x817E1270
+    transport["get_host_id_duplicate_callback_count_size"] = 4
+    transport["get_host_id_service_started_before_submit_address"] = 0x817E1274
+    transport["get_host_id_service_started_before_submit_size"] = 4
+    transport["get_host_id_service_started_after_completion_address"] = 0x817E1278
+    transport["get_host_id_service_started_after_completion_size"] = 4
+    transport["ip_fd_before_get_host_id_address"] = 0x817E127C
+    transport["ip_fd_before_get_host_id_size"] = 4
+    transport["ip_fd_after_get_host_id_address"] = 0x817E1280
+    transport["ip_fd_after_get_host_id_size"] = 4
+    transport["get_host_id_pending_before_submit_address"] = 0x817E1284
+    transport["get_host_id_pending_before_submit_size"] = 4
+    transport["get_host_id_pending_after_completion_address"] = 0x817E1288
+    transport["get_host_id_pending_after_completion_size"] = 4
+    transport["get_host_id_phase_before_submit_address"] = 0x817E128C
+    transport["get_host_id_phase_before_submit_size"] = 4
+    transport["get_host_id_phase_after_completion_address"] = 0x817E1290
+    transport["get_host_id_phase_after_completion_size"] = 4
+    transport["get_host_id_pre_call_args_address"] = 0x817E1294
+    transport["get_host_id_pre_call_args_size"] = 0x20
+    transport["get_host_id_submit_result_address"] = 0x817E12D8
+    transport["get_host_id_submit_result_size"] = 4
+    transport["get_host_id_callback_result_address"] = 0x817E12DC
+    transport["get_host_id_callback_result_size"] = 4
+    transport["get_host_id_submit_generation_address"] = 0x817E12E0
+    transport["get_host_id_submit_generation_size"] = 4
+    transport["get_host_id_callback_generation_address"] = 0x817E12E4
+    transport["get_host_id_callback_generation_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+    manifest = Prime3RuntimePayloadManifest.from_json_dict(raw)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+        repeat_delay_seconds=0.25,
+    )
+    first_memory = _memory_for_config(module, config)
+    second_memory = _memory_for_config(module, config)
+    for memory, runtime_blob in ((first_memory, runtime_blob_first), (second_memory, runtime_blob_second)):
+        _install_bootstrap_diagnostic(memory)
+        memory[0x817E1000] = bytes(runtime_blob)
+    backend = FakeBackend([first_memory, second_memory])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "host_id_ready"
+    assert result["poll_counter_delta"] == 4
+    assert result["recurring_execution_continuing"] is True
+    assert result["relocated_runtime"]["transport"]["host_id"] == 0xC0A80164
+    assert result["relocated_runtime"]["transport"]["host_id_callback_result"] == -1062731420
+    assert result["relocated_runtime"]["transport"]["host_id_callback_result_u32"] == 0xC0A80164
+    assert result["relocated_runtime"]["transport"]["host_id_dotted_ipv4"] == "192.168.1.100"
+    assert result["relocated_runtime"]["transport"]["get_host_id_pre_call_args"] == [
+        11,
+        16,
+        0,
+        0,
+        0,
+        0,
+        0x817E1010,
+        0x817E12A0,
+    ]
+
+
+def test_observe_probe_reports_get_host_id_unavailable() -> None:
+    module = _load_module()
+    runtime_blob = bytearray(b"R" * 0x2F0)
+    _write_u32(runtime_blob, 0x38, 0x434F5059)
+    _write_u32(runtime_blob, 0x3C, 0x52554E21)
+    _write_u32(runtime_blob, 0x40, 1)
+    _write_u32(runtime_blob, 0x44, 0x52544F4B)
+    _write_u32(runtime_blob, 0x48, 0x4252544E)
+    _write_u32(runtime_blob, 0x4C, 7)
+    _write_u32(runtime_blob, 0x50, 7)
+    _write_u32(runtime_blob, 0x54, 7)
+    _install_transport_state(
+        runtime_blob,
+        phase=0xFF,
+        pending_operation=0,
+        open_kd_submit_count=1,
+        open_kd_callback_count=1,
+        nwc24_submit_count=1,
+        nwc24_callback_count=1,
+        open_ip_submit_count=1,
+        open_ip_callback_count=1,
+        kd_close_submit_count=1,
+        kd_close_callback_count=1,
+        startup_submit_count=1,
+        startup_callback_count=1,
+        get_host_id_submit_count=1,
+        get_host_id_callback_count=1,
+        kd_fd=-1,
+        kd_closed=1,
+        ip_fd=11,
+        host_id=0,
+        service_started=1,
+    )
+    _install_diagnostics(
+        runtime_blob,
+        hook_wrapper_entry_count=7,
+        hook_wrapper_before_poll_count=7,
+        runtime_poll_entry_count=7,
+        runtime_poll_exit_count=7,
+        state_machine_entry_count=7,
+        state_machine_exit_count=7,
+        ios_submit_attempt_count=5,
+        ios_submit_return_count=5,
+        ios_submit_return_value=0,
+        callback_entry_count=5,
+        callback_exit_count=5,
+        hook_wrapper_after_poll_count=7,
+        hook_wrapper_exit_count=7,
+        last_execution_marker=0xC0DE000D,
+        last_transport_phase_before_step=0xFF,
+        last_transport_phase_after_step=0xFF,
+        callback_result=0,
+    )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob)
+    raw = _relocated_manifest(payload_bytes).to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_get_host_id_once"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_get_host_id_once"
+    transport["terminal_phase_value"] = 19
+    transport["terminal_phase_name"] = "HOST_ID_READY"
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+    manifest = Prime3RuntimePayloadManifest.from_json_dict(raw)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+    )
+    memory = _memory_for_config(module, config)
+    _install_bootstrap_diagnostic(memory)
+    memory[0x817E1000] = bytes(runtime_blob)
+    backend = FakeBackend(memory)
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "get_host_id_unavailable"
+
+
 @pytest.mark.parametrize(
     ("diagnostics", "expected"),
     [

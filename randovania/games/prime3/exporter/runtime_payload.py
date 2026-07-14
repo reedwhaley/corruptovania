@@ -297,6 +297,10 @@ class Prime3RuntimeTransportMetadata:
     last_receive_preview_size: int
     last_send_preview_address: int
     last_send_preview_size: int
+    host_id_available_address: int | None = None
+    host_id_available_size: int | None = None
+    host_id_ready_address: int | None = None
+    host_id_ready_size: int | None = None
     open_kd_submit_result_address: int | None = None
     open_kd_submit_result_size: int | None = None
     open_kd_callback_result_address: int | None = None
@@ -399,6 +403,40 @@ class Prime3RuntimeTransportMetadata:
     get_host_id_submit_generation_size: int | None = None
     get_host_id_callback_generation_address: int | None = None
     get_host_id_callback_generation_size: int | None = None
+    get_host_id_target_address: int | None = None
+    get_host_id_target_size: int | None = None
+    get_host_id_command_address: int | None = None
+    get_host_id_command_size: int | None = None
+    get_host_id_submitted_fd_address: int | None = None
+    get_host_id_submitted_fd_size: int | None = None
+    get_host_id_callback_pointer_address: int | None = None
+    get_host_id_callback_pointer_size: int | None = None
+    get_host_id_context_pointer_address: int | None = None
+    get_host_id_context_pointer_size: int | None = None
+    get_host_id_callback_exit_count_address: int | None = None
+    get_host_id_callback_exit_count_size: int | None = None
+    get_host_id_stale_callback_count_address: int | None = None
+    get_host_id_stale_callback_count_size: int | None = None
+    get_host_id_duplicate_callback_count_address: int | None = None
+    get_host_id_duplicate_callback_count_size: int | None = None
+    get_host_id_service_started_before_submit_address: int | None = None
+    get_host_id_service_started_before_submit_size: int | None = None
+    get_host_id_service_started_after_completion_address: int | None = None
+    get_host_id_service_started_after_completion_size: int | None = None
+    ip_fd_before_get_host_id_address: int | None = None
+    ip_fd_before_get_host_id_size: int | None = None
+    ip_fd_after_get_host_id_address: int | None = None
+    ip_fd_after_get_host_id_size: int | None = None
+    get_host_id_pending_before_submit_address: int | None = None
+    get_host_id_pending_before_submit_size: int | None = None
+    get_host_id_pending_after_completion_address: int | None = None
+    get_host_id_pending_after_completion_size: int | None = None
+    get_host_id_phase_before_submit_address: int | None = None
+    get_host_id_phase_before_submit_size: int | None = None
+    get_host_id_phase_after_completion_address: int | None = None
+    get_host_id_phase_after_completion_size: int | None = None
+    get_host_id_pre_call_args_address: int | None = None
+    get_host_id_pre_call_args_size: int | None = None
     socket_submit_result_address: int | None = None
     socket_submit_result_size: int | None = None
     socket_callback_result_address: int | None = None
@@ -433,6 +471,7 @@ class Prime3RuntimeTransportMetadata:
         is_nwc24_close_once = self.mode == "retail_wrapper_nwc24_close_kd_once"
         is_nwc24_close_open_ip_once = self.mode == "retail_wrapper_nwc24_close_open_ip_once"
         is_nwc24_close_open_ip_startup_once = self.mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
+        is_get_host_id_once = self.mode == "retail_wrapper_get_host_id_once"
         if is_nwc24_ioctl_once:
             if self.kd_close_enabled:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must not enable kd close.")
@@ -452,6 +491,8 @@ class Prime3RuntimeTransportMetadata:
             self.terminal_phase_value != 18 or self.terminal_phase_name != "SO_STARTED"
         ):
             raise Prime3DolPatchError("NWC24 close-open-ip-startup metadata must use the SO_STARTED terminal phase.")
+        if is_get_host_id_once and (self.terminal_phase_value != 19 or self.terminal_phase_name != "HOST_ID_READY"):
+            raise Prime3DolPatchError("GET_HOST_ID metadata must use the HOST_ID_READY terminal phase.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -785,6 +826,8 @@ class Prime3RuntimeTransportMetadata:
                 self.startup_phase_after_completion_size,
             ),
             ("transport_startup_pre_call_args", self.startup_pre_call_args_address, self.startup_pre_call_args_size),
+            ("transport_host_id_available", self.host_id_available_address, self.host_id_available_size),
+            ("transport_host_id_ready", self.host_id_ready_address, self.host_id_ready_size),
             (
                 "transport_get_host_id_submit_result",
                 self.get_host_id_submit_result_address,
@@ -804,6 +847,83 @@ class Prime3RuntimeTransportMetadata:
                 "transport_get_host_id_callback_generation",
                 self.get_host_id_callback_generation_address,
                 self.get_host_id_callback_generation_size,
+            ),
+            ("transport_get_host_id_target", self.get_host_id_target_address, self.get_host_id_target_size),
+            ("transport_get_host_id_command", self.get_host_id_command_address, self.get_host_id_command_size),
+            (
+                "transport_get_host_id_submitted_fd",
+                self.get_host_id_submitted_fd_address,
+                self.get_host_id_submitted_fd_size,
+            ),
+            (
+                "transport_get_host_id_callback_pointer",
+                self.get_host_id_callback_pointer_address,
+                self.get_host_id_callback_pointer_size,
+            ),
+            (
+                "transport_get_host_id_context_pointer",
+                self.get_host_id_context_pointer_address,
+                self.get_host_id_context_pointer_size,
+            ),
+            (
+                "transport_get_host_id_callback_exit_count",
+                self.get_host_id_callback_exit_count_address,
+                self.get_host_id_callback_exit_count_size,
+            ),
+            (
+                "transport_get_host_id_stale_callback_count",
+                self.get_host_id_stale_callback_count_address,
+                self.get_host_id_stale_callback_count_size,
+            ),
+            (
+                "transport_get_host_id_duplicate_callback_count",
+                self.get_host_id_duplicate_callback_count_address,
+                self.get_host_id_duplicate_callback_count_size,
+            ),
+            (
+                "transport_get_host_id_service_started_before_submit",
+                self.get_host_id_service_started_before_submit_address,
+                self.get_host_id_service_started_before_submit_size,
+            ),
+            (
+                "transport_get_host_id_service_started_after_completion",
+                self.get_host_id_service_started_after_completion_address,
+                self.get_host_id_service_started_after_completion_size,
+            ),
+            (
+                "transport_ip_fd_before_get_host_id",
+                self.ip_fd_before_get_host_id_address,
+                self.ip_fd_before_get_host_id_size,
+            ),
+            (
+                "transport_ip_fd_after_get_host_id",
+                self.ip_fd_after_get_host_id_address,
+                self.ip_fd_after_get_host_id_size,
+            ),
+            (
+                "transport_get_host_id_pending_before_submit",
+                self.get_host_id_pending_before_submit_address,
+                self.get_host_id_pending_before_submit_size,
+            ),
+            (
+                "transport_get_host_id_pending_after_completion",
+                self.get_host_id_pending_after_completion_address,
+                self.get_host_id_pending_after_completion_size,
+            ),
+            (
+                "transport_get_host_id_phase_before_submit",
+                self.get_host_id_phase_before_submit_address,
+                self.get_host_id_phase_before_submit_size,
+            ),
+            (
+                "transport_get_host_id_phase_after_completion",
+                self.get_host_id_phase_after_completion_address,
+                self.get_host_id_phase_after_completion_size,
+            ),
+            (
+                "transport_get_host_id_pre_call_args",
+                self.get_host_id_pre_call_args_address,
+                self.get_host_id_pre_call_args_size,
             ),
             ("transport_socket_submit_result", self.socket_submit_result_address, self.socket_submit_result_size),
             (
@@ -949,6 +1069,10 @@ class Prime3RuntimeTransportMetadata:
             socket_fd_size=_json_int(data, "socket_fd_size"),
             host_id_address=_json_int(data, "host_id_address"),
             host_id_size=_json_int(data, "host_id_size"),
+            host_id_available_address=_json_optional_int(data, "host_id_available_address"),
+            host_id_available_size=_json_optional_int(data, "host_id_available_size"),
+            host_id_ready_address=_json_optional_int(data, "host_id_ready_address"),
+            host_id_ready_size=_json_optional_int(data, "host_id_ready_size"),
             service_started_address=_json_optional_int(data, "service_started_address"),
             service_started_size=_json_optional_int(data, "service_started_size"),
             bound_port_address=_json_int(data, "bound_port_address"),
@@ -1107,6 +1231,64 @@ class Prime3RuntimeTransportMetadata:
                 data, "get_host_id_callback_generation_address"
             ),
             get_host_id_callback_generation_size=_json_optional_int(data, "get_host_id_callback_generation_size"),
+            get_host_id_target_address=_json_optional_int(data, "get_host_id_target_address"),
+            get_host_id_target_size=_json_optional_int(data, "get_host_id_target_size"),
+            get_host_id_command_address=_json_optional_int(data, "get_host_id_command_address"),
+            get_host_id_command_size=_json_optional_int(data, "get_host_id_command_size"),
+            get_host_id_submitted_fd_address=_json_optional_int(data, "get_host_id_submitted_fd_address"),
+            get_host_id_submitted_fd_size=_json_optional_int(data, "get_host_id_submitted_fd_size"),
+            get_host_id_callback_pointer_address=_json_optional_int(data, "get_host_id_callback_pointer_address"),
+            get_host_id_callback_pointer_size=_json_optional_int(data, "get_host_id_callback_pointer_size"),
+            get_host_id_context_pointer_address=_json_optional_int(data, "get_host_id_context_pointer_address"),
+            get_host_id_context_pointer_size=_json_optional_int(data, "get_host_id_context_pointer_size"),
+            get_host_id_callback_exit_count_address=_json_optional_int(data, "get_host_id_callback_exit_count_address"),
+            get_host_id_callback_exit_count_size=_json_optional_int(data, "get_host_id_callback_exit_count_size"),
+            get_host_id_stale_callback_count_address=_json_optional_int(
+                data, "get_host_id_stale_callback_count_address"
+            ),
+            get_host_id_stale_callback_count_size=_json_optional_int(data, "get_host_id_stale_callback_count_size"),
+            get_host_id_duplicate_callback_count_address=_json_optional_int(
+                data, "get_host_id_duplicate_callback_count_address"
+            ),
+            get_host_id_duplicate_callback_count_size=_json_optional_int(
+                data, "get_host_id_duplicate_callback_count_size"
+            ),
+            get_host_id_service_started_before_submit_address=_json_optional_int(
+                data, "get_host_id_service_started_before_submit_address"
+            ),
+            get_host_id_service_started_before_submit_size=_json_optional_int(
+                data, "get_host_id_service_started_before_submit_size"
+            ),
+            get_host_id_service_started_after_completion_address=_json_optional_int(
+                data, "get_host_id_service_started_after_completion_address"
+            ),
+            get_host_id_service_started_after_completion_size=_json_optional_int(
+                data, "get_host_id_service_started_after_completion_size"
+            ),
+            ip_fd_before_get_host_id_address=_json_optional_int(data, "ip_fd_before_get_host_id_address"),
+            ip_fd_before_get_host_id_size=_json_optional_int(data, "ip_fd_before_get_host_id_size"),
+            ip_fd_after_get_host_id_address=_json_optional_int(data, "ip_fd_after_get_host_id_address"),
+            ip_fd_after_get_host_id_size=_json_optional_int(data, "ip_fd_after_get_host_id_size"),
+            get_host_id_pending_before_submit_address=_json_optional_int(
+                data, "get_host_id_pending_before_submit_address"
+            ),
+            get_host_id_pending_before_submit_size=_json_optional_int(data, "get_host_id_pending_before_submit_size"),
+            get_host_id_pending_after_completion_address=_json_optional_int(
+                data, "get_host_id_pending_after_completion_address"
+            ),
+            get_host_id_pending_after_completion_size=_json_optional_int(
+                data, "get_host_id_pending_after_completion_size"
+            ),
+            get_host_id_phase_before_submit_address=_json_optional_int(data, "get_host_id_phase_before_submit_address"),
+            get_host_id_phase_before_submit_size=_json_optional_int(data, "get_host_id_phase_before_submit_size"),
+            get_host_id_phase_after_completion_address=_json_optional_int(
+                data, "get_host_id_phase_after_completion_address"
+            ),
+            get_host_id_phase_after_completion_size=_json_optional_int(
+                data, "get_host_id_phase_after_completion_size"
+            ),
+            get_host_id_pre_call_args_address=_json_optional_int(data, "get_host_id_pre_call_args_address"),
+            get_host_id_pre_call_args_size=_json_optional_int(data, "get_host_id_pre_call_args_size"),
             socket_submit_result_address=_json_optional_int(data, "socket_submit_result_address"),
             socket_submit_result_size=_json_optional_int(data, "socket_submit_result_size"),
             socket_callback_result_address=_json_optional_int(data, "socket_callback_result_address"),

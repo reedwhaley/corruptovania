@@ -2092,6 +2092,102 @@ def test_diagnostic_stop_boundary_classifies_bind_and_cleanup_states() -> None:
     assert bound_no_recv_stable == "bound_no_recv_stable"
 
 
+def test_diagnostic_stop_boundary_classifies_recvfrom_once_states() -> None:
+    module = _load_module()
+    diagnostics = {
+        "counter_consistency": "consistent",
+        "last_execution_marker_name": "wrapper_returning_to_game",
+    }
+    recv_common = {
+        "mode": "retail_wrapper_recvfrom_once",
+        "receive_submit_count": 1,
+        "receive_count": 1,
+        "send_count": 0,
+        "send_submit_count": 0,
+        "ip_close_submit_count": 0,
+        "socket_close_submit_count": 0,
+        "pending_operation": 0,
+        "callback_pending": 0,
+        "last_receive_length": 32,
+    }
+
+    waiting_receive_submission_transport = dict(recv_common)
+    waiting_receive_submission_transport["receive_submit_count"] = 0
+    waiting_receive_submission = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 25, "last_submit_result": 0, **waiting_receive_submission_transport},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    waiting_receive_callback_transport = dict(recv_common)
+    waiting_receive_callback_transport["pending_operation"] = 10
+    waiting_receive_callback = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 26, **waiting_receive_callback_transport},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    received_datagram = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 27, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_submit_failed = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 28, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_async_failed = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 29, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_invalid_positive = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 30, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_oversized_result = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 31, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_stale_callback = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 32, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_duplicate_callback = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 33, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+    receive_cleanup_deferred = module._diagnostic_stop_boundary(
+        diagnostics=diagnostics,
+        transport={"phase": 34, **recv_common},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+
+    assert waiting_receive_submission == "waiting_receive_submission"
+    assert waiting_receive_callback == "waiting_receive_callback"
+    assert received_datagram == "received_datagram"
+    assert receive_submit_failed == "receive_submit_failed"
+    assert receive_async_failed == "receive_async_failed"
+    assert receive_invalid_positive == "receive_invalid_positive"
+    assert receive_oversized_result == "receive_oversized_result"
+    assert receive_stale_callback == "receive_stale_callback"
+    assert receive_duplicate_callback == "receive_duplicate_callback"
+    assert receive_cleanup_deferred == "receive_cleanup_deferred"
+
+
 def test_observe_probe_rejects_short_payload_read() -> None:
     module = _load_module()
     config = _config(module)

@@ -587,8 +587,11 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("Relocated runtime transport metadata requires a mode.")
         if not self.initialization_enabled:
             raise Prime3DolPatchError("Relocated runtime transport metadata must mark initialization_enabled.")
-        if self.receive_enabled:
+        is_recvfrom_once = self.mode == "retail_wrapper_recvfrom_once"
+        if self.receive_enabled and not is_recvfrom_once:
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
+        if is_recvfrom_once and not self.receive_enabled:
+            raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
         if self.send_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
         if not self.nwc24_startup_enabled:
@@ -619,6 +622,10 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("NWC24 close-open-ip-startup metadata must use the SO_STARTED terminal phase.")
         if is_get_host_id_once and (self.terminal_phase_value != 19 or self.terminal_phase_name != "HOST_ID_READY"):
             raise Prime3DolPatchError("GET_HOST_ID metadata must use the HOST_ID_READY terminal phase.")
+        if is_recvfrom_once and (
+            self.terminal_phase_value != 27 or self.terminal_phase_name != "RECEIVED_DATAGRAM"
+        ):
+            raise Prime3DolPatchError("Recvfrom-once metadata must use the RECEIVED_DATAGRAM terminal phase.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."

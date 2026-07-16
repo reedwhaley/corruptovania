@@ -994,6 +994,42 @@ def test_runtime_payload_manifest_rejects_enabled_transport_outside_relocated_co
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def test_runtime_payload_manifest_accepts_recvfrom_once_transport() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_recvfrom_once"
+    transport["receive_enabled"] = True
+    transport["terminal_phase_value"] = 27
+    transport["terminal_phase_name"] = "RECEIVED_DATAGRAM"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.mode == "retail_wrapper_recvfrom_once"
+    assert parsed.relocated_runtime.transport.receive_enabled is True
+
+
+def test_runtime_payload_manifest_rejects_recvfrom_once_without_receive_enabled() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_recvfrom_once"
+    transport["receive_enabled"] = False
+    transport["terminal_phase_value"] = 27
+    transport["terminal_phase_name"] = "RECEIVED_DATAGRAM"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="must enable receive"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

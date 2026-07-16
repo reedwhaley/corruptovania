@@ -12,6 +12,7 @@
 .global runtime_call_retail_read_async
 .global runtime_call_retail_write_async
 .global runtime_call_retail_ios_ioctl_async
+.global runtime_call_retail_ios_ioctlv_async
 .global runtime_call_retail_veneer_selftest
 .global runtime_canary_start
 .global runtime_canary_end
@@ -24,6 +25,7 @@
 .type runtime_call_retail_read_async, @function
 .type runtime_call_retail_write_async, @function
 .type runtime_call_retail_ios_ioctl_async, @function
+.type runtime_call_retail_ios_ioctlv_async, @function
 .type runtime_call_retail_veneer_selftest, @function
 
 runtime_entry:
@@ -183,6 +185,7 @@ retail_call_veneer runtime_call_retail_ios_close_async, PRIME3_RETAIL_IOS_CLOSE_
 retail_call_veneer runtime_call_retail_read_async, PRIME3_RETAIL_IOS_READ_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_write_async, PRIME3_RETAIL_IOS_WRITE_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_ios_ioctl_async, PRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS
+retail_call_veneer runtime_call_retail_ios_ioctlv_async, PRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_veneer_selftest, runtime_local_veneer_selftest_target
 
 .section .runtime_state.canary, "aw", @progbits

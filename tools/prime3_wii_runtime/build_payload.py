@@ -122,6 +122,7 @@ RUNTIME_RETAIL_IOS_CLOSE_VENEER_SYMBOL = "runtime_call_retail_ios_close_async"
 RUNTIME_RETAIL_READ_ASYNC_VENEER_SYMBOL = "runtime_call_retail_read_async"
 RUNTIME_RETAIL_WRITE_ASYNC_VENEER_SYMBOL = "runtime_call_retail_write_async"
 RUNTIME_RETAIL_IOS_IOCTL_ASYNC_VENEER_SYMBOL = "runtime_call_retail_ios_ioctl_async"
+RUNTIME_RETAIL_IOS_IOCTLV_ASYNC_VENEER_SYMBOL = "runtime_call_retail_ios_ioctlv_async"
 RUNTIME_RETAIL_VENEER_SELFTEST_SYMBOL = "runtime_call_retail_veneer_selftest"
 RUNTIME_RETAIL_VENEER_SELFTEST_TARGET_SYMBOL = "runtime_local_veneer_selftest_target"
 RUNTIME_RETAIL_VENEER_SELFTEST_CALLER_SYMBOL = "runtime_run_retail_veneer_selftest"
@@ -687,6 +688,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-get-host-id-once", action="store_true")
     parser.add_argument("--ios-create-socket-once", action="store_true")
     parser.add_argument("--ios-bind-once", action="store_true")
+    parser.add_argument("--ios-recvfrom-once", action="store_true")
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
@@ -815,6 +817,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_get_host_id_once",
         "retail_wrapper_create_socket_once",
         "retail_wrapper_bind_once",
+        "retail_wrapper_recvfrom_once",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1177,10 +1180,11 @@ def build_prime3_runtime_payload(  # noqa: C901
             so_startup_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
             get_host_id_once = ios_udp_mode == "retail_wrapper_get_host_id_once"
             create_socket_once = ios_udp_mode == "retail_wrapper_create_socket_once"
+            recvfrom_once = ios_udp_mode == "retail_wrapper_recvfrom_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
-                receive_enabled=False,
+                receive_enabled=recvfrom_once,
                 send_enabled=False,
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
@@ -1195,6 +1199,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if get_host_id_once
                     else 20
                     if create_socket_once
+                    else 27
+                    if recvfrom_once
                     else 0x11
                 ),
                 terminal_phase_name=(
@@ -1210,6 +1216,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if get_host_id_once
                     else "SOCKET_READY"
                     if create_socket_once
+                    else "RECEIVED_DATAGRAM"
+                    if recvfrom_once
                     else "BOUND_NO_RECV"
                 ),
                 phase_address=relocated_runtime.transport_phase_address,
@@ -1768,6 +1776,7 @@ def _build_relocated_runtime(
         f"-DPRIME3_RETAIL_IOS_READ_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_READ_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_IOS_WRITE_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_WRITE_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS=0x{PRIME3_NTSC_CONFIRMED_IOS_IOCTL_ASYNC_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS=0x{PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS={1 if enable_recurring_hook_diagnostics else 0}",
         f"-DPRIME3_ENABLE_IOS_UDP_DIAGNOSTIC={1 if enable_ios_udp_diagnostic else 0}",
         (
@@ -1787,6 +1796,7 @@ def _build_relocated_runtime(
                 "retail_wrapper_create_socket_once": "8",
                 "retail_wrapper_bind_once": "9",
                 "retail_wrapper_ioctl_async_abi_probe": "10",
+                "retail_wrapper_recvfrom_once": "14",
             }[ios_udp_mode]
         ),
     ]
@@ -3124,6 +3134,7 @@ def _validate_retail_call_veneer_disassembly(
         RUNTIME_RETAIL_READ_ASYNC_VENEER_SYMBOL: wrapper_metadata.read_async_address,
         RUNTIME_RETAIL_WRITE_ASYNC_VENEER_SYMBOL: wrapper_metadata.write_async_address,
         RUNTIME_RETAIL_IOS_IOCTL_ASYNC_VENEER_SYMBOL: wrapper_metadata.confirmed_ioctl_async_address,
+        RUNTIME_RETAIL_IOS_IOCTLV_ASYNC_VENEER_SYMBOL: wrapper_metadata.confirmed_ioctlv_async_address,
         RUNTIME_RETAIL_VENEER_SELFTEST_SYMBOL: selftest_target_address,
     }
     for veneer_name, expected_target in veneer_targets.items():
@@ -3190,6 +3201,7 @@ def main() -> None:
             args.ios_get_host_id_once,
             args.ios_create_socket_once,
             args.ios_bind_once,
+            args.ios_recvfrom_once,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
@@ -3215,6 +3227,8 @@ def main() -> None:
         ios_udp_mode = "retail_wrapper_get_host_id_once"
     elif args.ios_create_socket_once:
         ios_udp_mode = "retail_wrapper_create_socket_once"
+    elif args.ios_recvfrom_once:
+        ios_udp_mode = "retail_wrapper_recvfrom_once"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:

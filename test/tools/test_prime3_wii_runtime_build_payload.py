@@ -484,12 +484,72 @@ def test_build_prime3_runtime_payload_relocated_continue_bind_manifest(tmp_path:
     assert transport.socket_leak_detected_address is not None
 
 
+def test_build_prime3_runtime_payload_relocated_continue_recvfrom_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_recvfrom_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="retail_wrapper_recvfrom_once",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "retail_wrapper_recvfrom_once"
+    assert transport.receive_enabled is True
+    assert transport.send_enabled is False
+    assert transport.terminal_phase_value == 27
+    assert transport.terminal_phase_name == "RECEIVED_DATAGRAM"
+
+
 def test_main_rejects_failed_direct_ios_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_failed_direct_flag")
     monkeypatch.setattr(sys, "argv", ["build_payload.py", "--ios-open-kd-once"])
 
     with pytest.raises(RuntimeError, match="failed direct-submit experiment"):
         module.main()
+
+
+def test_main_selects_recvfrom_once_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_recvfrom_mode")
+    captured: dict[str, object] = {}
+
+    def _fake_build(output_dir: Path, **kwargs):
+        captured["output_dir"] = output_dir
+        captured.update(kwargs)
+        raise RuntimeError("stop after argument selection")
+
+    monkeypatch.setattr(module, "build_prime3_runtime_payload", _fake_build)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-recvfrom-once",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after argument selection"):
+        module.main()
+
+    assert captured["ios_udp_mode"] == "retail_wrapper_recvfrom_once"
+    assert captured["enable_ios_udp_diagnostic"] is True
+    assert captured["payload_mode"] == "relocated_continue"
 
 
 def test_validate_retail_call_veneer_instructions_accepts_balanced_lr_restore() -> None:

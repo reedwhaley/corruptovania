@@ -65,6 +65,16 @@ TRANSPORT_PHASE_NAMES = {
     15: "BIND_SOCKET",
     16: "WAIT_BIND_SOCKET",
     17: "BOUND_NO_RECV",
+    25: "SUBMIT_RECEIVE_ONCE",
+    26: "WAIT_RECEIVE",
+    27: "RECEIVED_DATAGRAM",
+    28: "RECEIVE_SUBMIT_FAILED",
+    29: "RECEIVE_ASYNC_FAILED",
+    30: "RECEIVE_INVALID_POSITIVE",
+    31: "RECEIVE_OVERSIZED_RESULT",
+    32: "RECEIVE_STALE_CALLBACK",
+    33: "RECEIVE_DUPLICATE_CALLBACK",
+    34: "RECEIVE_CLEANUP_DEFERRED",
     21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
     22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
     23: "BIND_FAILED_CLEANED",
@@ -84,6 +94,7 @@ TRANSPORT_OPERATION_NAMES = {
     7: "create_socket",
     8: "bind_socket",
     9: "close_socket_after_bind_failure",
+    10: "receive_socket",
 }
 
 
@@ -1227,6 +1238,48 @@ def _diagnostic_stop_boundary(  # noqa: C901
             ):
                 return "bound_no_recv_stable"
             return "bound_no_recv"
+        if phase == 25:
+            if _object_as_int(transport["last_submit_result"]) < 0:
+                return "receive_submission_failed"
+            if _object_as_int(transport["last_submit_result"]) > 0:
+                return "receive_invalid_positive"
+            if _object_as_int(transport["receive_submit_count"]) == 0:
+                return "waiting_receive_submission"
+            return "inside_receive_call"
+        if phase == 26:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_receive_callback"
+            return "inside_receive_call"
+        if phase == 27:
+            if (
+                transport.get("mode") == "retail_wrapper_recvfrom_once"
+                and _object_as_int(transport["receive_submit_count"]) == 1
+                and _object_as_int(transport["receive_count"]) == 1
+                and _object_as_int(transport["send_count"]) == 0
+                and _object_as_int(transport["send_submit_count"]) == 0
+                and _object_as_int(transport["ip_close_submit_count"]) == 0
+                and _object_as_int(transport["socket_close_submit_count"]) == 0
+                and _object_as_int(transport["pending_operation"]) == 0
+                and _object_as_int(transport["callback_pending"]) == 0
+                and _object_as_int(transport["last_receive_length"]) <= 512
+                and recurring_execution_continuing
+            ):
+                return "received_datagram"
+            return "receive_callback_failed"
+        if phase == 28:
+            return "receive_submit_failed"
+        if phase == 29:
+            return "receive_async_failed"
+        if phase == 30:
+            return "receive_invalid_positive"
+        if phase == 31:
+            return "receive_oversized_result"
+        if phase == 32:
+            return "receive_stale_callback"
+        if phase == 33:
+            return "receive_duplicate_callback"
+        if phase == 34:
+            return "receive_cleanup_deferred"
         if phase == 4:
             if _object_as_int(transport["last_submit_result"]) < 0:
                 return "nwc24_submission_failed"

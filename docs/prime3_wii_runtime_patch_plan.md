@@ -99,6 +99,10 @@ Additional transport evidence now documented:
 - command `15` submission length fixed at `12` bytes even though the persistent request storage occupies `32` bytes
 - no output buffer or host-ID payload is used during socket creation
 - socket callback results are signed descriptors; `0` is valid and negative values remain errors
+- command `2` bind on `/dev/net/ip/top` using a persistent `0x20`-aligned 36-byte request whose exact verified bytes for descriptor `0`, port `43674`, and `INADDR_ANY` are `00 00 00 00 00 00 00 01 08 02 AA 9A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00`
+- bind now records exact command/target, request address, request bytes, port endianness, callback generations, and stale/duplicate callback evidence in the manifest and observer surface
+- bind success requires synchronous result `0` and callback result `0`; positive callback results are rejected as anomalous rather than treated as success
+- bind failure now schedules command `3` socket cleanup on a later recurring poll; cleanup submission or cleanup callback failure records a socket-leak terminal state
 - successful bind-only completion now requires `kd_fd = -1` plus a separate `kd_closed` flag; retaining `kd_fd` after bind is no longer considered correct
 
 The minimal payload:

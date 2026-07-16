@@ -65,6 +65,10 @@ TRANSPORT_PHASE_NAMES = {
     15: "BIND_SOCKET",
     16: "WAIT_BIND_SOCKET",
     17: "BOUND_NO_RECV",
+    21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
+    22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
+    23: "BIND_FAILED_CLEANED",
+    24: "FAILED_SOCKET_LEAK",
     0xFE: "DIAGNOSTIC_COMPLETE",
     0xFF: "FAILED",
     20: "SOCKET_READY",
@@ -79,6 +83,7 @@ TRANSPORT_OPERATION_NAMES = {
     6: "get_host_id",
     7: "create_socket",
     8: "bind_socket",
+    9: "close_socket_after_bind_failure",
 }
 
 
@@ -737,6 +742,29 @@ def _read_probe_state(  # noqa: C901
                         socket_request_logical_size,
                         f"socket request 0x{socket_request_address:08x}",
                     ).hex()
+                bind_request_address = optional_u32(transport.bind_request_address_address)
+                bind_request_logical_size = optional_u32(transport.bind_request_logical_size_address)
+                bind_request_bytes_hex = None
+                bind_request_bytes_be = None
+                if bind_request_address is not None and bind_request_logical_size is not None:
+                    bind_request_bytes = _read_exact(
+                        backend,
+                        bind_request_address,
+                        bind_request_logical_size,
+                        f"bind request 0x{bind_request_address:08x}",
+                    )
+                    bind_request_bytes_hex = bind_request_bytes.hex()
+                    bind_request_bytes_be = list(bind_request_bytes)
+                cleanup_close_request_address = optional_u32(transport.cleanup_close_request_address_address)
+                cleanup_close_request_logical_size = optional_u32(transport.cleanup_close_request_logical_size_address)
+                cleanup_close_request_bytes_hex = None
+                if cleanup_close_request_address is not None and cleanup_close_request_logical_size is not None:
+                    cleanup_close_request_bytes_hex = _read_exact(
+                        backend,
+                        cleanup_close_request_address,
+                        cleanup_close_request_logical_size,
+                        f"cleanup close request 0x{cleanup_close_request_address:08x}",
+                    ).hex()
                 open_ip_path_bounded_string = None
                 open_ip_path_bytes_hex = None
                 if open_ip_path_address is not None and open_ip_path_length is not None:
@@ -798,6 +826,7 @@ def _read_probe_state(  # noqa: C901
                 "socket_callback_count": _runtime_u32(transport.socket_callback_count_address),
                 "bind_submit_count": _runtime_u32(transport.bind_submit_count_address),
                 "bind_callback_count": _runtime_u32(transport.bind_callback_count_address),
+                "cleanup_close_callback_count": optional_u32(transport.cleanup_close_callback_count_address),
                 "kd_fd": _runtime_s32(transport.kd_fd_address),
                 "kd_closed": _runtime_u32(transport.kd_closed_address),
                 "ip_fd": _runtime_s32(transport.ip_fd_address),
@@ -986,6 +1015,88 @@ def _read_probe_state(  # noqa: C901
                 "bind_callback_result": optional_s32(transport.bind_callback_result_address),
                 "bind_submit_generation": optional_u32(transport.bind_submit_generation_address),
                 "bind_callback_generation": optional_u32(transport.bind_callback_generation_address),
+                "bind_target_address": optional_u32(transport.bind_target_address),
+                "bind_command": optional_u32(transport.bind_command_address),
+                "bind_submitted_fd": optional_s32(transport.bind_submitted_fd_address),
+                "bind_callback_pointer": optional_u32(transport.bind_callback_pointer_address),
+                "bind_context_pointer": optional_u32(transport.bind_context_pointer_address),
+                "bind_callback_exit_count": optional_u32(transport.bind_callback_exit_count_address),
+                "bind_stale_callback_count": optional_u32(transport.bind_stale_callback_count_address),
+                "bind_duplicate_callback_count": optional_u32(transport.bind_duplicate_callback_count_address),
+                "bind_request_address": bind_request_address,
+                "bind_request_storage_size": optional_u32(transport.bind_request_storage_size_address),
+                "bind_request_logical_size": bind_request_logical_size,
+                "bind_request_alignment": optional_u32(transport.bind_request_alignment_address),
+                "bind_sockaddr_length": optional_u32(transport.bind_sockaddr_length_address),
+                "bind_family_value": optional_u32(transport.bind_family_value_address),
+                "bind_port_value": optional_u32(transport.bind_port_value_address),
+                "bind_address_value": optional_u32(transport.bind_address_value_address),
+                "bind_request_bytes_hex": bind_request_bytes_hex,
+                "bind_request_bytes_be": bind_request_bytes_be,
+                "bind_request_bytes_address": optional_u32(transport.bind_request_bytes_address),
+                "bind_request_bytes_size": transport.bind_request_bytes_size,
+                "bind_pre_call_args": (
+                    read_transport_u32_vector(
+                        transport.bind_pre_call_args_address,
+                        transport.bind_pre_call_args_size,
+                    )
+                    if (
+                        transport.bind_pre_call_args_address is not None
+                        and transport.bind_pre_call_args_size is not None
+                    )
+                    else None
+                ),
+                "cleanup_close_submit_result": optional_s32(transport.cleanup_close_submit_result_address),
+                "cleanup_close_callback_result": optional_s32(transport.cleanup_close_callback_result_address),
+                "cleanup_close_submit_generation": optional_u32(
+                    transport.cleanup_close_submit_generation_address
+                ),
+                "cleanup_close_callback_generation": optional_u32(
+                    transport.cleanup_close_callback_generation_address
+                ),
+                "cleanup_close_target_address": optional_u32(transport.cleanup_close_target_address),
+                "cleanup_close_command": optional_u32(transport.cleanup_close_command_address),
+                "cleanup_close_submitted_fd": optional_s32(transport.cleanup_close_submitted_fd_address),
+                "cleanup_close_callback_pointer": optional_u32(transport.cleanup_close_callback_pointer_address),
+                "cleanup_close_context_pointer": optional_u32(transport.cleanup_close_context_pointer_address),
+                "cleanup_close_callback_exit_count": optional_u32(
+                    transport.cleanup_close_callback_exit_count_address
+                ),
+                "cleanup_close_stale_callback_count": optional_u32(
+                    transport.cleanup_close_stale_callback_count_address
+                ),
+                "cleanup_close_duplicate_callback_count": optional_u32(
+                    transport.cleanup_close_duplicate_callback_count_address
+                ),
+                "cleanup_close_request_address": cleanup_close_request_address,
+                "cleanup_close_request_storage_size": optional_u32(
+                    transport.cleanup_close_request_storage_size_address
+                ),
+                "cleanup_close_request_logical_size": cleanup_close_request_logical_size,
+                "cleanup_close_request_alignment": optional_u32(transport.cleanup_close_request_alignment_address),
+                "cleanup_close_request_value": optional_s32(transport.cleanup_close_request_value_address),
+                "cleanup_close_request_bytes_hex": cleanup_close_request_bytes_hex,
+                "cleanup_close_request_bytes_address": optional_u32(
+                    transport.cleanup_close_request_bytes_address
+                ),
+                "cleanup_close_request_bytes_size": transport.cleanup_close_request_bytes_size,
+                "cleanup_close_pre_call_args": (
+                    read_transport_u32_vector(
+                        transport.cleanup_close_pre_call_args_address,
+                        transport.cleanup_close_pre_call_args_size,
+                    )
+                    if (
+                        transport.cleanup_close_pre_call_args_address is not None
+                        and transport.cleanup_close_pre_call_args_size is not None
+                    )
+                    else None
+                ),
+                "bound_flag": optional_u32(transport.bound_flag_address),
+                "bound_address": optional_u32(transport.bound_address_address),
+                "socket_closed_after_bind_failure": optional_u32(
+                    transport.socket_closed_after_bind_failure_address
+                ),
+                "socket_leak_detected": optional_u32(transport.socket_leak_detected_address),
             }
 
     boot_info_pointer = low_memory_words["0x800000F4"]
@@ -1101,6 +1212,12 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 and _object_as_int(transport["ip_fd"]) >= 0
                 and _object_as_int(transport["socket_fd"]) >= 0
                 and _object_as_int(transport["bound_port"]) == 43674
+                and (
+                    transport.get("bound_flag") is None or _object_as_int(transport["bound_flag"]) != 0
+                )
+                and (
+                    transport.get("bound_address") is None or _object_as_int(transport["bound_address"]) == 0
+                )
                 and _object_as_int(transport["callback_pending"]) == 0
                 and _object_as_int(transport["receive_submit_count"]) == 0
                 and _object_as_int(transport["send_submit_count"]) == 0
@@ -1293,7 +1410,7 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 return "waiting_get_host_id_submission"
             return "inside_get_host_id_call"
         if phase == 13:
-            if transport.get("mode") == "retail_wrapper_create_socket_once":
+            if transport.get("mode") in {"retail_wrapper_create_socket_once", "retail_wrapper_bind_once"}:
                 if _object_as_int(transport["last_submit_result"]) != 0:
                     return "create_socket_submission_failed"
                 if _object_as_int(transport["socket_submit_count"]) == 0:
@@ -1351,7 +1468,7 @@ def _diagnostic_stop_boundary(  # noqa: C901
                     return "host_id_ready"
             return "inside_host_id_call"
         if phase == 14:
-            if transport.get("mode") == "retail_wrapper_create_socket_once":
+            if transport.get("mode") in {"retail_wrapper_create_socket_once", "retail_wrapper_bind_once"}:
                 if _object_as_int(transport["pending_operation"]) != 0:
                     return "waiting_create_socket_callback"
                 return "inside_create_socket_call"
@@ -1359,7 +1476,7 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 return "waiting_socket_callback"
             return "inside_socket_call"
         if phase == 20:
-            if transport.get("mode") == "retail_wrapper_create_socket_once":
+            if transport.get("mode") in {"retail_wrapper_create_socket_once", "retail_wrapper_bind_once"}:
                 if (
                     _object_as_int(transport["open_kd_callback_count"]) == 1
                     and _object_as_int(transport["nwc24_callback_count"]) == 1
@@ -1409,10 +1526,29 @@ def _diagnostic_stop_boundary(  # noqa: C901
                     return "socket_ready"
                 return "create_socket_callback_failed"
             return "inside_socket_call"
+        if phase == 15:
+            if _object_as_int(transport["last_submit_result"]) != 0:
+                return "bind_submission_failed_cleanup_pending"
+            if _object_as_int(transport["bind_submit_count"]) == 0:
+                return "waiting_bind_submission"
+            return "inside_bind_call"
         if phase == 16:
             if _object_as_int(transport["pending_operation"]) != 0:
                 return "waiting_bind_callback"
             return "inside_bind_call"
+        if phase == 21:
+            callback_result = transport.get("bind_callback_result")
+            if callback_result is not None and _object_as_int(callback_result) != 0:
+                return "bind_callback_failed_cleanup_pending"
+            return "waiting_bind_failure_close_submission"
+        if phase == 22:
+            if _object_as_int(transport["pending_operation"]) != 0:
+                return "waiting_bind_failure_close_callback"
+            return "inside_bind_failure_close_call"
+        if phase == 23:
+            return "bind_failed_cleaned"
+        if phase == 24:
+            return "failed_socket_leak"
         if phase == 0xFF:
             if transport.get("mode") == "retail_wrapper_create_socket_once":
                 if _object_as_int(transport["socket_submit_count"]) == 1:

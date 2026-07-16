@@ -318,6 +318,50 @@ RUNTIME_TRANSPORT_BIND_SUBMIT_RESULT_SYMBOL = "runtime_transport_bind_submit_res
 RUNTIME_TRANSPORT_BIND_CALLBACK_RESULT_SYMBOL = "runtime_transport_bind_callback_result"
 RUNTIME_TRANSPORT_BIND_SUBMIT_GENERATION_SYMBOL = "runtime_transport_bind_submit_generation"
 RUNTIME_TRANSPORT_BIND_CALLBACK_GENERATION_SYMBOL = "runtime_transport_bind_callback_generation"
+RUNTIME_TRANSPORT_BIND_TARGET_ADDRESS_SYMBOL = "runtime_transport_bind_target_address"
+RUNTIME_TRANSPORT_BIND_COMMAND_SYMBOL = "runtime_transport_bind_command"
+RUNTIME_TRANSPORT_BIND_SUBMITTED_FD_SYMBOL = "runtime_transport_bind_submitted_fd"
+RUNTIME_TRANSPORT_BIND_CALLBACK_POINTER_SYMBOL = "runtime_transport_bind_callback_pointer"
+RUNTIME_TRANSPORT_BIND_CONTEXT_POINTER_SYMBOL = "runtime_transport_bind_context_pointer"
+RUNTIME_TRANSPORT_BIND_CALLBACK_EXIT_COUNT_SYMBOL = "runtime_transport_bind_callback_exit_count"
+RUNTIME_TRANSPORT_BIND_STALE_CALLBACK_COUNT_SYMBOL = "runtime_transport_bind_stale_callback_count"
+RUNTIME_TRANSPORT_BIND_DUPLICATE_CALLBACK_COUNT_SYMBOL = "runtime_transport_bind_duplicate_callback_count"
+RUNTIME_TRANSPORT_BIND_REQUEST_ADDRESS_SYMBOL = "runtime_transport_bind_request_address"
+RUNTIME_TRANSPORT_BIND_REQUEST_STORAGE_SIZE_SYMBOL = "runtime_transport_bind_request_storage_size"
+RUNTIME_TRANSPORT_BIND_REQUEST_LOGICAL_SIZE_SYMBOL = "runtime_transport_bind_request_logical_size"
+RUNTIME_TRANSPORT_BIND_REQUEST_ALIGNMENT_SYMBOL = "runtime_transport_bind_request_alignment"
+RUNTIME_TRANSPORT_BIND_SOCKADDR_LENGTH_SYMBOL = "runtime_transport_bind_sockaddr_length"
+RUNTIME_TRANSPORT_BIND_FAMILY_VALUE_SYMBOL = "runtime_transport_bind_family_value"
+RUNTIME_TRANSPORT_BIND_PORT_VALUE_SYMBOL = "runtime_transport_bind_port_value"
+RUNTIME_TRANSPORT_BIND_ADDRESS_VALUE_SYMBOL = "runtime_transport_bind_address_value"
+RUNTIME_TRANSPORT_BIND_REQUEST_BYTES_SYMBOL = "runtime_transport_bind_request_bytes"
+RUNTIME_TRANSPORT_BIND_PRE_CALL_ARGS_SYMBOL = "runtime_transport_bind_pre_call_args"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_COUNT_SYMBOL = "runtime_transport_cleanup_close_callback_count"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_SUBMIT_RESULT_SYMBOL = "runtime_transport_cleanup_close_submit_result"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_RESULT_SYMBOL = "runtime_transport_cleanup_close_callback_result"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_SUBMIT_GENERATION_SYMBOL = "runtime_transport_cleanup_close_submit_generation"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_GENERATION_SYMBOL = "runtime_transport_cleanup_close_callback_generation"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_TARGET_ADDRESS_SYMBOL = "runtime_transport_cleanup_close_target_address"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_COMMAND_SYMBOL = "runtime_transport_cleanup_close_command"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_SUBMITTED_FD_SYMBOL = "runtime_transport_cleanup_close_submitted_fd"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_POINTER_SYMBOL = "runtime_transport_cleanup_close_callback_pointer"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_CONTEXT_POINTER_SYMBOL = "runtime_transport_cleanup_close_context_pointer"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_EXIT_COUNT_SYMBOL = "runtime_transport_cleanup_close_callback_exit_count"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_STALE_CALLBACK_COUNT_SYMBOL = "runtime_transport_cleanup_close_stale_callback_count"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_DUPLICATE_CALLBACK_COUNT_SYMBOL = (
+    "runtime_transport_cleanup_close_duplicate_callback_count"
+)
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_ADDRESS_SYMBOL = "runtime_transport_cleanup_close_request_address"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_STORAGE_SIZE_SYMBOL = "runtime_transport_cleanup_close_request_storage_size"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_LOGICAL_SIZE_SYMBOL = "runtime_transport_cleanup_close_request_logical_size"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_ALIGNMENT_SYMBOL = "runtime_transport_cleanup_close_request_alignment"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_VALUE_SYMBOL = "runtime_transport_cleanup_close_request_value"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_BYTES_SYMBOL = "runtime_transport_cleanup_close_request_bytes"
+RUNTIME_TRANSPORT_CLEANUP_CLOSE_PRE_CALL_ARGS_SYMBOL = "runtime_transport_cleanup_close_pre_call_args"
+RUNTIME_TRANSPORT_BOUND_FLAG_SYMBOL = "runtime_transport_bound_flag"
+RUNTIME_TRANSPORT_BOUND_ADDRESS_SYMBOL = "runtime_transport_bound_address"
+RUNTIME_TRANSPORT_SOCKET_CLOSED_AFTER_BIND_FAILURE_SYMBOL = "runtime_transport_socket_closed_after_bind_failure"
+RUNTIME_TRANSPORT_SOCKET_LEAK_DETECTED_SYMBOL = "runtime_transport_socket_leak_detected"
 RUNTIME_TRANSPORT_KD_FD_SYMBOL = "runtime_transport_kd_fd"
 RUNTIME_TRANSPORT_KD_CLOSED_SYMBOL = "runtime_transport_kd_closed"
 RUNTIME_TRANSPORT_IP_FD_SYMBOL = "runtime_transport_ip_fd"
@@ -570,6 +614,52 @@ class RelocatedRuntimeBuildResult:
     transport_bind_callback_result_address: int
     transport_bind_submit_generation_address: int
     transport_bind_callback_generation_address: int
+    transport_bind_target_address: int
+    transport_bind_command_address: int
+    transport_bind_submitted_fd_address: int
+    transport_bind_callback_pointer_address: int
+    transport_bind_context_pointer_address: int
+    transport_bind_callback_exit_count_address: int
+    transport_bind_stale_callback_count_address: int
+    transport_bind_duplicate_callback_count_address: int
+    transport_bind_request_address_address: int
+    transport_bind_request_storage_size_address: int
+    transport_bind_request_logical_size_address: int
+    transport_bind_request_alignment_address: int
+    transport_bind_sockaddr_length_address: int
+    transport_bind_family_value_address: int
+    transport_bind_port_value_address: int
+    transport_bind_address_value_address: int
+    transport_bind_request_bytes_address: int
+    transport_bind_request_bytes_size: int
+    transport_bind_pre_call_args_address: int
+    transport_bind_pre_call_args_size: int
+    transport_cleanup_close_callback_count_address: int
+    transport_cleanup_close_submit_result_address: int
+    transport_cleanup_close_callback_result_address: int
+    transport_cleanup_close_submit_generation_address: int
+    transport_cleanup_close_callback_generation_address: int
+    transport_cleanup_close_target_address: int
+    transport_cleanup_close_command_address: int
+    transport_cleanup_close_submitted_fd_address: int
+    transport_cleanup_close_callback_pointer_address: int
+    transport_cleanup_close_context_pointer_address: int
+    transport_cleanup_close_callback_exit_count_address: int
+    transport_cleanup_close_stale_callback_count_address: int
+    transport_cleanup_close_duplicate_callback_count_address: int
+    transport_cleanup_close_request_address_address: int
+    transport_cleanup_close_request_storage_size_address: int
+    transport_cleanup_close_request_logical_size_address: int
+    transport_cleanup_close_request_alignment_address: int
+    transport_cleanup_close_request_value_address: int
+    transport_cleanup_close_request_bytes_address: int
+    transport_cleanup_close_request_bytes_size: int
+    transport_cleanup_close_pre_call_args_address: int
+    transport_cleanup_close_pre_call_args_size: int
+    transport_bound_flag_address: int
+    transport_bound_address_address: int
+    transport_socket_closed_after_bind_failure_address: int
+    transport_socket_leak_detected_address: int
     cache_range_start: int
     cache_range_size: int
 
@@ -1465,6 +1555,114 @@ def build_prime3_runtime_payload(  # noqa: C901
                 bind_submit_generation_size=4,
                 bind_callback_generation_address=relocated_runtime.transport_bind_callback_generation_address,
                 bind_callback_generation_size=4,
+                bind_target_address=relocated_runtime.transport_bind_target_address,
+                bind_target_size=4,
+                bind_command_address=relocated_runtime.transport_bind_command_address,
+                bind_command_size=4,
+                bind_submitted_fd_address=relocated_runtime.transport_bind_submitted_fd_address,
+                bind_submitted_fd_size=4,
+                bind_callback_pointer_address=relocated_runtime.transport_bind_callback_pointer_address,
+                bind_callback_pointer_size=4,
+                bind_context_pointer_address=relocated_runtime.transport_bind_context_pointer_address,
+                bind_context_pointer_size=4,
+                bind_callback_exit_count_address=relocated_runtime.transport_bind_callback_exit_count_address,
+                bind_callback_exit_count_size=4,
+                bind_stale_callback_count_address=relocated_runtime.transport_bind_stale_callback_count_address,
+                bind_stale_callback_count_size=4,
+                bind_duplicate_callback_count_address=relocated_runtime.transport_bind_duplicate_callback_count_address,
+                bind_duplicate_callback_count_size=4,
+                bind_request_address_address=relocated_runtime.transport_bind_request_address_address,
+                bind_request_address_size=4,
+                bind_request_storage_size_address=relocated_runtime.transport_bind_request_storage_size_address,
+                bind_request_storage_size_size=4,
+                bind_request_logical_size_address=relocated_runtime.transport_bind_request_logical_size_address,
+                bind_request_logical_size_size=4,
+                bind_request_alignment_address=relocated_runtime.transport_bind_request_alignment_address,
+                bind_request_alignment_size=4,
+                bind_sockaddr_length_address=relocated_runtime.transport_bind_sockaddr_length_address,
+                bind_sockaddr_length_size=4,
+                bind_family_value_address=relocated_runtime.transport_bind_family_value_address,
+                bind_family_value_size=4,
+                bind_port_value_address=relocated_runtime.transport_bind_port_value_address,
+                bind_port_value_size=4,
+                bind_address_value_address=relocated_runtime.transport_bind_address_value_address,
+                bind_address_value_size=4,
+                bind_request_bytes_address=relocated_runtime.transport_bind_request_bytes_address,
+                bind_request_bytes_size=relocated_runtime.transport_bind_request_bytes_size,
+                bind_pre_call_args_address=relocated_runtime.transport_bind_pre_call_args_address,
+                bind_pre_call_args_size=relocated_runtime.transport_bind_pre_call_args_size,
+                cleanup_close_callback_count_address=relocated_runtime.transport_cleanup_close_callback_count_address,
+                cleanup_close_callback_count_size=4,
+                cleanup_close_submit_result_address=relocated_runtime.transport_cleanup_close_submit_result_address,
+                cleanup_close_submit_result_size=4,
+                cleanup_close_callback_result_address=relocated_runtime.transport_cleanup_close_callback_result_address,
+                cleanup_close_callback_result_size=4,
+                cleanup_close_submit_generation_address=(
+                    relocated_runtime.transport_cleanup_close_submit_generation_address
+                ),
+                cleanup_close_submit_generation_size=4,
+                cleanup_close_callback_generation_address=(
+                    relocated_runtime.transport_cleanup_close_callback_generation_address
+                ),
+                cleanup_close_callback_generation_size=4,
+                cleanup_close_target_address=relocated_runtime.transport_cleanup_close_target_address,
+                cleanup_close_target_size=4,
+                cleanup_close_command_address=relocated_runtime.transport_cleanup_close_command_address,
+                cleanup_close_command_size=4,
+                cleanup_close_submitted_fd_address=relocated_runtime.transport_cleanup_close_submitted_fd_address,
+                cleanup_close_submitted_fd_size=4,
+                cleanup_close_callback_pointer_address=(
+                    relocated_runtime.transport_cleanup_close_callback_pointer_address
+                ),
+                cleanup_close_callback_pointer_size=4,
+                cleanup_close_context_pointer_address=(
+                    relocated_runtime.transport_cleanup_close_context_pointer_address
+                ),
+                cleanup_close_context_pointer_size=4,
+                cleanup_close_callback_exit_count_address=(
+                    relocated_runtime.transport_cleanup_close_callback_exit_count_address
+                ),
+                cleanup_close_callback_exit_count_size=4,
+                cleanup_close_stale_callback_count_address=(
+                    relocated_runtime.transport_cleanup_close_stale_callback_count_address
+                ),
+                cleanup_close_stale_callback_count_size=4,
+                cleanup_close_duplicate_callback_count_address=(
+                    relocated_runtime.transport_cleanup_close_duplicate_callback_count_address
+                ),
+                cleanup_close_duplicate_callback_count_size=4,
+                cleanup_close_request_address_address=(
+                    relocated_runtime.transport_cleanup_close_request_address_address
+                ),
+                cleanup_close_request_address_size=4,
+                cleanup_close_request_storage_size_address=(
+                    relocated_runtime.transport_cleanup_close_request_storage_size_address
+                ),
+                cleanup_close_request_storage_size_size=4,
+                cleanup_close_request_logical_size_address=(
+                    relocated_runtime.transport_cleanup_close_request_logical_size_address
+                ),
+                cleanup_close_request_logical_size_size=4,
+                cleanup_close_request_alignment_address=(
+                    relocated_runtime.transport_cleanup_close_request_alignment_address
+                ),
+                cleanup_close_request_alignment_size=4,
+                cleanup_close_request_value_address=relocated_runtime.transport_cleanup_close_request_value_address,
+                cleanup_close_request_value_size=4,
+                cleanup_close_request_bytes_address=relocated_runtime.transport_cleanup_close_request_bytes_address,
+                cleanup_close_request_bytes_size=relocated_runtime.transport_cleanup_close_request_bytes_size,
+                cleanup_close_pre_call_args_address=relocated_runtime.transport_cleanup_close_pre_call_args_address,
+                cleanup_close_pre_call_args_size=relocated_runtime.transport_cleanup_close_pre_call_args_size,
+                bound_flag_address=relocated_runtime.transport_bound_flag_address,
+                bound_flag_size=4,
+                bound_address_address=relocated_runtime.transport_bound_address_address,
+                bound_address_size=4,
+                socket_closed_after_bind_failure_address=(
+                    relocated_runtime.transport_socket_closed_after_bind_failure_address
+                ),
+                socket_closed_after_bind_failure_size=4,
+                socket_leak_detected_address=relocated_runtime.transport_socket_leak_detected_address,
+                socket_leak_detected_size=4,
             )
         relocated_runtime_metadata = Prime3RelocatedRuntimeMetadata(
             mode=payload_mode,
@@ -2175,6 +2373,138 @@ def _build_relocated_runtime(
     transport_bind_callback_generation_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_BIND_CALLBACK_GENERATION_SYMBOL
     )
+    transport_bind_target_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_TARGET_ADDRESS_SYMBOL
+    )
+    transport_bind_command_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_BIND_COMMAND_SYMBOL)
+    transport_bind_submitted_fd_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_SUBMITTED_FD_SYMBOL
+    )
+    transport_bind_callback_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_CALLBACK_POINTER_SYMBOL
+    )
+    transport_bind_context_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_CONTEXT_POINTER_SYMBOL
+    )
+    transport_bind_callback_exit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_CALLBACK_EXIT_COUNT_SYMBOL
+    )
+    transport_bind_stale_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_STALE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_bind_duplicate_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_DUPLICATE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_bind_request_address_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_REQUEST_ADDRESS_SYMBOL
+    )
+    transport_bind_request_storage_size_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_REQUEST_STORAGE_SIZE_SYMBOL
+    )
+    transport_bind_request_logical_size_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_REQUEST_LOGICAL_SIZE_SYMBOL
+    )
+    transport_bind_request_alignment_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_REQUEST_ALIGNMENT_SYMBOL
+    )
+    transport_bind_sockaddr_length_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_SOCKADDR_LENGTH_SYMBOL
+    )
+    transport_bind_family_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_FAMILY_VALUE_SYMBOL
+    )
+    transport_bind_port_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_PORT_VALUE_SYMBOL
+    )
+    transport_bind_address_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_ADDRESS_VALUE_SYMBOL
+    )
+    transport_bind_request_bytes_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_REQUEST_BYTES_SYMBOL
+    )
+    transport_bind_request_bytes_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_REQUEST_BYTES_SYMBOL
+    )
+    transport_bind_pre_call_args_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_PRE_CALL_ARGS_SYMBOL
+    )
+    transport_bind_pre_call_args_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_BIND_PRE_CALL_ARGS_SYMBOL
+    )
+    transport_cleanup_close_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_cleanup_close_submit_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_SUBMIT_RESULT_SYMBOL
+    )
+    transport_cleanup_close_callback_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_RESULT_SYMBOL
+    )
+    transport_cleanup_close_submit_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_SUBMIT_GENERATION_SYMBOL
+    )
+    transport_cleanup_close_callback_generation_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_GENERATION_SYMBOL
+    )
+    transport_cleanup_close_target_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_TARGET_ADDRESS_SYMBOL
+    )
+    transport_cleanup_close_command_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_COMMAND_SYMBOL
+    )
+    transport_cleanup_close_submitted_fd_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_SUBMITTED_FD_SYMBOL
+    )
+    transport_cleanup_close_callback_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_POINTER_SYMBOL
+    )
+    transport_cleanup_close_context_pointer_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_CONTEXT_POINTER_SYMBOL
+    )
+    transport_cleanup_close_callback_exit_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_CALLBACK_EXIT_COUNT_SYMBOL
+    )
+    transport_cleanup_close_stale_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_STALE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_cleanup_close_duplicate_callback_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_DUPLICATE_CALLBACK_COUNT_SYMBOL
+    )
+    transport_cleanup_close_request_address_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_ADDRESS_SYMBOL
+    )
+    transport_cleanup_close_request_storage_size_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_STORAGE_SIZE_SYMBOL
+    )
+    transport_cleanup_close_request_logical_size_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_LOGICAL_SIZE_SYMBOL
+    )
+    transport_cleanup_close_request_alignment_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_ALIGNMENT_SYMBOL
+    )
+    transport_cleanup_close_request_value_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_VALUE_SYMBOL
+    )
+    transport_cleanup_close_request_bytes_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_BYTES_SYMBOL
+    )
+    transport_cleanup_close_request_bytes_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_REQUEST_BYTES_SYMBOL
+    )
+    transport_cleanup_close_pre_call_args_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_PRE_CALL_ARGS_SYMBOL
+    )
+    transport_cleanup_close_pre_call_args_size = _extract_symbol_size(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_CLOSE_PRE_CALL_ARGS_SYMBOL
+    )
+    transport_bound_flag_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_BOUND_FLAG_SYMBOL)
+    transport_bound_address_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_BOUND_ADDRESS_SYMBOL)
+    transport_socket_closed_after_bind_failure_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_CLOSED_AFTER_BIND_FAILURE_SYMBOL
+    )
+    transport_socket_leak_detected_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_LEAK_DETECTED_SYMBOL
+    )
     transport_kd_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_KD_FD_SYMBOL)
     transport_kd_closed_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_KD_CLOSED_SYMBOL)
     transport_ip_fd_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_IP_FD_SYMBOL)
@@ -2464,6 +2794,52 @@ def _build_relocated_runtime(
         transport_bind_callback_result_address=transport_bind_callback_result_address,
         transport_bind_submit_generation_address=transport_bind_submit_generation_address,
         transport_bind_callback_generation_address=transport_bind_callback_generation_address,
+        transport_bind_target_address=transport_bind_target_address,
+        transport_bind_command_address=transport_bind_command_address,
+        transport_bind_submitted_fd_address=transport_bind_submitted_fd_address,
+        transport_bind_callback_pointer_address=transport_bind_callback_pointer_address,
+        transport_bind_context_pointer_address=transport_bind_context_pointer_address,
+        transport_bind_callback_exit_count_address=transport_bind_callback_exit_count_address,
+        transport_bind_stale_callback_count_address=transport_bind_stale_callback_count_address,
+        transport_bind_duplicate_callback_count_address=transport_bind_duplicate_callback_count_address,
+        transport_bind_request_address_address=transport_bind_request_address_address,
+        transport_bind_request_storage_size_address=transport_bind_request_storage_size_address,
+        transport_bind_request_logical_size_address=transport_bind_request_logical_size_address,
+        transport_bind_request_alignment_address=transport_bind_request_alignment_address,
+        transport_bind_sockaddr_length_address=transport_bind_sockaddr_length_address,
+        transport_bind_family_value_address=transport_bind_family_value_address,
+        transport_bind_port_value_address=transport_bind_port_value_address,
+        transport_bind_address_value_address=transport_bind_address_value_address,
+        transport_bind_request_bytes_address=transport_bind_request_bytes_address,
+        transport_bind_request_bytes_size=transport_bind_request_bytes_size,
+        transport_bind_pre_call_args_address=transport_bind_pre_call_args_address,
+        transport_bind_pre_call_args_size=transport_bind_pre_call_args_size,
+        transport_cleanup_close_callback_count_address=transport_cleanup_close_callback_count_address,
+        transport_cleanup_close_submit_result_address=transport_cleanup_close_submit_result_address,
+        transport_cleanup_close_callback_result_address=transport_cleanup_close_callback_result_address,
+        transport_cleanup_close_submit_generation_address=transport_cleanup_close_submit_generation_address,
+        transport_cleanup_close_callback_generation_address=transport_cleanup_close_callback_generation_address,
+        transport_cleanup_close_target_address=transport_cleanup_close_target_address,
+        transport_cleanup_close_command_address=transport_cleanup_close_command_address,
+        transport_cleanup_close_submitted_fd_address=transport_cleanup_close_submitted_fd_address,
+        transport_cleanup_close_callback_pointer_address=transport_cleanup_close_callback_pointer_address,
+        transport_cleanup_close_context_pointer_address=transport_cleanup_close_context_pointer_address,
+        transport_cleanup_close_callback_exit_count_address=transport_cleanup_close_callback_exit_count_address,
+        transport_cleanup_close_stale_callback_count_address=transport_cleanup_close_stale_callback_count_address,
+        transport_cleanup_close_duplicate_callback_count_address=transport_cleanup_close_duplicate_callback_count_address,
+        transport_cleanup_close_request_address_address=transport_cleanup_close_request_address_address,
+        transport_cleanup_close_request_storage_size_address=transport_cleanup_close_request_storage_size_address,
+        transport_cleanup_close_request_logical_size_address=transport_cleanup_close_request_logical_size_address,
+        transport_cleanup_close_request_alignment_address=transport_cleanup_close_request_alignment_address,
+        transport_cleanup_close_request_value_address=transport_cleanup_close_request_value_address,
+        transport_cleanup_close_request_bytes_address=transport_cleanup_close_request_bytes_address,
+        transport_cleanup_close_request_bytes_size=transport_cleanup_close_request_bytes_size,
+        transport_cleanup_close_pre_call_args_address=transport_cleanup_close_pre_call_args_address,
+        transport_cleanup_close_pre_call_args_size=transport_cleanup_close_pre_call_args_size,
+        transport_bound_flag_address=transport_bound_flag_address,
+        transport_bound_address_address=transport_bound_address_address,
+        transport_socket_closed_after_bind_failure_address=transport_socket_closed_after_bind_failure_address,
+        transport_socket_leak_detected_address=transport_socket_leak_detected_address,
         cache_range_start=cache_range_start,
         cache_range_size=cache_range_size,
     )

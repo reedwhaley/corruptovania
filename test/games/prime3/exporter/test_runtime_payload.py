@@ -788,6 +788,119 @@ def test_runtime_payload_manifest_accepts_create_socket_terminal_metadata() -> N
     assert parsed.relocated_runtime.transport.socket_pre_call_args_size == 0x20
 
 
+def test_runtime_payload_manifest_accepts_bind_terminal_metadata() -> None:
+    payload_bytes = b"\x4e\x80\x00\x20" * 512
+    manifest = _make_relocated_manifest(payload_bytes)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_bind_once"
+    relocated["diagnostics"] = diagnostics
+    relocated["embedded_runtime_blob_size"] = 0x4A0
+    relocated["embedded_runtime_blob_sha256"] = hashlib.sha256(payload_bytes[0x1A0:0x620]).hexdigest()
+    relocated["cache_range_size"] = 0x4A0
+    relocated["runtime_state_end"] = 0x817E14A0
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_bind_once"
+    transport["terminal_phase_value"] = 17
+    transport["terminal_phase_name"] = "BOUND_NO_RECV"
+    transport["bind_target_address"] = 0x817E1360
+    transport["bind_target_size"] = 4
+    transport["bind_command_address"] = 0x817E1364
+    transport["bind_command_size"] = 4
+    transport["bind_submitted_fd_address"] = 0x817E1368
+    transport["bind_submitted_fd_size"] = 4
+    transport["bind_callback_pointer_address"] = 0x817E136C
+    transport["bind_callback_pointer_size"] = 4
+    transport["bind_context_pointer_address"] = 0x817E1370
+    transport["bind_context_pointer_size"] = 4
+    transport["bind_callback_exit_count_address"] = 0x817E1374
+    transport["bind_callback_exit_count_size"] = 4
+    transport["bind_stale_callback_count_address"] = 0x817E1378
+    transport["bind_stale_callback_count_size"] = 4
+    transport["bind_duplicate_callback_count_address"] = 0x817E137C
+    transport["bind_duplicate_callback_count_size"] = 4
+    transport["bind_request_address_address"] = 0x817E1380
+    transport["bind_request_address_size"] = 4
+    transport["bind_request_storage_size_address"] = 0x817E1384
+    transport["bind_request_storage_size_size"] = 4
+    transport["bind_request_logical_size_address"] = 0x817E1388
+    transport["bind_request_logical_size_size"] = 4
+    transport["bind_request_alignment_address"] = 0x817E138C
+    transport["bind_request_alignment_size"] = 4
+    transport["bind_sockaddr_length_address"] = 0x817E1390
+    transport["bind_sockaddr_length_size"] = 4
+    transport["bind_family_value_address"] = 0x817E1394
+    transport["bind_family_value_size"] = 4
+    transport["bind_port_value_address"] = 0x817E1398
+    transport["bind_port_value_size"] = 4
+    transport["bind_address_value_address"] = 0x817E139C
+    transport["bind_address_value_size"] = 4
+    transport["bind_request_bytes_address"] = 0x817E13A0
+    transport["bind_request_bytes_size"] = 36
+    transport["bind_pre_call_args_address"] = 0x817E13E0
+    transport["bind_pre_call_args_size"] = 0x20
+    transport["cleanup_close_callback_count_address"] = 0x817E1400
+    transport["cleanup_close_callback_count_size"] = 4
+    transport["cleanup_close_submit_result_address"] = 0x817E1404
+    transport["cleanup_close_submit_result_size"] = 4
+    transport["cleanup_close_callback_result_address"] = 0x817E1408
+    transport["cleanup_close_callback_result_size"] = 4
+    transport["cleanup_close_submit_generation_address"] = 0x817E140C
+    transport["cleanup_close_submit_generation_size"] = 4
+    transport["cleanup_close_callback_generation_address"] = 0x817E1410
+    transport["cleanup_close_callback_generation_size"] = 4
+    transport["cleanup_close_target_address"] = 0x817E1414
+    transport["cleanup_close_target_size"] = 4
+    transport["cleanup_close_command_address"] = 0x817E1418
+    transport["cleanup_close_command_size"] = 4
+    transport["cleanup_close_submitted_fd_address"] = 0x817E141C
+    transport["cleanup_close_submitted_fd_size"] = 4
+    transport["cleanup_close_callback_pointer_address"] = 0x817E1420
+    transport["cleanup_close_callback_pointer_size"] = 4
+    transport["cleanup_close_context_pointer_address"] = 0x817E1424
+    transport["cleanup_close_context_pointer_size"] = 4
+    transport["cleanup_close_callback_exit_count_address"] = 0x817E1428
+    transport["cleanup_close_callback_exit_count_size"] = 4
+    transport["cleanup_close_stale_callback_count_address"] = 0x817E142C
+    transport["cleanup_close_stale_callback_count_size"] = 4
+    transport["cleanup_close_duplicate_callback_count_address"] = 0x817E1430
+    transport["cleanup_close_duplicate_callback_count_size"] = 4
+    transport["cleanup_close_request_address_address"] = 0x817E1434
+    transport["cleanup_close_request_address_size"] = 4
+    transport["cleanup_close_request_storage_size_address"] = 0x817E1438
+    transport["cleanup_close_request_storage_size_size"] = 4
+    transport["cleanup_close_request_logical_size_address"] = 0x817E143C
+    transport["cleanup_close_request_logical_size_size"] = 4
+    transport["cleanup_close_request_alignment_address"] = 0x817E1440
+    transport["cleanup_close_request_alignment_size"] = 4
+    transport["cleanup_close_request_value_address"] = 0x817E1444
+    transport["cleanup_close_request_value_size"] = 4
+    transport["cleanup_close_request_bytes_address"] = 0x817E1448
+    transport["cleanup_close_request_bytes_size"] = 4
+    transport["cleanup_close_pre_call_args_address"] = 0x817E1460
+    transport["cleanup_close_pre_call_args_size"] = 0x20
+    transport["bound_flag_address"] = 0x817E1480
+    transport["bound_flag_size"] = 4
+    transport["bound_address_address"] = 0x817E1484
+    transport["bound_address_size"] = 4
+    transport["socket_closed_after_bind_failure_address"] = 0x817E1488
+    transport["socket_closed_after_bind_failure_size"] = 4
+    transport["socket_leak_detected_address"] = 0x817E148C
+    transport["socket_leak_detected_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.bind_request_bytes_size == 36
+    assert parsed.relocated_runtime.transport.cleanup_close_request_bytes_size == 4
+    assert parsed.relocated_runtime.transport.bound_flag_size == 4
+
+
 def test_runtime_payload_manifest_rejects_abi_probe_outside_runtime_state() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

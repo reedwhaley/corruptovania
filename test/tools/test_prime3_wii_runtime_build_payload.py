@@ -451,6 +451,39 @@ def test_build_prime3_runtime_payload_relocated_continue_create_socket_manifest(
     assert manifest.relocated_runtime.transport.socket_pre_call_args_size == 0x20
 
 
+def test_build_prime3_runtime_payload_relocated_continue_bind_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_bind_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="retail_wrapper_bind_once",
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "retail_wrapper_bind_once"
+    assert transport.terminal_phase_name == "BOUND_NO_RECV"
+    assert transport.bind_target_address is not None
+    assert transport.bind_command_address is not None
+    assert transport.bind_request_logical_size_size == 4
+    assert transport.bind_request_bytes_size == 36
+    assert transport.bind_pre_call_args_size == 0x20
+    assert transport.cleanup_close_request_logical_size_size == 4
+    assert transport.cleanup_close_request_bytes_size == 4
+    assert transport.bound_flag_address is not None
+    assert transport.bound_address_address is not None
+    assert transport.socket_closed_after_bind_failure_address is not None
+    assert transport.socket_leak_detected_address is not None
+
+
 def test_main_rejects_failed_direct_ios_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_failed_direct_flag")
     monkeypatch.setattr(sys, "argv", ["build_payload.py", "--ios-open-kd-once"])

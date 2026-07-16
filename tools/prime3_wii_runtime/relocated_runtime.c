@@ -82,6 +82,10 @@ enum {
     RUNTIME_TRANSPORT_PHASE_SO_STARTED = 18,
     RUNTIME_TRANSPORT_PHASE_HOST_ID_READY = 19,
     RUNTIME_TRANSPORT_PHASE_SOCKET_READY = 20,
+    RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_AFTER_BIND_FAILURE = 21,
+    RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE = 22,
+    RUNTIME_TRANSPORT_PHASE_BIND_FAILED_CLEANED = 23,
+    RUNTIME_TRANSPORT_PHASE_FAILED_SOCKET_LEAK = 24,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -106,6 +110,7 @@ enum {
     RUNTIME_TRANSPORT_OP_GETHOSTID = 6,
     RUNTIME_TRANSPORT_OP_CREATE_SOCKET = 7,
     RUNTIME_TRANSPORT_OP_BIND_SOCKET = 8,
+    RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE = 9,
 };
 
 enum {
@@ -144,6 +149,7 @@ enum {
 enum {
     IOCTL_NWC24_STARTUP = 6,
     IOCTL_SO_BIND = 2,
+    IOCTL_SO_CLOSE = 3,
     IOCTL_SO_SOCKET = 15,
     IOCTL_SO_GETHOSTID = 16,
     IOCTL_SO_STARTUP = 31,
@@ -347,6 +353,50 @@ volatile s32 runtime_transport_bind_submit_result __attribute_section_state__ __
 volatile s32 runtime_transport_bind_callback_result __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_bind_submit_generation __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_bind_callback_generation __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_target_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_command __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_bind_submitted_fd __attribute_section_state__ __attribute_used__ = -1;
+volatile u32 runtime_transport_bind_callback_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_context_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_callback_exit_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_stale_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_duplicate_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_request_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_request_storage_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_request_logical_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_request_alignment __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_sockaddr_length __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_family_value __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_port_value __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bind_address_value __attribute_section_state__ __attribute_used__ = 0;
+volatile u8 runtime_transport_bind_request_bytes[36] __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u32 runtime_transport_bind_pre_call_args[8] __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u32 runtime_transport_cleanup_close_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_cleanup_close_submit_result __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_cleanup_close_callback_result __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_submit_generation __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_callback_generation __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_target_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_command __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_cleanup_close_submitted_fd __attribute_section_state__ __attribute_used__ = -1;
+volatile u32 runtime_transport_cleanup_close_callback_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_context_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_callback_exit_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_stale_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_duplicate_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_request_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_request_storage_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_request_logical_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_close_request_alignment __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_cleanup_close_request_value __attribute_section_state__ __attribute_used__ = -1;
+volatile u8 runtime_transport_cleanup_close_request_bytes[4] __attribute_section_state_aligned_32__ __attribute_used__
+    = {0};
+volatile u32 runtime_transport_cleanup_close_pre_call_args[8] __attribute_section_state_aligned_32__
+    __attribute_used__ = {0};
+volatile u32 runtime_transport_bound_flag __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_bound_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_socket_closed_after_bind_failure __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_socket_leak_detected __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_kd_fd __attribute_section_state__ __attribute_used__ = -1;
 volatile u32 runtime_transport_kd_closed __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_ip_fd __attribute_section_state__ __attribute_used__ = -1;
@@ -388,9 +438,14 @@ static volatile runtime_operation_context runtime_transport_get_host_id_context
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static volatile runtime_operation_context runtime_transport_socket_context
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+static volatile runtime_operation_context runtime_transport_bind_context
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+static volatile runtime_operation_context runtime_transport_cleanup_close_context
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static runtime_socket_request runtime_transport_socket_request __attribute_section_state_aligned_32__ __attribute_used__
     = {0};
 static runtime_bind_params runtime_transport_bind_params __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+static volatile s32 runtime_transport_cleanup_close_request __attribute_section_state_aligned_32__ __attribute_used__ = -1;
 
 static void runtime_memzero(volatile void* destination, u32 size) __attribute_section_code__;
 static void runtime_memcpy(volatile void* destination, const volatile void* source, u32 size) __attribute_section_code__;
@@ -472,6 +527,8 @@ static void runtime_sync_open_ip_context_evidence(void) __attribute_section_code
 static void runtime_sync_startup_context_evidence(void) __attribute_section_code__;
 static void runtime_sync_get_host_id_context_evidence(void) __attribute_section_code__;
 static void runtime_sync_socket_context_evidence(void) __attribute_section_code__;
+static void runtime_sync_bind_context_evidence(void) __attribute_section_code__;
+static void runtime_sync_cleanup_close_context_evidence(void) __attribute_section_code__;
 static u32 runtime_digest_words(const volatile u8* source, u32 size) __attribute_section_code__;
 u32 runtime_abi_probe_expected_return_value __attribute_section_state__ __attribute_used__ = 0x13579BDFU;
 s32 runtime_local_veneer_selftest_target(
@@ -789,6 +846,8 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
             || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_STARTUP
             || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_GETHOSTID
             || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET
+            || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET
+            || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
         ) {
             volatile runtime_operation_context* context = runtime_transport_pending_operation
                 == RUNTIME_TRANSPORT_OP_NWC24_STARTUP ? &runtime_transport_nwc24_context
@@ -800,7 +859,11 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
                             ? &runtime_transport_startup_context
                             : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_GETHOSTID
                                 ? &runtime_transport_get_host_id_context
-                                : &runtime_transport_socket_context;
+                                : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET
+                                    ? &runtime_transport_socket_context
+                                    : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET
+                                        ? &runtime_transport_bind_context
+                                        : &runtime_transport_cleanup_close_context;
             if (usrdata == (void*)context) {
                 context->duplicate_callback_count += 1;
                 if (context == &runtime_transport_open_ip_context) {
@@ -811,6 +874,10 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
                     runtime_sync_get_host_id_context_evidence();
                 } else if (context == &runtime_transport_socket_context) {
                     runtime_sync_socket_context_evidence();
+                } else if (context == &runtime_transport_bind_context) {
+                    runtime_sync_bind_context_evidence();
+                } else if (context == &runtime_transport_cleanup_close_context) {
+                    runtime_sync_cleanup_close_context_evidence();
                 }
             }
         }
@@ -825,6 +892,8 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
         || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_STARTUP
         || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_GETHOSTID
         || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET
+        || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET
+        || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
     ) {
         volatile runtime_operation_context* context = runtime_transport_pending_operation
             == RUNTIME_TRANSPORT_OP_NWC24_STARTUP ? &runtime_transport_nwc24_context
@@ -836,7 +905,11 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
                         ? &runtime_transport_startup_context
                         : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_GETHOSTID
                             ? &runtime_transport_get_host_id_context
-                            : &runtime_transport_socket_context;
+                            : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET
+                                ? &runtime_transport_socket_context
+                                : runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET
+                                    ? &runtime_transport_bind_context
+                                    : &runtime_transport_cleanup_close_context;
         if (usrdata != (void*)context) {
             context->stale_callback_count += 1;
             if (context == &runtime_transport_open_ip_context) {
@@ -847,6 +920,10 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
                 runtime_sync_get_host_id_context_evidence();
             } else if (context == &runtime_transport_socket_context) {
                 runtime_sync_socket_context_evidence();
+            } else if (context == &runtime_transport_bind_context) {
+                runtime_sync_bind_context_evidence();
+            } else if (context == &runtime_transport_cleanup_close_context) {
+                runtime_sync_cleanup_close_context_evidence();
             }
             runtime_transport_rejected_callback_count += 1;
             return 0;
@@ -862,6 +939,10 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
                 runtime_sync_get_host_id_context_evidence();
             } else if (context == &runtime_transport_socket_context) {
                 runtime_sync_socket_context_evidence();
+            } else if (context == &runtime_transport_bind_context) {
+                runtime_sync_bind_context_evidence();
+            } else if (context == &runtime_transport_cleanup_close_context) {
+                runtime_sync_cleanup_close_context_evidence();
             }
             runtime_transport_rejected_callback_count += 1;
             return 0;
@@ -876,6 +957,10 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
                 runtime_sync_get_host_id_context_evidence();
             } else if (context == &runtime_transport_socket_context) {
                 runtime_sync_socket_context_evidence();
+            } else if (context == &runtime_transport_bind_context) {
+                runtime_sync_bind_context_evidence();
+            } else if (context == &runtime_transport_cleanup_close_context) {
+                runtime_sync_cleanup_close_context_evidence();
             }
             runtime_transport_rejected_callback_count += 1;
             return 0;
@@ -905,6 +990,12 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET) {
         runtime_transport_socket_context.callback_exit_count += 1;
         runtime_sync_socket_context_evidence();
+    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
+        runtime_transport_bind_context.callback_exit_count += 1;
+        runtime_sync_bind_context_evidence();
+    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        runtime_transport_cleanup_close_context.callback_exit_count += 1;
+        runtime_sync_cleanup_close_context_evidence();
     }
     runtime_diag_increment(&runtime_callback_exit_count);
     return 0;
@@ -935,7 +1026,8 @@ static s32 runtime_submit_open(const char* path, u32 operation, u32 next_phase)
             !(runtime_transport_is_nwc24_close_open_ip_once_mode()
                 || runtime_transport_is_nwc24_close_open_ip_startup_once_mode()
                 || runtime_transport_is_get_host_id_once_mode()
-                || runtime_transport_is_create_socket_once_mode())
+                || runtime_transport_is_create_socket_once_mode()
+                || runtime_transport_is_bind_once_mode())
             || runtime_transport_kd_fd != -1 || runtime_transport_kd_closed == 0 || runtime_transport_ip_fd != -1
         ) {
             runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
@@ -995,7 +1087,8 @@ static s32 runtime_submit_close(s32 fd, u32 operation, u32 next_phase)
         !(runtime_transport_is_nwc24_close_kd_once_mode() || runtime_transport_is_nwc24_close_open_ip_once_mode()
             || runtime_transport_is_nwc24_close_open_ip_startup_once_mode()
             || runtime_transport_is_get_host_id_once_mode()
-            || runtime_transport_is_create_socket_once_mode())
+            || runtime_transport_is_create_socket_once_mode()
+            || runtime_transport_is_bind_once_mode())
         || operation != RUNTIME_TRANSPORT_OP_CLOSE_KD
         || fd < 0
         || fd != runtime_transport_kd_fd
@@ -1060,7 +1153,8 @@ static s32 runtime_submit_ioctl(
                 || runtime_transport_is_nwc24_close_open_ip_once_mode()
                 || runtime_transport_is_nwc24_close_open_ip_startup_once_mode()
                 || runtime_transport_is_get_host_id_once_mode()
-                || runtime_transport_is_create_socket_once_mode())
+                || runtime_transport_is_create_socket_once_mode()
+                || runtime_transport_is_bind_once_mode())
             || fd < 0
             || ioctl != IOCTL_NWC24_STARTUP
             || buffer_in != 0
@@ -1080,7 +1174,8 @@ static s32 runtime_submit_ioctl(
             !(runtime_transport_is_startup_once_mode()
                 || runtime_transport_is_nwc24_close_open_ip_startup_once_mode()
                 || runtime_transport_is_get_host_id_once_mode()
-                || runtime_transport_is_create_socket_once_mode())
+                || runtime_transport_is_create_socket_once_mode()
+                || runtime_transport_is_bind_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_STARTUP
@@ -1122,7 +1217,9 @@ static s32 runtime_submit_ioctl(
         runtime_sync_startup_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_GETHOSTID) {
         if (
-            !(runtime_transport_is_get_host_id_once_mode() || runtime_transport_is_create_socket_once_mode())
+            !(runtime_transport_is_get_host_id_once_mode()
+                || runtime_transport_is_create_socket_once_mode()
+                || runtime_transport_is_bind_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_GETHOSTID
@@ -1164,7 +1261,7 @@ static s32 runtime_submit_ioctl(
         runtime_sync_get_host_id_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET) {
         if (
-            !runtime_transport_is_create_socket_once_mode()
+            !(runtime_transport_is_create_socket_once_mode() || runtime_transport_is_bind_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_SOCKET
@@ -1217,6 +1314,109 @@ static s32 runtime_submit_ioctl(
         runtime_memzero(&runtime_transport_socket_context, sizeof(runtime_transport_socket_context));
         runtime_transport_socket_context.expected_generation = runtime_transport_pending_generation + 1;
         runtime_sync_socket_context_evidence();
+    } else if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
+        if (
+            !runtime_transport_is_bind_once_mode()
+            || fd < 0
+            || fd != runtime_transport_ip_fd
+            || ioctl != IOCTL_SO_BIND
+            || buffer_in != &runtime_transport_bind_params
+            || len_in != 36
+            || buffer_io != 0
+            || len_io != 0
+            || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
+            || runtime_transport_bind_submit_count != 1
+            || runtime_transport_socket_ready == 0
+            || runtime_transport_socket_fd < 0
+            || runtime_transport_get_host_id_callback_count != 1
+            || runtime_transport_host_id_ready == 0
+            || runtime_transport_service_started == 0
+            || runtime_transport_kd_fd != -1
+            || runtime_transport_kd_closed == 0
+        ) {
+            runtime_transport_last_ios_result = -1;
+            runtime_transport_last_submit_result = -1;
+            runtime_record_submit_evidence(operation, -1, runtime_transport_pending_generation);
+            runtime_diag_record_submit_return(-1);
+            return -1;
+        }
+        runtime_transport_bind_target_address = RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS;
+        runtime_transport_bind_command = (u32)ioctl;
+        runtime_transport_bind_submitted_fd = fd;
+        runtime_transport_bind_callback_pointer = (u32)runtime_ios_callback;
+        runtime_transport_bind_context_pointer = (u32)&runtime_transport_bind_context;
+        runtime_transport_bind_request_address = (u32)&runtime_transport_bind_params;
+        runtime_transport_bind_request_storage_size = sizeof(runtime_transport_bind_params);
+        runtime_transport_bind_request_logical_size = 36;
+        runtime_transport_bind_request_alignment = 0x20;
+        runtime_transport_bind_sockaddr_length = runtime_transport_bind_params.name[0];
+        runtime_transport_bind_family_value = runtime_transport_bind_params.name[1];
+        runtime_transport_bind_port_value =
+            ((u32)runtime_transport_bind_params.name[2] << 8) | (u32)runtime_transport_bind_params.name[3];
+        runtime_transport_bind_address_value =
+            ((u32)runtime_transport_bind_params.name[4] << 24) | ((u32)runtime_transport_bind_params.name[5] << 16)
+            | ((u32)runtime_transport_bind_params.name[6] << 8) | (u32)runtime_transport_bind_params.name[7];
+        runtime_memcpy(
+            runtime_transport_bind_request_bytes,
+            (volatile const void*)&runtime_transport_bind_params,
+            36
+        );
+        runtime_transport_bind_pre_call_args[0] = (u32)fd;
+        runtime_transport_bind_pre_call_args[1] = (u32)ioctl;
+        runtime_transport_bind_pre_call_args[2] = (u32)buffer_in;
+        runtime_transport_bind_pre_call_args[3] = (u32)len_in;
+        runtime_transport_bind_pre_call_args[4] = (u32)buffer_io;
+        runtime_transport_bind_pre_call_args[5] = (u32)len_io;
+        runtime_transport_bind_pre_call_args[6] = (u32)runtime_ios_callback;
+        runtime_transport_bind_pre_call_args[7] = (u32)&runtime_transport_bind_context;
+        runtime_memzero(&runtime_transport_bind_context, sizeof(runtime_transport_bind_context));
+        runtime_transport_bind_context.expected_generation = runtime_transport_pending_generation + 1;
+        runtime_sync_bind_context_evidence();
+    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        if (
+            !runtime_transport_is_bind_once_mode()
+            || fd < 0
+            || fd != runtime_transport_ip_fd
+            || ioctl != IOCTL_SO_CLOSE
+            || buffer_in != &runtime_transport_cleanup_close_request
+            || len_in != 4
+            || buffer_io != 0
+            || len_io != 0
+            || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
+            || runtime_transport_socket_fd < 0
+        ) {
+            runtime_transport_last_ios_result = -1;
+            runtime_transport_last_submit_result = -1;
+            runtime_record_submit_evidence(operation, -1, runtime_transport_pending_generation);
+            runtime_diag_record_submit_return(-1);
+            return -1;
+        }
+        runtime_transport_cleanup_close_target_address = RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS;
+        runtime_transport_cleanup_close_command = (u32)ioctl;
+        runtime_transport_cleanup_close_submitted_fd = fd;
+        runtime_transport_cleanup_close_callback_pointer = (u32)runtime_ios_callback;
+        runtime_transport_cleanup_close_context_pointer = (u32)&runtime_transport_cleanup_close_context;
+        runtime_transport_cleanup_close_request_address = (u32)&runtime_transport_cleanup_close_request;
+        runtime_transport_cleanup_close_request_storage_size = sizeof(runtime_transport_cleanup_close_request);
+        runtime_transport_cleanup_close_request_logical_size = 4;
+        runtime_transport_cleanup_close_request_alignment = 0x20;
+        runtime_transport_cleanup_close_request_value = runtime_transport_cleanup_close_request;
+        runtime_memcpy(
+            runtime_transport_cleanup_close_request_bytes,
+            (volatile const void*)&runtime_transport_cleanup_close_request,
+            4
+        );
+        runtime_transport_cleanup_close_pre_call_args[0] = (u32)fd;
+        runtime_transport_cleanup_close_pre_call_args[1] = (u32)ioctl;
+        runtime_transport_cleanup_close_pre_call_args[2] = (u32)buffer_in;
+        runtime_transport_cleanup_close_pre_call_args[3] = (u32)len_in;
+        runtime_transport_cleanup_close_pre_call_args[4] = (u32)buffer_io;
+        runtime_transport_cleanup_close_pre_call_args[5] = (u32)len_io;
+        runtime_transport_cleanup_close_pre_call_args[6] = (u32)runtime_ios_callback;
+        runtime_transport_cleanup_close_pre_call_args[7] = (u32)&runtime_transport_cleanup_close_context;
+        runtime_memzero(&runtime_transport_cleanup_close_context, sizeof(runtime_transport_cleanup_close_context));
+        runtime_transport_cleanup_close_context.expected_generation = runtime_transport_pending_generation + 1;
+        runtime_sync_cleanup_close_context_evidence();
     } else {
         runtime_transport_last_ios_result = -1;
         runtime_transport_last_submit_result = -1;
@@ -1255,6 +1455,24 @@ static s32 runtime_submit_ioctl(
         runtime_transport_socket_context.callback_exit_count = 0;
         runtime_transport_socket_context.stale_callback_count = 0;
         runtime_transport_socket_context.duplicate_callback_count = 0;
+    } else if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
+        runtime_transport_bind_context.expected_generation = runtime_transport_pending_generation;
+        runtime_transport_bind_context.completion_generation = 0;
+        runtime_transport_bind_context.completion_flag = 0;
+        runtime_transport_bind_context.completion_result = 0;
+        runtime_transport_bind_context.callback_entry_count = 0;
+        runtime_transport_bind_context.callback_exit_count = 0;
+        runtime_transport_bind_context.stale_callback_count = 0;
+        runtime_transport_bind_context.duplicate_callback_count = 0;
+    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        runtime_transport_cleanup_close_context.expected_generation = runtime_transport_pending_generation;
+        runtime_transport_cleanup_close_context.completion_generation = 0;
+        runtime_transport_cleanup_close_context.completion_flag = 0;
+        runtime_transport_cleanup_close_context.completion_result = 0;
+        runtime_transport_cleanup_close_context.callback_entry_count = 0;
+        runtime_transport_cleanup_close_context.callback_exit_count = 0;
+        runtime_transport_cleanup_close_context.stale_callback_count = 0;
+        runtime_transport_cleanup_close_context.duplicate_callback_count = 0;
     } else {
         runtime_transport_get_host_id_context.expected_generation = runtime_transport_pending_generation;
         runtime_transport_get_host_id_context.completion_generation = 0;
@@ -1279,7 +1497,11 @@ static s32 runtime_submit_ioctl(
                 ? (void*)&runtime_transport_startup_context
                 : operation == RUNTIME_TRANSPORT_OP_GETHOSTID
                     ? (void*)&runtime_transport_get_host_id_context
-                    : (void*)&runtime_transport_socket_context
+                    : operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET
+                        ? (void*)&runtime_transport_socket_context
+                        : operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET
+                            ? (void*)&runtime_transport_bind_context
+                            : (void*)&runtime_transport_cleanup_close_context
     );
     runtime_diag_increment(&runtime_c_after_veneer_call_count);
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_C_AFTER_VENEER_CALL);
@@ -1288,7 +1510,7 @@ static s32 runtime_submit_ioctl(
     runtime_diag_record_submit_return(result);
     if (
         (operation == RUNTIME_TRANSPORT_OP_CREATE_SOCKET && result != 0)
-        || (operation != RUNTIME_TRANSPORT_OP_CREATE_SOCKET && result < 0)
+        || (operation != RUNTIME_TRANSPORT_OP_CREATE_SOCKET && result != 0)
     ) {
         runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
         return -1;
@@ -1377,6 +1599,8 @@ static void runtime_record_operation_callback(void)
         runtime_transport_socket_fd_after_completion = runtime_transport_socket_fd;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         runtime_transport_bind_callback_count += 1;
+    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        runtime_transport_cleanup_close_callback_count += 1;
     }
 }
 
@@ -1406,6 +1630,9 @@ static void runtime_record_submit_evidence(u32 operation, s32 result, u32 genera
     } else if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         runtime_transport_bind_submit_result = result;
         runtime_transport_bind_submit_generation = generation;
+    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        runtime_transport_cleanup_close_submit_result = result;
+        runtime_transport_cleanup_close_submit_generation = generation;
     }
 }
 
@@ -1435,6 +1662,9 @@ static void runtime_record_callback_evidence(u32 operation, s32 result, u32 gene
     } else if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         runtime_transport_bind_callback_result = result;
         runtime_transport_bind_callback_generation = generation;
+    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        runtime_transport_cleanup_close_callback_result = result;
+        runtime_transport_cleanup_close_callback_generation = generation;
     }
 }
 
@@ -1464,6 +1694,21 @@ static void runtime_sync_socket_context_evidence(void)
     runtime_transport_socket_callback_exit_count = runtime_transport_socket_context.callback_exit_count;
     runtime_transport_socket_stale_callback_count = runtime_transport_socket_context.stale_callback_count;
     runtime_transport_socket_duplicate_callback_count = runtime_transport_socket_context.duplicate_callback_count;
+}
+
+static void runtime_sync_bind_context_evidence(void)
+{
+    runtime_transport_bind_callback_exit_count = runtime_transport_bind_context.callback_exit_count;
+    runtime_transport_bind_stale_callback_count = runtime_transport_bind_context.stale_callback_count;
+    runtime_transport_bind_duplicate_callback_count = runtime_transport_bind_context.duplicate_callback_count;
+}
+
+static void runtime_sync_cleanup_close_context_evidence(void)
+{
+    runtime_transport_cleanup_close_callback_exit_count = runtime_transport_cleanup_close_context.callback_exit_count;
+    runtime_transport_cleanup_close_stale_callback_count = runtime_transport_cleanup_close_context.stale_callback_count;
+    runtime_transport_cleanup_close_duplicate_callback_count =
+        runtime_transport_cleanup_close_context.duplicate_callback_count;
 }
 #endif
 
@@ -1641,6 +1886,51 @@ void runtime_entry_impl(void)
     runtime_transport_bind_callback_result = 0;
     runtime_transport_bind_submit_generation = 0;
     runtime_transport_bind_callback_generation = 0;
+    runtime_transport_bind_target_address = 0;
+    runtime_transport_bind_command = 0;
+    runtime_transport_bind_submitted_fd = -1;
+    runtime_transport_bind_callback_pointer = 0;
+    runtime_transport_bind_context_pointer = 0;
+    runtime_transport_bind_callback_exit_count = 0;
+    runtime_transport_bind_stale_callback_count = 0;
+    runtime_transport_bind_duplicate_callback_count = 0;
+    runtime_transport_bind_request_address = 0;
+    runtime_transport_bind_request_storage_size = 0;
+    runtime_transport_bind_request_logical_size = 0;
+    runtime_transport_bind_request_alignment = 0;
+    runtime_transport_bind_sockaddr_length = 0;
+    runtime_transport_bind_family_value = 0;
+    runtime_transport_bind_port_value = 0;
+    runtime_transport_bind_address_value = 0;
+    runtime_memzero(runtime_transport_bind_request_bytes, sizeof(runtime_transport_bind_request_bytes));
+    runtime_memzero(runtime_transport_bind_pre_call_args, sizeof(runtime_transport_bind_pre_call_args));
+    runtime_transport_cleanup_close_callback_count = 0;
+    runtime_transport_cleanup_close_submit_result = 0;
+    runtime_transport_cleanup_close_callback_result = 0;
+    runtime_transport_cleanup_close_submit_generation = 0;
+    runtime_transport_cleanup_close_callback_generation = 0;
+    runtime_transport_cleanup_close_target_address = 0;
+    runtime_transport_cleanup_close_command = 0;
+    runtime_transport_cleanup_close_submitted_fd = -1;
+    runtime_transport_cleanup_close_callback_pointer = 0;
+    runtime_transport_cleanup_close_context_pointer = 0;
+    runtime_transport_cleanup_close_callback_exit_count = 0;
+    runtime_transport_cleanup_close_stale_callback_count = 0;
+    runtime_transport_cleanup_close_duplicate_callback_count = 0;
+    runtime_transport_cleanup_close_request_address = 0;
+    runtime_transport_cleanup_close_request_storage_size = 0;
+    runtime_transport_cleanup_close_request_logical_size = 0;
+    runtime_transport_cleanup_close_request_alignment = 0;
+    runtime_transport_cleanup_close_request_value = -1;
+    runtime_memzero(
+        runtime_transport_cleanup_close_request_bytes,
+        sizeof(runtime_transport_cleanup_close_request_bytes)
+    );
+    runtime_memzero(runtime_transport_cleanup_close_pre_call_args, sizeof(runtime_transport_cleanup_close_pre_call_args));
+    runtime_transport_bound_flag = 0;
+    runtime_transport_bound_address = 0;
+    runtime_transport_socket_closed_after_bind_failure = 0;
+    runtime_transport_socket_leak_detected = 0;
     runtime_transport_kd_fd = -1;
     runtime_transport_kd_closed = 0;
     runtime_transport_ip_fd = -1;
@@ -1671,8 +1961,11 @@ void runtime_entry_impl(void)
     runtime_memzero(&runtime_transport_startup_context, sizeof(runtime_transport_startup_context));
     runtime_memzero(&runtime_transport_get_host_id_context, sizeof(runtime_transport_get_host_id_context));
     runtime_memzero(&runtime_transport_socket_context, sizeof(runtime_transport_socket_context));
+    runtime_memzero(&runtime_transport_bind_context, sizeof(runtime_transport_bind_context));
+    runtime_memzero(&runtime_transport_cleanup_close_context, sizeof(runtime_transport_cleanup_close_context));
     runtime_memzero(&runtime_transport_socket_request, sizeof(runtime_transport_socket_request));
     runtime_memzero(&runtime_transport_bind_params, sizeof(runtime_transport_bind_params));
+    runtime_transport_cleanup_close_request = -1;
 #if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
     runtime_transport_phase = RUNTIME_TRANSPORT_PHASE_OPEN_KD;
     runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_INIT;
@@ -1812,7 +2105,7 @@ void runtime_poll_entry_impl(void)
             }
             runtime_transport_host_id_available = 1;
             runtime_transport_host_id_ready = 1;
-            if (runtime_transport_is_create_socket_once_mode()) {
+            if (runtime_transport_is_create_socket_once_mode() || runtime_transport_is_bind_once_mode()) {
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
             } else {
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_HOST_ID_READY, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
@@ -1837,17 +2130,35 @@ void runtime_poll_entry_impl(void)
                 goto runtime_poll_exit;
             }
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BIND_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
+            goto runtime_poll_exit;
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET) {
-            if (runtime_transport_last_ios_result < 0) {
-                runtime_record_socket_error(runtime_transport_last_ios_result);
+            if (runtime_transport_last_ios_result != 0) {
+                runtime_transport_socket_closed_after_bind_failure = 0;
+                runtime_transport_socket_leak_detected = 0;
+                runtime_set_phase(
+                    RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_AFTER_BIND_FAILURE,
+                    RUNTIME_TRANSPORT_POLL_ACTION_ERROR
+                );
                 goto runtime_poll_exit;
             }
             runtime_transport_bound_port = RUNTIME_UDP_PORT;
-            if (runtime_transport_is_bind_once_mode()) {
-                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            runtime_transport_bound_address = INADDR_ANY;
+            runtime_transport_bound_flag = 1;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            goto runtime_poll_exit;
+        } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+            if (runtime_transport_last_ios_result != 0) {
+                runtime_transport_socket_leak_detected = 1;
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED_SOCKET_LEAK, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
                 goto runtime_poll_exit;
             }
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
+            runtime_transport_socket_fd = -1;
+            runtime_transport_socket_fd_after_completion = -1;
+            runtime_transport_socket_ready = 0;
+            runtime_transport_socket_descriptor_valid = 0;
+            runtime_transport_socket_closed_after_bind_failure = 1;
+            runtime_transport_socket_leak_detected = 0;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BIND_FAILED_CLEANED, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
             goto runtime_poll_exit;
         }
     }
@@ -1981,7 +2292,7 @@ void runtime_poll_entry_impl(void)
         runtime_copy_sockaddr_in(
             runtime_transport_bind_params.name,
             INADDR_ANY,
-            runtime_bswap16((u16)RUNTIME_UDP_PORT)
+            (u16)RUNTIME_UDP_PORT
         );
         runtime_transport_bind_submit_count += 1;
         if (
@@ -1989,18 +2300,51 @@ void runtime_poll_entry_impl(void)
                 runtime_transport_ip_fd,
                 IOCTL_SO_BIND,
                 &runtime_transport_bind_params,
-                sizeof(runtime_transport_bind_params),
+                36,
                 0,
                 0,
                 RUNTIME_TRANSPORT_OP_BIND_SOCKET,
                 RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET
             ) < 0
         ) {
-            runtime_record_socket_error(runtime_transport_last_submit_result);
+            runtime_transport_socket_closed_after_bind_failure = 0;
+            runtime_transport_socket_leak_detected = 0;
+            runtime_set_phase(
+                RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_AFTER_BIND_FAILURE,
+                RUNTIME_TRANSPORT_POLL_ACTION_ERROR
+            );
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+        runtime_transport_cleanup_close_request = runtime_transport_socket_fd;
+        runtime_transport_cleanup_close_request_value = runtime_transport_cleanup_close_request;
+        runtime_transport_socket_close_submit_count += 1;
+        if (
+            runtime_submit_ioctl(
+                runtime_transport_ip_fd,
+                IOCTL_SO_CLOSE,
+                &runtime_transport_cleanup_close_request,
+                4,
+                0,
+                0,
+                RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE,
+                RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE
+            ) < 0
+        ) {
+            runtime_transport_socket_leak_detected = 1;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED_SOCKET_LEAK, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
         }
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV) {
+        runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
+        goto runtime_poll_exit;
+    }
+    if (
+        runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_BIND_FAILED_CLEANED
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_FAILED_SOCKET_LEAK
+    ) {
         runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
         goto runtime_poll_exit;
     }

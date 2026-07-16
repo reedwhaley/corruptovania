@@ -250,6 +250,19 @@ For the bounded Wii transport proof, the expected initialization-only terminal s
 - valid retained `ip_fd` and `socket_fd`
 - zero receive, send, IP-close, and socket-close submissions
 
+For `--ios-bind-once`, the verified live bind contract is now:
+
+- target `0x80504FE0`
+- command `2`
+- exact pre-call ABI `r3 = ip_fd`, `r4 = 2`, `r5 = bind request`, `r6 = 36`, `r7 = 0`, `r8 = 0`, `r9 = bind callback`, `r10 = bind context`
+- exact 36-byte request for descriptor `0`, port `43674`, and `INADDR_ANY`:
+  - `00000000000000010802AA9A000000000000000000000000000000000000000000000000`
+- corrected port bytes `AA 9A`; the earlier `9A AA` serialization was wrong
+- success requires synchronous result `0` and callback result `0`
+- positive callback results are rejected as anomalous
+- the observer intentionally reports immediate `bound_no_recv` and later `bound_no_recv_stable` once recurring polling continues across repeated reads
+- synthetic coverage now also tracks later-poll command-`3` cleanup after bind failure and the distinct leak terminal when cleanup submission or callback fails
+
 For `--ios-nwc24-via-retail-ioctl-once`, the narrower terminal state is `NWC24_COMPLETE` (`0xFE`): `/dev/net/kd/request` remains open, exactly one command-6 ioctl has been submitted via `0x80504FE0`, and no close, IP, socket, receive, or send operation is submitted. The wrapper ABI is `r3..r10 = fd, command, input, input_length, output, output_length, callback, userdata`; `0x80504A08` remains classified as async read.
 
 For `--ios-close-kd-once`, the sequence extends only through `KD_CLOSED` (`0xFE`). The verified async close wrapper is `0x805048A0..0x80504960`, operation `2`, with `r3=fd`, `r4=completion`, and `r5=userdata`. The retail dispatcher owns the lower request; the relocated close context remains allocated until its callback. The successful local proof returned `0` synchronously and through one callback, then retained `kd_fd=-1`, `kd_closed=true`, and zero IP/receive/send submissions.

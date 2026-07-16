@@ -495,6 +495,90 @@ class Prime3RuntimeTransportMetadata:
     bind_submit_generation_size: int | None = None
     bind_callback_generation_address: int | None = None
     bind_callback_generation_size: int | None = None
+    bind_target_address: int | None = None
+    bind_target_size: int | None = None
+    bind_command_address: int | None = None
+    bind_command_size: int | None = None
+    bind_submitted_fd_address: int | None = None
+    bind_submitted_fd_size: int | None = None
+    bind_callback_pointer_address: int | None = None
+    bind_callback_pointer_size: int | None = None
+    bind_context_pointer_address: int | None = None
+    bind_context_pointer_size: int | None = None
+    bind_callback_exit_count_address: int | None = None
+    bind_callback_exit_count_size: int | None = None
+    bind_stale_callback_count_address: int | None = None
+    bind_stale_callback_count_size: int | None = None
+    bind_duplicate_callback_count_address: int | None = None
+    bind_duplicate_callback_count_size: int | None = None
+    bind_request_address_address: int | None = None
+    bind_request_address_size: int | None = None
+    bind_request_storage_size_address: int | None = None
+    bind_request_storage_size_size: int | None = None
+    bind_request_logical_size_address: int | None = None
+    bind_request_logical_size_size: int | None = None
+    bind_request_alignment_address: int | None = None
+    bind_request_alignment_size: int | None = None
+    bind_sockaddr_length_address: int | None = None
+    bind_sockaddr_length_size: int | None = None
+    bind_family_value_address: int | None = None
+    bind_family_value_size: int | None = None
+    bind_port_value_address: int | None = None
+    bind_port_value_size: int | None = None
+    bind_address_value_address: int | None = None
+    bind_address_value_size: int | None = None
+    bind_request_bytes_address: int | None = None
+    bind_request_bytes_size: int | None = None
+    bind_pre_call_args_address: int | None = None
+    bind_pre_call_args_size: int | None = None
+    cleanup_close_callback_count_address: int | None = None
+    cleanup_close_callback_count_size: int | None = None
+    cleanup_close_submit_result_address: int | None = None
+    cleanup_close_submit_result_size: int | None = None
+    cleanup_close_callback_result_address: int | None = None
+    cleanup_close_callback_result_size: int | None = None
+    cleanup_close_submit_generation_address: int | None = None
+    cleanup_close_submit_generation_size: int | None = None
+    cleanup_close_callback_generation_address: int | None = None
+    cleanup_close_callback_generation_size: int | None = None
+    cleanup_close_target_address: int | None = None
+    cleanup_close_target_size: int | None = None
+    cleanup_close_command_address: int | None = None
+    cleanup_close_command_size: int | None = None
+    cleanup_close_submitted_fd_address: int | None = None
+    cleanup_close_submitted_fd_size: int | None = None
+    cleanup_close_callback_pointer_address: int | None = None
+    cleanup_close_callback_pointer_size: int | None = None
+    cleanup_close_context_pointer_address: int | None = None
+    cleanup_close_context_pointer_size: int | None = None
+    cleanup_close_callback_exit_count_address: int | None = None
+    cleanup_close_callback_exit_count_size: int | None = None
+    cleanup_close_stale_callback_count_address: int | None = None
+    cleanup_close_stale_callback_count_size: int | None = None
+    cleanup_close_duplicate_callback_count_address: int | None = None
+    cleanup_close_duplicate_callback_count_size: int | None = None
+    cleanup_close_request_address_address: int | None = None
+    cleanup_close_request_address_size: int | None = None
+    cleanup_close_request_storage_size_address: int | None = None
+    cleanup_close_request_storage_size_size: int | None = None
+    cleanup_close_request_logical_size_address: int | None = None
+    cleanup_close_request_logical_size_size: int | None = None
+    cleanup_close_request_alignment_address: int | None = None
+    cleanup_close_request_alignment_size: int | None = None
+    cleanup_close_request_value_address: int | None = None
+    cleanup_close_request_value_size: int | None = None
+    cleanup_close_request_bytes_address: int | None = None
+    cleanup_close_request_bytes_size: int | None = None
+    cleanup_close_pre_call_args_address: int | None = None
+    cleanup_close_pre_call_args_size: int | None = None
+    bound_flag_address: int | None = None
+    bound_flag_size: int | None = None
+    bound_address_address: int | None = None
+    bound_address_size: int | None = None
+    socket_closed_after_bind_failure_address: int | None = None
+    socket_closed_after_bind_failure_size: int | None = None
+    socket_leak_detected_address: int | None = None
+    socket_leak_detected_size: int | None = None
 
     def validate(  # noqa: C901
         self, *, runtime_state_start: int, runtime_state_end: int
@@ -1072,6 +1156,160 @@ class Prime3RuntimeTransportMetadata:
                 self.bind_callback_generation_address,
                 self.bind_callback_generation_size,
             ),
+            ("transport_bind_target", self.bind_target_address, self.bind_target_size),
+            ("transport_bind_command", self.bind_command_address, self.bind_command_size),
+            ("transport_bind_submitted_fd", self.bind_submitted_fd_address, self.bind_submitted_fd_size),
+            (
+                "transport_bind_callback_pointer",
+                self.bind_callback_pointer_address,
+                self.bind_callback_pointer_size,
+            ),
+            ("transport_bind_context_pointer", self.bind_context_pointer_address, self.bind_context_pointer_size),
+            (
+                "transport_bind_callback_exit_count",
+                self.bind_callback_exit_count_address,
+                self.bind_callback_exit_count_size,
+            ),
+            (
+                "transport_bind_stale_callback_count",
+                self.bind_stale_callback_count_address,
+                self.bind_stale_callback_count_size,
+            ),
+            (
+                "transport_bind_duplicate_callback_count",
+                self.bind_duplicate_callback_count_address,
+                self.bind_duplicate_callback_count_size,
+            ),
+            ("transport_bind_request_address", self.bind_request_address_address, self.bind_request_address_size),
+            (
+                "transport_bind_request_storage_size",
+                self.bind_request_storage_size_address,
+                self.bind_request_storage_size_size,
+            ),
+            (
+                "transport_bind_request_logical_size",
+                self.bind_request_logical_size_address,
+                self.bind_request_logical_size_size,
+            ),
+            (
+                "transport_bind_request_alignment",
+                self.bind_request_alignment_address,
+                self.bind_request_alignment_size,
+            ),
+            (
+                "transport_bind_sockaddr_length",
+                self.bind_sockaddr_length_address,
+                self.bind_sockaddr_length_size,
+            ),
+            ("transport_bind_family_value", self.bind_family_value_address, self.bind_family_value_size),
+            ("transport_bind_port_value", self.bind_port_value_address, self.bind_port_value_size),
+            ("transport_bind_address_value", self.bind_address_value_address, self.bind_address_value_size),
+            ("transport_bind_request_bytes", self.bind_request_bytes_address, self.bind_request_bytes_size),
+            ("transport_bind_pre_call_args", self.bind_pre_call_args_address, self.bind_pre_call_args_size),
+            (
+                "transport_cleanup_close_callback_count",
+                self.cleanup_close_callback_count_address,
+                self.cleanup_close_callback_count_size,
+            ),
+            (
+                "transport_cleanup_close_submit_result",
+                self.cleanup_close_submit_result_address,
+                self.cleanup_close_submit_result_size,
+            ),
+            (
+                "transport_cleanup_close_callback_result",
+                self.cleanup_close_callback_result_address,
+                self.cleanup_close_callback_result_size,
+            ),
+            (
+                "transport_cleanup_close_submit_generation",
+                self.cleanup_close_submit_generation_address,
+                self.cleanup_close_submit_generation_size,
+            ),
+            (
+                "transport_cleanup_close_callback_generation",
+                self.cleanup_close_callback_generation_address,
+                self.cleanup_close_callback_generation_size,
+            ),
+            ("transport_cleanup_close_target", self.cleanup_close_target_address, self.cleanup_close_target_size),
+            ("transport_cleanup_close_command", self.cleanup_close_command_address, self.cleanup_close_command_size),
+            (
+                "transport_cleanup_close_submitted_fd",
+                self.cleanup_close_submitted_fd_address,
+                self.cleanup_close_submitted_fd_size,
+            ),
+            (
+                "transport_cleanup_close_callback_pointer",
+                self.cleanup_close_callback_pointer_address,
+                self.cleanup_close_callback_pointer_size,
+            ),
+            (
+                "transport_cleanup_close_context_pointer",
+                self.cleanup_close_context_pointer_address,
+                self.cleanup_close_context_pointer_size,
+            ),
+            (
+                "transport_cleanup_close_callback_exit_count",
+                self.cleanup_close_callback_exit_count_address,
+                self.cleanup_close_callback_exit_count_size,
+            ),
+            (
+                "transport_cleanup_close_stale_callback_count",
+                self.cleanup_close_stale_callback_count_address,
+                self.cleanup_close_stale_callback_count_size,
+            ),
+            (
+                "transport_cleanup_close_duplicate_callback_count",
+                self.cleanup_close_duplicate_callback_count_address,
+                self.cleanup_close_duplicate_callback_count_size,
+            ),
+            (
+                "transport_cleanup_close_request_address",
+                self.cleanup_close_request_address_address,
+                self.cleanup_close_request_address_size,
+            ),
+            (
+                "transport_cleanup_close_request_storage_size",
+                self.cleanup_close_request_storage_size_address,
+                self.cleanup_close_request_storage_size_size,
+            ),
+            (
+                "transport_cleanup_close_request_logical_size",
+                self.cleanup_close_request_logical_size_address,
+                self.cleanup_close_request_logical_size_size,
+            ),
+            (
+                "transport_cleanup_close_request_alignment",
+                self.cleanup_close_request_alignment_address,
+                self.cleanup_close_request_alignment_size,
+            ),
+            (
+                "transport_cleanup_close_request_value",
+                self.cleanup_close_request_value_address,
+                self.cleanup_close_request_value_size,
+            ),
+            (
+                "transport_cleanup_close_request_bytes",
+                self.cleanup_close_request_bytes_address,
+                self.cleanup_close_request_bytes_size,
+            ),
+            (
+                "transport_cleanup_close_pre_call_args",
+                self.cleanup_close_pre_call_args_address,
+                self.cleanup_close_pre_call_args_size,
+            ),
+            ("transport_bound_flag", self.bound_flag_address, self.bound_flag_size),
+            ("transport_bound_address", self.bound_address_address, self.bound_address_size),
+            (
+                "transport_socket_closed_after_bind_failure",
+                self.socket_closed_after_bind_failure_address,
+                self.socket_closed_after_bind_failure_size,
+            ),
+            (
+                "transport_socket_leak_detected",
+                self.socket_leak_detected_address,
+                self.socket_leak_detected_size,
+            ),
         )
         for name, optional_start, optional_size in optional_ranges:
             if optional_start is None and optional_size is None:
@@ -1464,6 +1702,136 @@ class Prime3RuntimeTransportMetadata:
             bind_submit_generation_size=_json_optional_int(data, "bind_submit_generation_size"),
             bind_callback_generation_address=_json_optional_int(data, "bind_callback_generation_address"),
             bind_callback_generation_size=_json_optional_int(data, "bind_callback_generation_size"),
+            bind_target_address=_json_optional_int(data, "bind_target_address"),
+            bind_target_size=_json_optional_int(data, "bind_target_size"),
+            bind_command_address=_json_optional_int(data, "bind_command_address"),
+            bind_command_size=_json_optional_int(data, "bind_command_size"),
+            bind_submitted_fd_address=_json_optional_int(data, "bind_submitted_fd_address"),
+            bind_submitted_fd_size=_json_optional_int(data, "bind_submitted_fd_size"),
+            bind_callback_pointer_address=_json_optional_int(data, "bind_callback_pointer_address"),
+            bind_callback_pointer_size=_json_optional_int(data, "bind_callback_pointer_size"),
+            bind_context_pointer_address=_json_optional_int(data, "bind_context_pointer_address"),
+            bind_context_pointer_size=_json_optional_int(data, "bind_context_pointer_size"),
+            bind_callback_exit_count_address=_json_optional_int(data, "bind_callback_exit_count_address"),
+            bind_callback_exit_count_size=_json_optional_int(data, "bind_callback_exit_count_size"),
+            bind_stale_callback_count_address=_json_optional_int(data, "bind_stale_callback_count_address"),
+            bind_stale_callback_count_size=_json_optional_int(data, "bind_stale_callback_count_size"),
+            bind_duplicate_callback_count_address=_json_optional_int(
+                data, "bind_duplicate_callback_count_address"
+            ),
+            bind_duplicate_callback_count_size=_json_optional_int(data, "bind_duplicate_callback_count_size"),
+            bind_request_address_address=_json_optional_int(data, "bind_request_address_address"),
+            bind_request_address_size=_json_optional_int(data, "bind_request_address_size"),
+            bind_request_storage_size_address=_json_optional_int(data, "bind_request_storage_size_address"),
+            bind_request_storage_size_size=_json_optional_int(data, "bind_request_storage_size_size"),
+            bind_request_logical_size_address=_json_optional_int(data, "bind_request_logical_size_address"),
+            bind_request_logical_size_size=_json_optional_int(data, "bind_request_logical_size_size"),
+            bind_request_alignment_address=_json_optional_int(data, "bind_request_alignment_address"),
+            bind_request_alignment_size=_json_optional_int(data, "bind_request_alignment_size"),
+            bind_sockaddr_length_address=_json_optional_int(data, "bind_sockaddr_length_address"),
+            bind_sockaddr_length_size=_json_optional_int(data, "bind_sockaddr_length_size"),
+            bind_family_value_address=_json_optional_int(data, "bind_family_value_address"),
+            bind_family_value_size=_json_optional_int(data, "bind_family_value_size"),
+            bind_port_value_address=_json_optional_int(data, "bind_port_value_address"),
+            bind_port_value_size=_json_optional_int(data, "bind_port_value_size"),
+            bind_address_value_address=_json_optional_int(data, "bind_address_value_address"),
+            bind_address_value_size=_json_optional_int(data, "bind_address_value_size"),
+            bind_request_bytes_address=_json_optional_int(data, "bind_request_bytes_address"),
+            bind_request_bytes_size=_json_optional_int(data, "bind_request_bytes_size"),
+            bind_pre_call_args_address=_json_optional_int(data, "bind_pre_call_args_address"),
+            bind_pre_call_args_size=_json_optional_int(data, "bind_pre_call_args_size"),
+            cleanup_close_callback_count_address=_json_optional_int(
+                data, "cleanup_close_callback_count_address"
+            ),
+            cleanup_close_callback_count_size=_json_optional_int(data, "cleanup_close_callback_count_size"),
+            cleanup_close_submit_result_address=_json_optional_int(data, "cleanup_close_submit_result_address"),
+            cleanup_close_submit_result_size=_json_optional_int(data, "cleanup_close_submit_result_size"),
+            cleanup_close_callback_result_address=_json_optional_int(
+                data, "cleanup_close_callback_result_address"
+            ),
+            cleanup_close_callback_result_size=_json_optional_int(data, "cleanup_close_callback_result_size"),
+            cleanup_close_submit_generation_address=_json_optional_int(
+                data, "cleanup_close_submit_generation_address"
+            ),
+            cleanup_close_submit_generation_size=_json_optional_int(
+                data, "cleanup_close_submit_generation_size"
+            ),
+            cleanup_close_callback_generation_address=_json_optional_int(
+                data, "cleanup_close_callback_generation_address"
+            ),
+            cleanup_close_callback_generation_size=_json_optional_int(
+                data, "cleanup_close_callback_generation_size"
+            ),
+            cleanup_close_target_address=_json_optional_int(data, "cleanup_close_target_address"),
+            cleanup_close_target_size=_json_optional_int(data, "cleanup_close_target_size"),
+            cleanup_close_command_address=_json_optional_int(data, "cleanup_close_command_address"),
+            cleanup_close_command_size=_json_optional_int(data, "cleanup_close_command_size"),
+            cleanup_close_submitted_fd_address=_json_optional_int(data, "cleanup_close_submitted_fd_address"),
+            cleanup_close_submitted_fd_size=_json_optional_int(data, "cleanup_close_submitted_fd_size"),
+            cleanup_close_callback_pointer_address=_json_optional_int(
+                data, "cleanup_close_callback_pointer_address"
+            ),
+            cleanup_close_callback_pointer_size=_json_optional_int(data, "cleanup_close_callback_pointer_size"),
+            cleanup_close_context_pointer_address=_json_optional_int(data, "cleanup_close_context_pointer_address"),
+            cleanup_close_context_pointer_size=_json_optional_int(data, "cleanup_close_context_pointer_size"),
+            cleanup_close_callback_exit_count_address=_json_optional_int(
+                data, "cleanup_close_callback_exit_count_address"
+            ),
+            cleanup_close_callback_exit_count_size=_json_optional_int(
+                data, "cleanup_close_callback_exit_count_size"
+            ),
+            cleanup_close_stale_callback_count_address=_json_optional_int(
+                data, "cleanup_close_stale_callback_count_address"
+            ),
+            cleanup_close_stale_callback_count_size=_json_optional_int(
+                data, "cleanup_close_stale_callback_count_size"
+            ),
+            cleanup_close_duplicate_callback_count_address=_json_optional_int(
+                data, "cleanup_close_duplicate_callback_count_address"
+            ),
+            cleanup_close_duplicate_callback_count_size=_json_optional_int(
+                data, "cleanup_close_duplicate_callback_count_size"
+            ),
+            cleanup_close_request_address_address=_json_optional_int(
+                data, "cleanup_close_request_address_address"
+            ),
+            cleanup_close_request_address_size=_json_optional_int(data, "cleanup_close_request_address_size"),
+            cleanup_close_request_storage_size_address=_json_optional_int(
+                data, "cleanup_close_request_storage_size_address"
+            ),
+            cleanup_close_request_storage_size_size=_json_optional_int(
+                data, "cleanup_close_request_storage_size_size"
+            ),
+            cleanup_close_request_logical_size_address=_json_optional_int(
+                data, "cleanup_close_request_logical_size_address"
+            ),
+            cleanup_close_request_logical_size_size=_json_optional_int(
+                data, "cleanup_close_request_logical_size_size"
+            ),
+            cleanup_close_request_alignment_address=_json_optional_int(
+                data, "cleanup_close_request_alignment_address"
+            ),
+            cleanup_close_request_alignment_size=_json_optional_int(
+                data, "cleanup_close_request_alignment_size"
+            ),
+            cleanup_close_request_value_address=_json_optional_int(data, "cleanup_close_request_value_address"),
+            cleanup_close_request_value_size=_json_optional_int(data, "cleanup_close_request_value_size"),
+            cleanup_close_request_bytes_address=_json_optional_int(data, "cleanup_close_request_bytes_address"),
+            cleanup_close_request_bytes_size=_json_optional_int(data, "cleanup_close_request_bytes_size"),
+            cleanup_close_pre_call_args_address=_json_optional_int(data, "cleanup_close_pre_call_args_address"),
+            cleanup_close_pre_call_args_size=_json_optional_int(data, "cleanup_close_pre_call_args_size"),
+            bound_flag_address=_json_optional_int(data, "bound_flag_address"),
+            bound_flag_size=_json_optional_int(data, "bound_flag_size"),
+            bound_address_address=_json_optional_int(data, "bound_address_address"),
+            bound_address_size=_json_optional_int(data, "bound_address_size"),
+            socket_closed_after_bind_failure_address=_json_optional_int(
+                data, "socket_closed_after_bind_failure_address"
+            ),
+            socket_closed_after_bind_failure_size=_json_optional_int(
+                data, "socket_closed_after_bind_failure_size"
+            ),
+            socket_leak_detected_address=_json_optional_int(data, "socket_leak_detected_address"),
+            socket_leak_detected_size=_json_optional_int(data, "socket_leak_detected_size"),
         )
 
 

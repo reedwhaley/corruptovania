@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TypedDict, cast
 
@@ -84,6 +85,12 @@ TRANSPORT_PHASE_NAMES = {
     41: "SEND_STALE_CALLBACK",
     42: "SEND_DUPLICATE_CALLBACK",
     43: "SEND_CLEANUP_DEFERRED",
+    44: "REARM_RECEIVE",
+    45: "LOOP_COMPLETE",
+    46: "REARM_SUBMIT_FAILED",
+    47: "REARM_INVALID_STATE",
+    48: "LOOP_LIMIT_INVALID",
+    49: "EXCHANGE_COUNTER_OVERFLOW",
     21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
     22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
     23: "BIND_FAILED_CLEANED",
@@ -239,7 +246,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--startup-word", action="append", default=[])
     parser.add_argument("--hook-address", type=_parse_int)
     parser.add_argument("--expected-hook-word", type=_parse_int)
-    parser.add_argument("--repeat-delay-ms", type=int, default=0)
+    parser.add_argument("--poll-ms", type=int, default=500)
+    parser.add_argument("--repeat-delay-ms", type=int)
     parser.add_argument("--iso-path")
     parser.add_argument("--iso-sha256")
     parser.add_argument("--dolphin-command-line")
@@ -251,12 +259,14 @@ def observe_probe_memory(
     config: ProbeObservationConfig,
 ) -> dict[str, object]:
     _ensure_connected(backend)
+    first_read_timestamp = datetime.now(UTC).isoformat()
     first_read = _read_probe_state(backend, config)
     advance_cycle = getattr(backend, "advance_cycle", None)
     if callable(advance_cycle):
         advance_cycle()
     if config.repeat_delay_seconds > 0:
         time.sleep(config.repeat_delay_seconds)
+    second_read_timestamp = datetime.now(UTC).isoformat()
     second_read = _read_probe_state(backend, config)
 
     game_id = first_read["game_id"]
@@ -289,7 +299,9 @@ def observe_probe_memory(
         "payload_matches_expected": first_read["payload_matches_expected"],
         "payload_classification": first_read["payload_classification"],
         "payload_all_zero": first_read["payload_all_zero"],
+        "first_observed_at_utc": first_read_timestamp,
         "repeated_read_stable": first_read["payload_sha256"] == second_read["payload_sha256"],
+        "second_observed_at_utc": second_read_timestamp,
         "second_live_payload_sha256": second_read["payload_sha256"],
         "poll_rate_sample_interval_seconds": config.repeat_delay_seconds,
         "entry_gate_active": all(item["matches"] for item in first_read["startup_words"].values())
@@ -867,6 +879,17 @@ def _read_probe_state(  # noqa: C901
                 "receive_bytes": _runtime_u32(transport.receive_bytes_address),
                 "send_count": _runtime_u32(transport.send_count_address),
                 "send_bytes": _runtime_u32(transport.send_bytes_address),
+                "receive_arm_count": optional_u32(transport.receive_arm_count_address),
+                "receive_rearm_count": optional_u32(transport.receive_rearm_count_address),
+                "configured_exchange_limit": optional_u32(transport.configured_exchange_limit_address),
+                "completed_exchange_count": optional_u32(transport.completed_exchange_count_address),
+                "current_exchange_index": optional_u32(transport.current_exchange_index_address),
+                "last_completed_exchange_index": optional_u32(transport.last_completed_exchange_index_address),
+                "previous_peer_ipv4": optional_u32(transport.previous_peer_ipv4_address),
+                "previous_peer_port": optional_u32(transport.previous_peer_port_address),
+                "rearm_submission_failure_count": optional_u32(transport.rearm_submission_failure_count_address),
+                "loop_complete_transition_count": optional_u32(transport.loop_complete_transition_count_address),
+                "cleanup_deferred_count": optional_u32(transport.cleanup_deferred_count_address),
                 "last_receive_length": _runtime_u32(transport.last_receive_length_address),
                 "last_send_length": _runtime_u32(transport.last_send_length_address),
                 "last_peer_ipv4": _runtime_u32(transport.last_peer_ipv4_address),
@@ -874,6 +897,8 @@ def _read_probe_state(  # noqa: C901
                 "last_peer_family": _runtime_u32(transport.last_peer_family_address),
                 "last_poll_action": _runtime_u32(transport.last_poll_action_address),
                 "last_submit_result": _runtime_s32(transport.last_submit_result_address),
+                "polls_while_receive_pending": optional_u32(transport.polls_while_receive_pending_address),
+                "polls_after_loop_complete": optional_u32(transport.polls_after_loop_complete_address),
                 "last_receive_preview_hex": runtime_bytes[
                     receive_preview_offset : receive_preview_offset + transport.last_receive_preview_size
                 ].hex(),
@@ -1731,6 +1756,9 @@ def _parse_startup_word(value: str) -> StartupWordExpectation:
 
 def main() -> None:
     args = parse_args()
+    poll_ms = args.repeat_delay_ms if args.repeat_delay_ms is not None else args.poll_ms
+    if poll_ms < 10:
+        raise ProbeObservationError("Observer polling requires --poll-ms of at least 10 ms.")
     if (
         args.checkpoint_name is None
         and args.halt_address is None
@@ -1759,7 +1787,7 @@ def main() -> None:
         startup_words=tuple(_parse_startup_word(item) for item in args.startup_word),
         hook_address=args.hook_address,
         expected_hook_word=args.expected_hook_word,
-        repeat_delay_seconds=max(args.repeat_delay_ms, 0) / 1000.0,
+        repeat_delay_seconds=poll_ms / 1000.0,
         iso_path=args.iso_path,
         iso_sha256=args.iso_sha256,
         dolphin_command_line=args.dolphin_command_line,

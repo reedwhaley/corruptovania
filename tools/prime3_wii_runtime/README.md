@@ -76,6 +76,7 @@ python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-r
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-get-host-id-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-create-socket-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-bind-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-recv-send-loop --ios-recv-send-loop-count 3 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 ```
 
 Artifacts are written to `build/prime3_wii_runtime/` or the requested `--output-dir`:
@@ -116,6 +117,25 @@ The current `--ios-get-host-id-once` proof was also validated end to end against
 The current `--ios-create-socket-once` proof was also validated end to end against the rebuilt ISO launched in Dolphin. The live reports show exact async ioctl call shape `r3 = 11`, `r4 = 15`, `r5 = 0x817E4AA0`, `r6 = 12`, `r7 = 0`, `r8 = 0`, `r9 = 0x817E1C20`, and `r10 = 0x817E4AC0` at target `0x80504FE0`, with synchronous result `0`, one callback, matching generation `7`, request bytes `00 00 00 02 00 00 00 02 00 00 00 00`, request storage size `32`, request alignment `32`, retained `ip_fd = 11`, retained `host_id = 0x1AD38AB6`, and stable terminal `SOCKET_READY` with `socket_fd = 0`, `descriptor_valid = 1`, `socket_ready = 1`, and zero bind, receive, or send submissions. For this mode, callback descriptors use signed socket semantics, so descriptor `0` is accepted as valid and negative callback results remain socket-creation errors.
 
 The current `--ios-bind-once` proof reaches terminal `BOUND_NO_RECV` with no receive or send work. The verified 36-byte bind request for socket descriptor `0`, port `43674`, and `INADDR_ANY` is `00000000000000010802AA9A000000000000000000000000000000000000000000000000`; this keeps descriptor `0` at offset `0`, marker `1` at offset `4`, sockaddr length `8`, family `2`, and corrected port bytes `AA 9A` instead of the earlier incorrect `9A AA`. The current bind mode uses `INADDR_ANY` for Dolphin and Corruptovania interoperability, while a future physical-Wii fallback may need host-ID-based binding after the current bounded bind-once milestone. The observer intentionally reports `bound_no_recv` on the immediate terminal transition and `bound_no_recv_stable` once recurring polling continues across repeated reads. Cleanup-after-failure is covered by synthetic tests only; live proof so far covers successful bind with `socket_fd = 0`, `receive_count = 0`, and `send_count = 0`.
+
+The current `--ios-recv-send-loop` proof extends that bounded sequence through `SUBMIT_RECEIVE_ONCE -> WAIT_RECEIVE -> SUBMIT_SEND_ONCE -> WAIT_SEND -> REARM_RECEIVE` until the configured exchange limit is reached, then stops terminally at `LOOP_COMPLETE`. `--ios-recv-send-loop-count` must be in the inclusive range `1..100`; the current live proof uses `3`. For count `3`, the expected stable terminal counters are `receive_submit_count = 3`, `receive_arm_count = 3`, `receive_rearm_count = 2`, `receive_count = 3`, `send_submit_count = 3`, `send_count = 3`, `completed_exchange_count = 3`, `loop_complete_transition_count = 1`, and no fourth receive or reply. Rearm occurs only from poll context after a successful non-final send; callbacks never submit IOS work, cleanup remains disabled, and one-shot recv-only or recv-send-once modes do not rearm.
+
+`observe_probe.py` now supports `--poll-ms` with a default of `500` and a minimum of `10`. The report includes the first and second observation timestamps plus the loop transport counters when the manifest exports them. `--repeat-delay-ms` remains accepted as a compatibility alias for the same interval.
+
+Live loop validation procedure:
+
+1. Build the loop payload with `--ios-recv-send-loop --ios-recv-send-loop-count 3`.
+2. Patch a copied CDV `main.dol` with `build_probe_dol.py --install-recurring-poll-hook --enable-ios-udp-diagnostic`.
+3. Rebuild the ISO, round-trip extract it, and verify the patched DOL hash matches exactly.
+4. Launch the rebuilt ISO in Dolphin and wait for transport phase `WAIT_RECEIVE`.
+5. Send exactly three sequential host UDP payloads such as `P3_LOOP_TEST_01_20260717`, `P3_LOOP_TEST_02_20260717`, and `P3_LOOP_TEST_03_20260717`.
+6. Verify three exact `P3_SENDTO_LOOP_REPLY_20260717` replies, terminal `LOOP_COMPLETE`, continued poll-count growth, and no fourth receive submission.
+
+Known limitations:
+
+- This remains a developer-only diagnostic transport path.
+- CP3W packet parsing, mailbox integration, and general exporter/runtime gameplay integration are not implemented yet.
+- Physical-Wii behavior is not proven by the current Dolphin-only loop milestone.
 
 ## Manifest contract
 

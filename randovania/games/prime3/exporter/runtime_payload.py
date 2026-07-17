@@ -297,6 +297,32 @@ class Prime3RuntimeTransportMetadata:
     last_receive_preview_size: int
     last_send_preview_address: int
     last_send_preview_size: int
+    receive_arm_count_address: int | None = None
+    receive_arm_count_size: int | None = None
+    receive_rearm_count_address: int | None = None
+    receive_rearm_count_size: int | None = None
+    configured_exchange_limit_address: int | None = None
+    configured_exchange_limit_size: int | None = None
+    completed_exchange_count_address: int | None = None
+    completed_exchange_count_size: int | None = None
+    current_exchange_index_address: int | None = None
+    current_exchange_index_size: int | None = None
+    last_completed_exchange_index_address: int | None = None
+    last_completed_exchange_index_size: int | None = None
+    previous_peer_ipv4_address: int | None = None
+    previous_peer_ipv4_size: int | None = None
+    previous_peer_port_address: int | None = None
+    previous_peer_port_size: int | None = None
+    rearm_submission_failure_count_address: int | None = None
+    rearm_submission_failure_count_size: int | None = None
+    loop_complete_transition_count_address: int | None = None
+    loop_complete_transition_count_size: int | None = None
+    cleanup_deferred_count_address: int | None = None
+    cleanup_deferred_count_size: int | None = None
+    polls_while_receive_pending_address: int | None = None
+    polls_while_receive_pending_size: int | None = None
+    polls_after_loop_complete_address: int | None = None
+    polls_after_loop_complete_size: int | None = None
     host_id_available_address: int | None = None
     host_id_available_size: int | None = None
     host_id_ready_address: int | None = None
@@ -589,14 +615,15 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("Relocated runtime transport metadata must mark initialization_enabled.")
         is_recvfrom_once = self.mode == "retail_wrapper_recvfrom_once"
         is_recv_send_once = self.mode == "retail_wrapper_recv_send_once"
+        is_recv_send_loop = self.mode == "retail_wrapper_recv_send_loop"
         if self.receive_enabled and not is_recvfrom_once:
-            if not is_recv_send_once:
+            if not is_recv_send_once and not is_recv_send_loop:
                 raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
-        if (is_recvfrom_once or is_recv_send_once) and not self.receive_enabled:
+        if (is_recvfrom_once or is_recv_send_once or is_recv_send_loop) and not self.receive_enabled:
             raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
-        if self.send_enabled and not is_recv_send_once:
+        if self.send_enabled and not is_recv_send_once and not is_recv_send_loop:
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
-        if is_recv_send_once and not self.send_enabled:
+        if (is_recv_send_once or is_recv_send_loop) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
@@ -634,6 +661,10 @@ class Prime3RuntimeTransportMetadata:
             self.terminal_phase_value != 37 or self.terminal_phase_name != "SENT_DATAGRAM"
         ):
             raise Prime3DolPatchError("Recv-send metadata must use the SENT_DATAGRAM terminal phase.")
+        if is_recv_send_loop and (
+            self.terminal_phase_value != 45 or self.terminal_phase_name != "LOOP_COMPLETE"
+        ):
+            raise Prime3DolPatchError("Recv-send-loop metadata must use the LOOP_COMPLETE terminal phase.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -767,6 +798,55 @@ class Prime3RuntimeTransportMetadata:
             if start + size > runtime_state_end:
                 raise Prime3DolPatchError(f"Relocated runtime transport field {name} exceeds the runtime state range.")
         optional_ranges: tuple[tuple[str, int | None, int | None], ...] = (
+            ("transport_receive_arm_count", self.receive_arm_count_address, self.receive_arm_count_size),
+            ("transport_receive_rearm_count", self.receive_rearm_count_address, self.receive_rearm_count_size),
+            (
+                "transport_configured_exchange_limit",
+                self.configured_exchange_limit_address,
+                self.configured_exchange_limit_size,
+            ),
+            (
+                "transport_completed_exchange_count",
+                self.completed_exchange_count_address,
+                self.completed_exchange_count_size,
+            ),
+            (
+                "transport_current_exchange_index",
+                self.current_exchange_index_address,
+                self.current_exchange_index_size,
+            ),
+            (
+                "transport_last_completed_exchange_index",
+                self.last_completed_exchange_index_address,
+                self.last_completed_exchange_index_size,
+            ),
+            ("transport_previous_peer_ipv4", self.previous_peer_ipv4_address, self.previous_peer_ipv4_size),
+            ("transport_previous_peer_port", self.previous_peer_port_address, self.previous_peer_port_size),
+            (
+                "transport_rearm_submission_failure_count",
+                self.rearm_submission_failure_count_address,
+                self.rearm_submission_failure_count_size,
+            ),
+            (
+                "transport_loop_complete_transition_count",
+                self.loop_complete_transition_count_address,
+                self.loop_complete_transition_count_size,
+            ),
+            (
+                "transport_cleanup_deferred_count",
+                self.cleanup_deferred_count_address,
+                self.cleanup_deferred_count_size,
+            ),
+            (
+                "transport_polls_while_receive_pending",
+                self.polls_while_receive_pending_address,
+                self.polls_while_receive_pending_size,
+            ),
+            (
+                "transport_polls_after_loop_complete",
+                self.polls_after_loop_complete_address,
+                self.polls_after_loop_complete_size,
+            ),
             ("transport_open_kd_submit_result", self.open_kd_submit_result_address, self.open_kd_submit_result_size),
             (
                 "transport_open_kd_callback_result",
@@ -1461,6 +1541,32 @@ class Prime3RuntimeTransportMetadata:
             send_count_size=_json_int(data, "send_count_size"),
             send_bytes_address=_json_int(data, "send_bytes_address"),
             send_bytes_size=_json_int(data, "send_bytes_size"),
+            receive_arm_count_address=_json_optional_int(data, "receive_arm_count_address"),
+            receive_arm_count_size=_json_optional_int(data, "receive_arm_count_size"),
+            receive_rearm_count_address=_json_optional_int(data, "receive_rearm_count_address"),
+            receive_rearm_count_size=_json_optional_int(data, "receive_rearm_count_size"),
+            configured_exchange_limit_address=_json_optional_int(data, "configured_exchange_limit_address"),
+            configured_exchange_limit_size=_json_optional_int(data, "configured_exchange_limit_size"),
+            completed_exchange_count_address=_json_optional_int(data, "completed_exchange_count_address"),
+            completed_exchange_count_size=_json_optional_int(data, "completed_exchange_count_size"),
+            current_exchange_index_address=_json_optional_int(data, "current_exchange_index_address"),
+            current_exchange_index_size=_json_optional_int(data, "current_exchange_index_size"),
+            last_completed_exchange_index_address=_json_optional_int(data, "last_completed_exchange_index_address"),
+            last_completed_exchange_index_size=_json_optional_int(data, "last_completed_exchange_index_size"),
+            previous_peer_ipv4_address=_json_optional_int(data, "previous_peer_ipv4_address"),
+            previous_peer_ipv4_size=_json_optional_int(data, "previous_peer_ipv4_size"),
+            previous_peer_port_address=_json_optional_int(data, "previous_peer_port_address"),
+            previous_peer_port_size=_json_optional_int(data, "previous_peer_port_size"),
+            rearm_submission_failure_count_address=_json_optional_int(
+                data, "rearm_submission_failure_count_address"
+            ),
+            rearm_submission_failure_count_size=_json_optional_int(data, "rearm_submission_failure_count_size"),
+            loop_complete_transition_count_address=_json_optional_int(
+                data, "loop_complete_transition_count_address"
+            ),
+            loop_complete_transition_count_size=_json_optional_int(data, "loop_complete_transition_count_size"),
+            cleanup_deferred_count_address=_json_optional_int(data, "cleanup_deferred_count_address"),
+            cleanup_deferred_count_size=_json_optional_int(data, "cleanup_deferred_count_size"),
             last_receive_length_address=_json_int(data, "last_receive_length_address"),
             last_receive_length_size=_json_int(data, "last_receive_length_size"),
             last_send_length_address=_json_int(data, "last_send_length_address"),
@@ -1475,6 +1581,10 @@ class Prime3RuntimeTransportMetadata:
             last_poll_action_size=_json_int(data, "last_poll_action_size"),
             last_submit_result_address=_json_int(data, "last_submit_result_address"),
             last_submit_result_size=_json_int(data, "last_submit_result_size"),
+            polls_while_receive_pending_address=_json_optional_int(data, "polls_while_receive_pending_address"),
+            polls_while_receive_pending_size=_json_optional_int(data, "polls_while_receive_pending_size"),
+            polls_after_loop_complete_address=_json_optional_int(data, "polls_after_loop_complete_address"),
+            polls_after_loop_complete_size=_json_optional_int(data, "polls_after_loop_complete_size"),
             last_receive_preview_address=_json_int(data, "last_receive_preview_address"),
             last_receive_preview_size=_json_int(data, "last_receive_preview_size"),
             last_send_preview_address=_json_int(data, "last_send_preview_address"),

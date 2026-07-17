@@ -378,6 +378,17 @@ RUNTIME_TRANSPORT_RECEIVE_COUNT_SYMBOL = "runtime_transport_receive_count"
 RUNTIME_TRANSPORT_RECEIVE_BYTES_SYMBOL = "runtime_transport_receive_bytes"
 RUNTIME_TRANSPORT_SEND_COUNT_SYMBOL = "runtime_transport_send_count"
 RUNTIME_TRANSPORT_SEND_BYTES_SYMBOL = "runtime_transport_send_bytes"
+RUNTIME_TRANSPORT_RECEIVE_ARM_COUNT_SYMBOL = "runtime_transport_receive_arm_count"
+RUNTIME_TRANSPORT_RECEIVE_REARM_COUNT_SYMBOL = "runtime_transport_receive_rearm_count"
+RUNTIME_TRANSPORT_CONFIGURED_EXCHANGE_LIMIT_SYMBOL = "runtime_transport_configured_exchange_limit"
+RUNTIME_TRANSPORT_COMPLETED_EXCHANGE_COUNT_SYMBOL = "runtime_transport_completed_exchange_count"
+RUNTIME_TRANSPORT_CURRENT_EXCHANGE_INDEX_SYMBOL = "runtime_transport_current_exchange_index"
+RUNTIME_TRANSPORT_LAST_COMPLETED_EXCHANGE_INDEX_SYMBOL = "runtime_transport_last_completed_exchange_index"
+RUNTIME_TRANSPORT_PREVIOUS_PEER_IPV4_SYMBOL = "runtime_transport_previous_peer_ipv4"
+RUNTIME_TRANSPORT_PREVIOUS_PEER_PORT_SYMBOL = "runtime_transport_previous_peer_port"
+RUNTIME_TRANSPORT_REARM_SUBMISSION_FAILURE_COUNT_SYMBOL = "runtime_transport_rearm_submission_failure_count"
+RUNTIME_TRANSPORT_LOOP_COMPLETE_TRANSITION_COUNT_SYMBOL = "runtime_transport_loop_complete_transition_count"
+RUNTIME_TRANSPORT_CLEANUP_DEFERRED_COUNT_SYMBOL = "runtime_transport_cleanup_deferred_count"
 RUNTIME_TRANSPORT_LAST_RECEIVE_LENGTH_SYMBOL = "runtime_transport_last_receive_length"
 RUNTIME_TRANSPORT_LAST_SEND_LENGTH_SYMBOL = "runtime_transport_last_send_length"
 RUNTIME_TRANSPORT_LAST_PEER_IPV4_SYMBOL = "runtime_transport_last_peer_ipv4"
@@ -385,6 +396,8 @@ RUNTIME_TRANSPORT_LAST_PEER_PORT_SYMBOL = "runtime_transport_last_peer_port"
 RUNTIME_TRANSPORT_LAST_PEER_FAMILY_SYMBOL = "runtime_transport_last_peer_family"
 RUNTIME_TRANSPORT_LAST_POLL_ACTION_SYMBOL = "runtime_transport_last_poll_action"
 RUNTIME_TRANSPORT_LAST_SUBMIT_RESULT_SYMBOL = "runtime_transport_last_submit_result"
+RUNTIME_TRANSPORT_POLLS_WHILE_RECEIVE_PENDING_SYMBOL = "runtime_transport_polls_while_receive_pending"
+RUNTIME_TRANSPORT_POLLS_AFTER_LOOP_COMPLETE_SYMBOL = "runtime_transport_polls_after_loop_complete"
 RUNTIME_TRANSPORT_LAST_RECEIVE_PREVIEW_SYMBOL = "runtime_transport_last_receive_preview"
 RUNTIME_TRANSPORT_LAST_SEND_PREVIEW_SYMBOL = "runtime_transport_last_send_preview"
 RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
@@ -503,6 +516,17 @@ class RelocatedRuntimeBuildResult:
     transport_receive_bytes_address: int
     transport_send_count_address: int
     transport_send_bytes_address: int
+    transport_receive_arm_count_address: int
+    transport_receive_rearm_count_address: int
+    transport_configured_exchange_limit_address: int
+    transport_completed_exchange_count_address: int
+    transport_current_exchange_index_address: int
+    transport_last_completed_exchange_index_address: int
+    transport_previous_peer_ipv4_address: int
+    transport_previous_peer_port_address: int
+    transport_rearm_submission_failure_count_address: int
+    transport_loop_complete_transition_count_address: int
+    transport_cleanup_deferred_count_address: int
     transport_last_receive_length_address: int
     transport_last_send_length_address: int
     transport_last_peer_ipv4_address: int
@@ -510,6 +534,8 @@ class RelocatedRuntimeBuildResult:
     transport_last_peer_family_address: int
     transport_last_poll_action_address: int
     transport_last_submit_result_address: int
+    transport_polls_while_receive_pending_address: int
+    transport_polls_after_loop_complete_address: int
     transport_last_receive_preview_address: int
     transport_last_receive_preview_size: int
     transport_last_send_preview_address: int
@@ -690,6 +716,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-bind-once", action="store_true")
     parser.add_argument("--ios-recvfrom-once", action="store_true")
     parser.add_argument("--ios-recv-send-once", action="store_true")
+    parser.add_argument("--ios-recv-send-loop", action="store_true")
+    parser.add_argument("--ios-recv-send-loop-count", type=int, default=3)
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
@@ -782,6 +810,7 @@ def build_prime3_runtime_payload(  # noqa: C901
     enable_recurring_hook_diagnostics: bool = False,
     enable_ios_udp_diagnostic: bool = False,
     ios_udp_mode: str = "normal",
+    ios_udp_loop_count: int = 3,
     reserved_high: int | None = None,
     diagnostic_address: int | None = None,
     runtime_destination: int | None = None,
@@ -820,9 +849,12 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_bind_once",
         "retail_wrapper_recvfrom_once",
         "retail_wrapper_recv_send_once",
+        "retail_wrapper_recv_send_loop",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
+    if ios_udp_loop_count < 1 or ios_udp_loop_count > 100:
+        raise RuntimeError("ios_udp_loop_count must be between 1 and 100.")
     if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
     if ios_udp_mode != "normal" and not enable_ios_udp_diagnostic:
@@ -841,6 +873,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             enable_recurring_hook_diagnostics=enable_recurring_hook_diagnostics,
             enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
             ios_udp_mode=ios_udp_mode,
+            ios_udp_loop_count=ios_udp_loop_count,
         )
         _write_runtime_blob_object(
             toolchain=toolchain,
@@ -1184,11 +1217,12 @@ def build_prime3_runtime_payload(  # noqa: C901
             create_socket_once = ios_udp_mode == "retail_wrapper_create_socket_once"
             recvfrom_once = ios_udp_mode == "retail_wrapper_recvfrom_once"
             recv_send_once = ios_udp_mode == "retail_wrapper_recv_send_once"
+            recv_send_loop = ios_udp_mode == "retail_wrapper_recv_send_loop"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
-                receive_enabled=recvfrom_once or recv_send_once,
-                send_enabled=recv_send_once,
+                receive_enabled=recvfrom_once or recv_send_once or recv_send_loop,
+                send_enabled=recv_send_once or recv_send_loop,
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
@@ -1204,6 +1238,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else 27
                     if recvfrom_once
+                    else 45
+                    if recv_send_loop
                     else 37
                     if recv_send_once
                     else 0x11
@@ -1223,6 +1259,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else "RECEIVED_DATAGRAM"
                     if recvfrom_once
+                    else "LOOP_COMPLETE"
+                    if recv_send_loop
                     else "SENT_DATAGRAM"
                     if recv_send_once
                     else "BOUND_NO_RECV"
@@ -1322,6 +1360,34 @@ def build_prime3_runtime_payload(  # noqa: C901
                 send_count_size=4,
                 send_bytes_address=relocated_runtime.transport_send_bytes_address,
                 send_bytes_size=4,
+                receive_arm_count_address=relocated_runtime.transport_receive_arm_count_address,
+                receive_arm_count_size=4,
+                receive_rearm_count_address=relocated_runtime.transport_receive_rearm_count_address,
+                receive_rearm_count_size=4,
+                configured_exchange_limit_address=relocated_runtime.transport_configured_exchange_limit_address,
+                configured_exchange_limit_size=4,
+                completed_exchange_count_address=relocated_runtime.transport_completed_exchange_count_address,
+                completed_exchange_count_size=4,
+                current_exchange_index_address=relocated_runtime.transport_current_exchange_index_address,
+                current_exchange_index_size=4,
+                last_completed_exchange_index_address=(
+                    relocated_runtime.transport_last_completed_exchange_index_address
+                ),
+                last_completed_exchange_index_size=4,
+                previous_peer_ipv4_address=relocated_runtime.transport_previous_peer_ipv4_address,
+                previous_peer_ipv4_size=4,
+                previous_peer_port_address=relocated_runtime.transport_previous_peer_port_address,
+                previous_peer_port_size=4,
+                rearm_submission_failure_count_address=(
+                    relocated_runtime.transport_rearm_submission_failure_count_address
+                ),
+                rearm_submission_failure_count_size=4,
+                loop_complete_transition_count_address=(
+                    relocated_runtime.transport_loop_complete_transition_count_address
+                ),
+                loop_complete_transition_count_size=4,
+                cleanup_deferred_count_address=relocated_runtime.transport_cleanup_deferred_count_address,
+                cleanup_deferred_count_size=4,
                 last_receive_length_address=relocated_runtime.transport_last_receive_length_address,
                 last_receive_length_size=4,
                 last_send_length_address=relocated_runtime.transport_last_send_length_address,
@@ -1336,6 +1402,10 @@ def build_prime3_runtime_payload(  # noqa: C901
                 last_poll_action_size=4,
                 last_submit_result_address=relocated_runtime.transport_last_submit_result_address,
                 last_submit_result_size=4,
+                polls_while_receive_pending_address=relocated_runtime.transport_polls_while_receive_pending_address,
+                polls_while_receive_pending_size=4,
+                polls_after_loop_complete_address=relocated_runtime.transport_polls_after_loop_complete_address,
+                polls_after_loop_complete_size=4,
                 last_receive_preview_address=relocated_runtime.transport_last_receive_preview_address,
                 last_receive_preview_size=relocated_runtime.transport_last_receive_preview_size,
                 last_send_preview_address=relocated_runtime.transport_last_send_preview_address,
@@ -1767,6 +1837,7 @@ def _build_relocated_runtime(
     enable_recurring_hook_diagnostics: bool,
     enable_ios_udp_diagnostic: bool,
     ios_udp_mode: str,
+    ios_udp_loop_count: int,
 ) -> RelocatedRuntimeBuildResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     asm_object_path = output_dir.joinpath("relocated_runtime_asm.o")
@@ -1805,8 +1876,10 @@ def _build_relocated_runtime(
                 "retail_wrapper_ioctl_async_abi_probe": "10",
                 "retail_wrapper_recvfrom_once": "14",
                 "retail_wrapper_recv_send_once": "15",
+                "retail_wrapper_recv_send_loop": "16",
             }[ios_udp_mode]
         ),
+        f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
     ]
     _run(
         [
@@ -2546,6 +2619,39 @@ def _build_relocated_runtime(
     transport_receive_bytes_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_RECEIVE_BYTES_SYMBOL)
     transport_send_count_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SEND_COUNT_SYMBOL)
     transport_send_bytes_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SEND_BYTES_SYMBOL)
+    transport_receive_arm_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_RECEIVE_ARM_COUNT_SYMBOL
+    )
+    transport_receive_rearm_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_RECEIVE_REARM_COUNT_SYMBOL
+    )
+    transport_configured_exchange_limit_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CONFIGURED_EXCHANGE_LIMIT_SYMBOL
+    )
+    transport_completed_exchange_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_COMPLETED_EXCHANGE_COUNT_SYMBOL
+    )
+    transport_current_exchange_index_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CURRENT_EXCHANGE_INDEX_SYMBOL
+    )
+    transport_last_completed_exchange_index_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_LAST_COMPLETED_EXCHANGE_INDEX_SYMBOL
+    )
+    transport_previous_peer_ipv4_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_PREVIOUS_PEER_IPV4_SYMBOL
+    )
+    transport_previous_peer_port_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_PREVIOUS_PEER_PORT_SYMBOL
+    )
+    transport_rearm_submission_failure_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_REARM_SUBMISSION_FAILURE_COUNT_SYMBOL
+    )
+    transport_loop_complete_transition_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_LOOP_COMPLETE_TRANSITION_COUNT_SYMBOL
+    )
+    transport_cleanup_deferred_count_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CLEANUP_DEFERRED_COUNT_SYMBOL
+    )
     transport_last_receive_length_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_RECEIVE_LENGTH_SYMBOL
     )
@@ -2562,6 +2668,12 @@ def _build_relocated_runtime(
     )
     transport_last_submit_result_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_SUBMIT_RESULT_SYMBOL
+    )
+    transport_polls_while_receive_pending_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_POLLS_WHILE_RECEIVE_PENDING_SYMBOL
+    )
+    transport_polls_after_loop_complete_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_POLLS_AFTER_LOOP_COMPLETE_SYMBOL
     )
     transport_last_receive_preview_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_RECEIVE_PREVIEW_SYMBOL
@@ -2692,6 +2804,17 @@ def _build_relocated_runtime(
         transport_receive_bytes_address=transport_receive_bytes_address,
         transport_send_count_address=transport_send_count_address,
         transport_send_bytes_address=transport_send_bytes_address,
+        transport_receive_arm_count_address=transport_receive_arm_count_address,
+        transport_receive_rearm_count_address=transport_receive_rearm_count_address,
+        transport_configured_exchange_limit_address=transport_configured_exchange_limit_address,
+        transport_completed_exchange_count_address=transport_completed_exchange_count_address,
+        transport_current_exchange_index_address=transport_current_exchange_index_address,
+        transport_last_completed_exchange_index_address=transport_last_completed_exchange_index_address,
+        transport_previous_peer_ipv4_address=transport_previous_peer_ipv4_address,
+        transport_previous_peer_port_address=transport_previous_peer_port_address,
+        transport_rearm_submission_failure_count_address=transport_rearm_submission_failure_count_address,
+        transport_loop_complete_transition_count_address=transport_loop_complete_transition_count_address,
+        transport_cleanup_deferred_count_address=transport_cleanup_deferred_count_address,
         transport_last_receive_length_address=transport_last_receive_length_address,
         transport_last_send_length_address=transport_last_send_length_address,
         transport_last_peer_ipv4_address=transport_last_peer_ipv4_address,
@@ -2699,6 +2822,8 @@ def _build_relocated_runtime(
         transport_last_peer_family_address=transport_last_peer_family_address,
         transport_last_poll_action_address=transport_last_poll_action_address,
         transport_last_submit_result_address=transport_last_submit_result_address,
+        transport_polls_while_receive_pending_address=transport_polls_while_receive_pending_address,
+        transport_polls_after_loop_complete_address=transport_polls_after_loop_complete_address,
         transport_last_receive_preview_address=transport_last_receive_preview_address,
         transport_last_receive_preview_size=transport_last_receive_preview_size,
         transport_last_send_preview_address=transport_last_send_preview_address,
@@ -3211,12 +3336,17 @@ def main() -> None:  # noqa: C901
             args.ios_bind_once,
             args.ios_recvfrom_once,
             args.ios_recv_send_once,
+            args.ios_recv_send_loop,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
         if selected
     ) > 1:
         raise RuntimeError("Use at most one IOS UDP diagnostic sub-mode flag at a time.")
+    if args.ios_recv_send_loop_count < 1 or args.ios_recv_send_loop_count > 100:
+        raise RuntimeError("--ios-recv-send-loop-count must be between 1 and 100.")
+    if args.ios_recv_send_loop_count != 3 and not args.ios_recv_send_loop:
+        raise RuntimeError("--ios-recv-send-loop-count requires --ios-recv-send-loop.")
     ios_udp_mode = "normal"
     if args.ios_udp_dry_run:
         ios_udp_mode = "dry_run"
@@ -3240,6 +3370,8 @@ def main() -> None:  # noqa: C901
         ios_udp_mode = "retail_wrapper_recvfrom_once"
     elif args.ios_recv_send_once:
         ios_udp_mode = "retail_wrapper_recv_send_once"
+    elif args.ios_recv_send_loop:
+        ios_udp_mode = "retail_wrapper_recv_send_loop"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:
@@ -3264,6 +3396,7 @@ def main() -> None:  # noqa: C901
         enable_recurring_hook_diagnostics=args.enable_recurring_hook_diagnostics,
         enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
         ios_udp_mode=ios_udp_mode,
+        ios_udp_loop_count=args.ios_recv_send_loop_count,
         reserved_high=reserved_high,
         diagnostic_address=diagnostic_address,
         runtime_destination=runtime_destination,

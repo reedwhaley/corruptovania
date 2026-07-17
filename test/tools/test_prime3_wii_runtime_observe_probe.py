@@ -425,6 +425,17 @@ def _install_transport_state(
     receive_bytes: int = 0,
     send_count: int = 0,
     send_bytes: int = 0,
+    receive_arm_count: int = 0,
+    receive_rearm_count: int = 0,
+    configured_exchange_limit: int = 0,
+    completed_exchange_count: int = 0,
+    current_exchange_index: int = 0,
+    last_completed_exchange_index: int = 0,
+    previous_peer_ipv4: int = 0,
+    previous_peer_port: int = 0,
+    rearm_submission_failure_count: int = 0,
+    loop_complete_transition_count: int = 0,
+    cleanup_deferred_count: int = 0,
     last_receive_length: int = 0,
     last_send_length: int = 0,
     last_peer_ipv4: int = 0,
@@ -432,6 +443,8 @@ def _install_transport_state(
     last_peer_family: int = 0,
     last_poll_action: int = 0,
     last_submit_result: int = 0,
+    polls_while_receive_pending: int = 0,
+    polls_after_loop_complete: int = 0,
     last_receive_preview_hex: str = "00" * 16,
     last_send_preview_hex: str = "00" * 16,
 ) -> None:
@@ -480,6 +493,18 @@ def _install_transport_state(
     _write_u32(blob, 0x208, receive_bytes)
     _write_u32(blob, 0x20C, send_count)
     _write_u32(blob, 0x210, send_bytes)
+    _write_u32(blob, 0x2C0, receive_arm_count)
+    _write_u32(blob, 0x2C4, receive_rearm_count)
+    _write_u32(blob, 0x2C8, configured_exchange_limit)
+    _write_u32(blob, 0x2CC, completed_exchange_count)
+    _write_u32(blob, 0x2D0, current_exchange_index)
+    _write_u32(blob, 0x2D4, last_completed_exchange_index)
+    _write_u32(blob, 0x2D8, previous_peer_ipv4)
+    _write_u32(blob, 0x2DC, previous_peer_port)
+    _write_u32(blob, 0x2E0, rearm_submission_failure_count)
+    _write_u32(blob, 0x2E4, loop_complete_transition_count)
+    _write_u32(blob, 0x2E8, cleanup_deferred_count)
+    _write_u32(blob, 0x2EC, polls_while_receive_pending)
     _write_u32(blob, 0x214, last_receive_length)
     _write_u32(blob, 0x218, last_send_length)
     _write_u32(blob, 0x21C, last_peer_ipv4)
@@ -487,6 +512,7 @@ def _install_transport_state(
     _write_u32(blob, 0x224, last_peer_family)
     _write_u32(blob, 0x228, last_poll_action)
     _write_s32(blob, 0x22C, last_submit_result)
+    _write_u32(blob, 0x230, polls_after_loop_complete)
     blob[0x234:0x244] = bytes.fromhex(last_receive_preview_hex)
     blob[0x244:0x254] = bytes.fromhex(last_send_preview_hex)
 
@@ -2433,3 +2459,174 @@ def test_observe_probe_cli_allows_payload_only_without_checkpoint_name(
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["checkpoint_name"] is None
     assert payload["entry_gate_active"] is False
+
+
+def test_observe_probe_reports_recv_send_loop_transport_fields() -> None:
+    module = _load_module()
+    runtime_blob_first = bytearray(b"R" * 0x2F0)
+    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    for runtime_blob, poll_value in ((runtime_blob_first, 9), (runtime_blob_second, 29)):
+        _write_u32(runtime_blob, 0x38, 0x434F5059)
+        _write_u32(runtime_blob, 0x3C, 0x52554E21)
+        _write_u32(runtime_blob, 0x40, 1)
+        _write_u32(runtime_blob, 0x44, 0x52544F4B)
+        _write_u32(runtime_blob, 0x48, 0x4252544E)
+        _write_u32(runtime_blob, 0x4C, poll_value)
+        _write_u32(runtime_blob, 0x50, poll_value)
+        _write_u32(runtime_blob, 0x54, poll_value)
+        _install_transport_state(
+            runtime_blob,
+            phase=45,
+            open_kd_submit_count=1,
+            open_kd_callback_count=1,
+            nwc24_submit_count=1,
+            nwc24_callback_count=1,
+            open_ip_submit_count=1,
+            open_ip_callback_count=1,
+            kd_close_submit_count=1,
+            kd_close_callback_count=1,
+            startup_submit_count=1,
+            startup_callback_count=1,
+            get_host_id_submit_count=1,
+            get_host_id_callback_count=1,
+            socket_submit_count=1,
+            socket_callback_count=1,
+            bind_submit_count=1,
+            bind_callback_count=1,
+            receive_submit_count=3,
+            send_submit_count=3,
+            receive_count=3,
+            receive_bytes=72,
+            send_count=3,
+            send_bytes=87,
+            receive_arm_count=3,
+            receive_rearm_count=2,
+            configured_exchange_limit=3,
+            completed_exchange_count=3,
+            current_exchange_index=3,
+            last_completed_exchange_index=3,
+            previous_peer_ipv4=0x1AD38AB6,
+            previous_peer_port=43675,
+            loop_complete_transition_count=1,
+            polls_while_receive_pending=25,
+            polls_after_loop_complete=poll_value,
+            last_receive_length=24,
+            last_send_length=29,
+            last_peer_ipv4=0x1AD38AB6,
+            last_peer_port=43675,
+        )
+        _install_diagnostics(
+            runtime_blob,
+            hook_wrapper_entry_count=poll_value,
+            hook_wrapper_before_poll_count=poll_value,
+            runtime_poll_entry_count=poll_value,
+            runtime_poll_exit_count=poll_value,
+            state_machine_entry_count=poll_value,
+            state_machine_exit_count=poll_value,
+            ios_submit_attempt_count=10,
+            ios_submit_return_count=10,
+            ios_submit_return_value=0,
+            callback_entry_count=10,
+            callback_exit_count=10,
+            hook_wrapper_after_poll_count=poll_value,
+            hook_wrapper_exit_count=poll_value,
+            last_execution_marker=0xC0DE000D,
+            last_transport_phase_before_step=45,
+            last_transport_phase_after_step=45,
+            callback_result=0,
+        )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob_first)
+    raw = _relocated_manifest(payload_bytes).to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "retail_wrapper_recv_send_loop"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_recv_send_loop"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 45
+    transport["terminal_phase_name"] = "LOOP_COMPLETE"
+    transport["receive_arm_count_address"] = 0x817E12C0
+    transport["receive_arm_count_size"] = 4
+    transport["receive_rearm_count_address"] = 0x817E12C4
+    transport["receive_rearm_count_size"] = 4
+    transport["configured_exchange_limit_address"] = 0x817E12C8
+    transport["configured_exchange_limit_size"] = 4
+    transport["completed_exchange_count_address"] = 0x817E12CC
+    transport["completed_exchange_count_size"] = 4
+    transport["current_exchange_index_address"] = 0x817E12D0
+    transport["current_exchange_index_size"] = 4
+    transport["last_completed_exchange_index_address"] = 0x817E12D4
+    transport["last_completed_exchange_index_size"] = 4
+    transport["previous_peer_ipv4_address"] = 0x817E12D8
+    transport["previous_peer_ipv4_size"] = 4
+    transport["previous_peer_port_address"] = 0x817E12DC
+    transport["previous_peer_port_size"] = 4
+    transport["rearm_submission_failure_count_address"] = 0x817E12E0
+    transport["rearm_submission_failure_count_size"] = 4
+    transport["loop_complete_transition_count_address"] = 0x817E12E4
+    transport["loop_complete_transition_count_size"] = 4
+    transport["cleanup_deferred_count_address"] = 0x817E12E8
+    transport["cleanup_deferred_count_size"] = 4
+    transport["polls_while_receive_pending_address"] = 0x817E12EC
+    transport["polls_while_receive_pending_size"] = 4
+    transport["polls_after_loop_complete_address"] = 0x817E1230
+    transport["polls_after_loop_complete_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+    manifest = Prime3RuntimePayloadManifest.from_json_dict(raw)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+        repeat_delay_seconds=0.5,
+    )
+    first_memory = _memory_for_config(module, config)
+    second_memory = _memory_for_config(module, config)
+    for memory, runtime_blob in ((first_memory, runtime_blob_first), (second_memory, runtime_blob_second)):
+        _install_bootstrap_diagnostic(memory)
+        memory[0x817E1000] = bytes(runtime_blob)
+    backend = FakeBackend([first_memory, second_memory])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "recurring_execution_continues"
+    assert result["poll_counter_delta"] == 20
+    assert result["first_observed_at_utc"]
+    assert result["second_observed_at_utc"]
+    assert result["relocated_runtime"]["transport"]["phase_name"] == "LOOP_COMPLETE"
+    assert result["relocated_runtime"]["transport"]["receive_arm_count"] == 3
+    assert result["relocated_runtime"]["transport"]["receive_rearm_count"] == 2
+    assert result["relocated_runtime"]["transport"]["completed_exchange_count"] == 3
+    assert result["relocated_runtime"]["transport"]["polls_after_loop_complete"] == 9
+
+
+def test_observe_probe_main_rejects_poll_ms_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "observe_probe.py",
+            "--payload-address",
+            "0x806843C0",
+            "--payload-bin",
+            "ignored.bin",
+            "--payload-manifest",
+            "ignored.json",
+            "--report",
+            "ignored-report.json",
+            "--poll-ms",
+            "9",
+        ],
+    )
+
+    with pytest.raises(module.ProbeObservationError, match="at least 10 ms"):
+        module.main()

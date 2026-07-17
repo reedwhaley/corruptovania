@@ -1069,6 +1069,55 @@ def test_runtime_payload_manifest_rejects_recv_send_once_without_send_enabled() 
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def test_runtime_payload_manifest_accepts_recv_send_loop_transport() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_recv_send_loop"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 45
+    transport["terminal_phase_name"] = "LOOP_COMPLETE"
+    transport["receive_arm_count_address"] = 0x817E1254
+    transport["receive_arm_count_size"] = 4
+    transport["receive_rearm_count_address"] = 0x817E1258
+    transport["receive_rearm_count_size"] = 4
+    transport["configured_exchange_limit_address"] = 0x817E125C
+    transport["configured_exchange_limit_size"] = 4
+    transport["completed_exchange_count_address"] = 0x817E1260
+    transport["completed_exchange_count_size"] = 4
+    transport["current_exchange_index_address"] = 0x817E1264
+    transport["current_exchange_index_size"] = 4
+    transport["last_completed_exchange_index_address"] = 0x817E1268
+    transport["last_completed_exchange_index_size"] = 4
+    transport["previous_peer_ipv4_address"] = 0x817E126C
+    transport["previous_peer_ipv4_size"] = 4
+    transport["previous_peer_port_address"] = 0x817E1270
+    transport["previous_peer_port_size"] = 4
+    transport["rearm_submission_failure_count_address"] = 0x817E1274
+    transport["rearm_submission_failure_count_size"] = 4
+    transport["loop_complete_transition_count_address"] = 0x817E1278
+    transport["loop_complete_transition_count_size"] = 4
+    transport["cleanup_deferred_count_address"] = 0x817E127C
+    transport["cleanup_deferred_count_size"] = 4
+    transport["polls_while_receive_pending_address"] = 0x817E1280
+    transport["polls_while_receive_pending_size"] = 4
+    transport["polls_after_loop_complete_address"] = 0x817E1284
+    transport["polls_after_loop_complete_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.mode == "retail_wrapper_recv_send_loop"
+    assert parsed.relocated_runtime.transport.completed_exchange_count_address == 0x817E1260
+    assert parsed.relocated_runtime.transport.polls_after_loop_complete_address == 0x817E1284
+
+
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

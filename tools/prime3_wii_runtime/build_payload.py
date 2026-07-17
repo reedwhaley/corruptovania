@@ -689,6 +689,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-create-socket-once", action="store_true")
     parser.add_argument("--ios-bind-once", action="store_true")
     parser.add_argument("--ios-recvfrom-once", action="store_true")
+    parser.add_argument("--ios-recv-send-once", action="store_true")
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
@@ -818,6 +819,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_create_socket_once",
         "retail_wrapper_bind_once",
         "retail_wrapper_recvfrom_once",
+        "retail_wrapper_recv_send_once",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1181,11 +1183,12 @@ def build_prime3_runtime_payload(  # noqa: C901
             get_host_id_once = ios_udp_mode == "retail_wrapper_get_host_id_once"
             create_socket_once = ios_udp_mode == "retail_wrapper_create_socket_once"
             recvfrom_once = ios_udp_mode == "retail_wrapper_recvfrom_once"
+            recv_send_once = ios_udp_mode == "retail_wrapper_recv_send_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
-                receive_enabled=recvfrom_once,
-                send_enabled=False,
+                receive_enabled=recvfrom_once or recv_send_once,
+                send_enabled=recv_send_once,
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
@@ -1201,6 +1204,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else 27
                     if recvfrom_once
+                    else 37
+                    if recv_send_once
                     else 0x11
                 ),
                 terminal_phase_name=(
@@ -1218,6 +1223,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else "RECEIVED_DATAGRAM"
                     if recvfrom_once
+                    else "SENT_DATAGRAM"
+                    if recv_send_once
                     else "BOUND_NO_RECV"
                 ),
                 phase_address=relocated_runtime.transport_phase_address,
@@ -1797,6 +1804,7 @@ def _build_relocated_runtime(
                 "retail_wrapper_bind_once": "9",
                 "retail_wrapper_ioctl_async_abi_probe": "10",
                 "retail_wrapper_recvfrom_once": "14",
+                "retail_wrapper_recv_send_once": "15",
             }[ios_udp_mode]
         ),
     ]
@@ -3155,7 +3163,7 @@ def _validate_retail_call_veneer_disassembly(
         raise RuntimeError("Retained veneer self-test caller does not execute a visible post-call continuation.")
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     args = parse_args()
     selected_modes = [
         args.probe,
@@ -3202,6 +3210,7 @@ def main() -> None:
             args.ios_create_socket_once,
             args.ios_bind_once,
             args.ios_recvfrom_once,
+            args.ios_recv_send_once,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
@@ -3229,6 +3238,8 @@ def main() -> None:
         ios_udp_mode = "retail_wrapper_create_socket_once"
     elif args.ios_recvfrom_once:
         ios_udp_mode = "retail_wrapper_recvfrom_once"
+    elif args.ios_recv_send_once:
+        ios_udp_mode = "retail_wrapper_recv_send_once"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:

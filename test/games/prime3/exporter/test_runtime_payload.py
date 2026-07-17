@@ -1030,6 +1030,45 @@ def test_runtime_payload_manifest_rejects_recvfrom_once_without_receive_enabled(
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def test_runtime_payload_manifest_accepts_recv_send_once_transport() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_recv_send_once"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 37
+    transport["terminal_phase_name"] = "SENT_DATAGRAM"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.mode == "retail_wrapper_recv_send_once"
+    assert parsed.relocated_runtime.transport.receive_enabled is True
+    assert parsed.relocated_runtime.transport.send_enabled is True
+
+
+def test_runtime_payload_manifest_rejects_recv_send_once_without_send_enabled() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "retail_wrapper_recv_send_once"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = False
+    transport["terminal_phase_value"] = 37
+    transport["terminal_phase_name"] = "SENT_DATAGRAM"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="must enable send"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

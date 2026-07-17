@@ -588,12 +588,16 @@ class Prime3RuntimeTransportMetadata:
         if not self.initialization_enabled:
             raise Prime3DolPatchError("Relocated runtime transport metadata must mark initialization_enabled.")
         is_recvfrom_once = self.mode == "retail_wrapper_recvfrom_once"
+        is_recv_send_once = self.mode == "retail_wrapper_recv_send_once"
         if self.receive_enabled and not is_recvfrom_once:
-            raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
-        if is_recvfrom_once and not self.receive_enabled:
+            if not is_recv_send_once:
+                raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
+        if (is_recvfrom_once or is_recv_send_once) and not self.receive_enabled:
             raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
-        if self.send_enabled:
+        if self.send_enabled and not is_recv_send_once:
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
+        if is_recv_send_once and not self.send_enabled:
+            raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
         is_nwc24_ioctl_once = self.mode == "retail_wrapper_nwc24_startup_once"
@@ -626,6 +630,10 @@ class Prime3RuntimeTransportMetadata:
             self.terminal_phase_value != 27 or self.terminal_phase_name != "RECEIVED_DATAGRAM"
         ):
             raise Prime3DolPatchError("Recvfrom-once metadata must use the RECEIVED_DATAGRAM terminal phase.")
+        if is_recv_send_once and (
+            self.terminal_phase_value != 37 or self.terminal_phase_name != "SENT_DATAGRAM"
+        ):
+            raise Prime3DolPatchError("Recv-send metadata must use the SENT_DATAGRAM terminal phase.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."

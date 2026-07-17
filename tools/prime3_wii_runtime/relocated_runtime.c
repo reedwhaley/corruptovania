@@ -101,6 +101,15 @@ enum {
     RUNTIME_TRANSPORT_PHASE_RECEIVE_STALE_CALLBACK = 32,
     RUNTIME_TRANSPORT_PHASE_RECEIVE_DUPLICATE_CALLBACK = 33,
     RUNTIME_TRANSPORT_PHASE_RECEIVE_CLEANUP_DEFERRED = 34,
+    RUNTIME_TRANSPORT_PHASE_SUBMIT_SEND_ONCE = 35,
+    RUNTIME_TRANSPORT_PHASE_WAIT_SEND = 36,
+    RUNTIME_TRANSPORT_PHASE_SENT_DATAGRAM = 37,
+    RUNTIME_TRANSPORT_PHASE_SEND_SUBMIT_FAILED = 38,
+    RUNTIME_TRANSPORT_PHASE_SEND_ASYNC_FAILED = 39,
+    RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE = 40,
+    RUNTIME_TRANSPORT_PHASE_SEND_STALE_CALLBACK = 41,
+    RUNTIME_TRANSPORT_PHASE_SEND_DUPLICATE_CALLBACK = 42,
+    RUNTIME_TRANSPORT_PHASE_SEND_CLEANUP_DEFERRED = 43,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -127,6 +136,7 @@ enum {
     RUNTIME_TRANSPORT_OP_BIND_SOCKET = 8,
     RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE = 9,
     RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET = 10,
+    RUNTIME_TRANSPORT_OP_SEND_SOCKET = 11,
 };
 
 enum {
@@ -145,6 +155,7 @@ enum {
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_OPEN_IP_ONCE = 12,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_NWC24_CLOSE_OPEN_IP_STARTUP_ONCE = 13,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECVFROM_ONCE = 14,
+    RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECV_SEND_ONCE = 15,
 };
 
 enum {
@@ -168,6 +179,7 @@ enum {
     IOCTL_SO_BIND = 2,
     IOCTL_SO_CLOSE = 3,
     IOCTLV_SO_RECVFROM = 12,
+    IOCTLV_SO_SENDTO = 13,
     IOCTL_SO_SOCKET = 15,
     IOCTL_SO_GETHOSTID = 16,
     IOCTL_SO_STARTUP = 31,
@@ -185,10 +197,17 @@ enum {
     RUNTIME_RECEIVE_VECTOR_COUNT = 3,
     RUNTIME_RECEIVE_INPUT_VECTOR_COUNT = 1,
     RUNTIME_RECEIVE_OUTPUT_VECTOR_COUNT = 2,
+    RUNTIME_SEND_REQUEST_LOGICAL_SIZE = 40,
+    RUNTIME_SEND_VECTOR_COUNT = 2,
+    RUNTIME_SEND_INPUT_VECTOR_COUNT = 2,
+    RUNTIME_SEND_OUTPUT_VECTOR_COUNT = 0,
+    RUNTIME_SEND_PAYLOAD_LENGTH = 29,
 };
 
 static const char runtime_kd_path[] __attribute_section_rodata__ = "/dev/net/kd/request";
 static const char runtime_ip_path[] __attribute_section_rodata__ = "/dev/net/ip/top";
+static const char runtime_send_payload_ascii[RUNTIME_SEND_PAYLOAD_LENGTH + 1] __attribute_section_rodata__ =
+    "P3_SENDTO_ONCE_REPLY_20260717";
 
 extern void runtime_canary_start(void);
 extern void runtime_canary_end(void);
@@ -446,43 +465,90 @@ volatile s32 runtime_transport_last_submit_result __attribute_section_state__ __
 volatile u32 runtime_transport_receive_submit_result_u32 __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_receive_submit_result __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_receive_callback_result __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_send_submit_result __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_send_callback_result __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_validated_result __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_submit_generation __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_callback_generation __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_submit_generation __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_callback_generation __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_target_address __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_command __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_target_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_command __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_receive_submitted_fd __attribute_section_state__ __attribute_used__ = -1;
 volatile s32 runtime_transport_receive_submitted_socket __attribute_section_state__ __attribute_used__ = -1;
+volatile s32 runtime_transport_send_submitted_fd __attribute_section_state__ __attribute_used__ = -1;
+volatile s32 runtime_transport_send_submitted_socket __attribute_section_state__ __attribute_used__ = -1;
 volatile u32 runtime_transport_receive_input_vector_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_output_vector_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_input_vector_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_output_vector_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_request_address __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_request_storage_size __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_request_logical_size __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_request_alignment __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_request_flags __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_request_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_request_storage_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_request_logical_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_request_alignment __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_request_flags __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_has_destaddr __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_address __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_storage_size __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_logical_size __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_alignment __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_storage_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_logical_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_alignment __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_0_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_0_length __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_1_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_1_length __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_2_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_vector_2_length __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_0_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_0_length __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_1_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_vector_1_length __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_payload_buffer_address __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_payload_capacity __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_payload_alignment __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_payload_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_payload_capacity __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_payload_alignment __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_source_address __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_source_logical_size __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_source_alignment __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_destination_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_destination_logical_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_destination_storage_size __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_destination_alignment __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_callback_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_context_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_callback_exit_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_stale_callback_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_duplicate_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_callback_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_context_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_callback_exit_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_stale_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_duplicate_callback_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_polls_before_receive __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_polls_after_receive __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_polls_before_send __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_polls_while_send_pending __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_polls_after_send __attribute_section_state__ __attribute_used__ = 0;
 volatile u8 runtime_transport_receive_request_bytes[RUNTIME_RECEIVE_REQUEST_LOGICAL_SIZE]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_receive_source_bytes[RUNTIME_WII_SOCKADDR_IN_SIZE]
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u8 runtime_transport_send_request_bytes[RUNTIME_SEND_REQUEST_LOGICAL_SIZE]
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u8 runtime_transport_send_destination_bytes[28] __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u8 runtime_transport_send_payload_bytes[RUNTIME_SEND_PAYLOAD_LENGTH]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 
 volatile u8 runtime_transport_last_receive_preview[RUNTIME_PREVIEW_SIZE]
@@ -511,12 +577,17 @@ static volatile runtime_operation_context runtime_transport_cleanup_close_contex
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static volatile runtime_operation_context runtime_transport_receive_context
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+static volatile runtime_operation_context runtime_transport_send_context
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static runtime_socket_request runtime_transport_socket_request __attribute_section_state_aligned_32__ __attribute_used__
     = {0};
 static runtime_bind_params runtime_transport_bind_params __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+static runtime_sendto_params runtime_transport_send_request __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static runtime_receive_request runtime_transport_receive_request
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static runtime_ioctlv runtime_transport_receive_vectors[RUNTIME_RECEIVE_VECTOR_COUNT]
+    __attribute_section_state_aligned_32__ __attribute_used__ = {{0}};
+static runtime_ioctlv runtime_transport_send_vectors[RUNTIME_SEND_VECTOR_COUNT]
     __attribute_section_state_aligned_32__ __attribute_used__ = {{0}};
 static volatile s32 runtime_transport_cleanup_close_request __attribute_section_state_aligned_32__ __attribute_used__ = -1;
 
@@ -542,6 +613,7 @@ static u32 runtime_transport_is_get_host_id_once_mode(void) __attribute_section_
 static u32 runtime_transport_is_create_socket_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_bind_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_recvfrom_once_mode(void) __attribute_section_code__;
+static u32 runtime_transport_is_recv_send_once_mode(void) __attribute_section_code__;
 static void runtime_cache_flush(const volatile void* address, u32 size) __attribute_section_code__;
 static void runtime_cache_invalidate(const volatile void* address, u32 size) __attribute_section_code__;
 extern s32 runtime_call_retail_ios_open_async(
@@ -601,11 +673,14 @@ static s32 runtime_submit_ioctl(
     u32 next_phase
 ) __attribute_section_code__;
 static s32 runtime_submit_ioctlv_receive(u32 next_phase) __attribute_section_code__;
+static s32 runtime_submit_ioctlv_send(u32 next_phase) __attribute_section_code__;
 static s32 runtime_wait_completion(void) __attribute_section_code__;
 static s32 runtime_consume_receive_completion(void) __attribute_section_code__;
+static s32 runtime_consume_send_completion(void) __attribute_section_code__;
 static void runtime_record_init_error(s32 result) __attribute_section_code__;
 static void runtime_record_socket_error(s32 result) __attribute_section_code__;
 static void runtime_record_receive_error(u32 phase, s32 result) __attribute_section_code__;
+static void runtime_record_send_error(u32 phase, s32 result) __attribute_section_code__;
 static void runtime_record_operation_callback(void) __attribute_section_code__;
 static void runtime_record_submit_evidence(u32 operation, s32 result, u32 generation) __attribute_section_code__;
 static void runtime_record_callback_evidence(u32 operation, s32 result, u32 generation) __attribute_section_code__;
@@ -616,6 +691,7 @@ static void runtime_sync_socket_context_evidence(void) __attribute_section_code_
 static void runtime_sync_bind_context_evidence(void) __attribute_section_code__;
 static void runtime_sync_cleanup_close_context_evidence(void) __attribute_section_code__;
 static void runtime_sync_receive_context_evidence(void) __attribute_section_code__;
+static void runtime_sync_send_context_evidence(void) __attribute_section_code__;
 static volatile runtime_operation_context* runtime_context_for_operation(u32 operation) __attribute_section_code__;
 static void runtime_sync_context_for_operation(u32 operation) __attribute_section_code__;
 static u32 runtime_digest_words(const volatile u8* source, u32 size) __attribute_section_code__;
@@ -885,6 +961,12 @@ static u32 runtime_transport_is_recvfrom_once_mode(void)
         && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECVFROM_ONCE;
 }
 
+static u32 runtime_transport_is_recv_send_once_mode(void)
+{
+    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECV_SEND_ONCE;
+}
+
 static u32 runtime_transport_is_ioctl_async_abi_probe_mode(void)
 {
     return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
@@ -953,6 +1035,9 @@ static volatile runtime_operation_context* runtime_context_for_operation(u32 ope
     if (operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         return &runtime_transport_receive_context;
     }
+    if (operation == RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        return &runtime_transport_send_context;
+    }
     return 0;
 }
 
@@ -972,6 +1057,8 @@ static void runtime_sync_context_for_operation(u32 operation)
         runtime_sync_cleanup_close_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         runtime_sync_receive_context_evidence();
+    } else if (operation == RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        runtime_sync_send_context_evidence();
     }
 }
 
@@ -1041,6 +1128,8 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
         runtime_transport_cleanup_close_context.callback_exit_count += 1;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         runtime_transport_receive_context.callback_exit_count += 1;
+    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        runtime_transport_send_context.callback_exit_count += 1;
     }
     runtime_sync_context_for_operation(runtime_transport_pending_operation);
     runtime_diag_increment(&runtime_callback_exit_count);
@@ -1074,7 +1163,8 @@ static s32 runtime_submit_open(const char* path, u32 operation, u32 next_phase)
                 || runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
-                || runtime_transport_is_recvfrom_once_mode())
+                || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode())
             || runtime_transport_kd_fd != -1 || runtime_transport_kd_closed == 0 || runtime_transport_ip_fd != -1
         ) {
             runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
@@ -1136,7 +1226,8 @@ static s32 runtime_submit_close(s32 fd, u32 operation, u32 next_phase)
             || runtime_transport_is_get_host_id_once_mode()
             || runtime_transport_is_create_socket_once_mode()
             || runtime_transport_is_bind_once_mode()
-            || runtime_transport_is_recvfrom_once_mode())
+            || runtime_transport_is_recvfrom_once_mode()
+            || runtime_transport_is_recv_send_once_mode())
         || operation != RUNTIME_TRANSPORT_OP_CLOSE_KD
         || fd < 0
         || fd != runtime_transport_kd_fd
@@ -1203,7 +1294,8 @@ static s32 runtime_submit_ioctl(
                 || runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
-                || runtime_transport_is_recvfrom_once_mode())
+                || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode())
             || fd < 0
             || ioctl != IOCTL_NWC24_STARTUP
             || buffer_in != 0
@@ -1225,7 +1317,8 @@ static s32 runtime_submit_ioctl(
                 || runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
-                || runtime_transport_is_recvfrom_once_mode())
+                || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_STARTUP
@@ -1270,7 +1363,8 @@ static s32 runtime_submit_ioctl(
             !(runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
-                || runtime_transport_is_recvfrom_once_mode())
+                || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_GETHOSTID
@@ -1316,6 +1410,7 @@ static s32 runtime_submit_ioctl(
                 runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
                 || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode()
             )
             || fd < 0
             || fd != runtime_transport_ip_fd
@@ -1371,7 +1466,9 @@ static s32 runtime_submit_ioctl(
         runtime_sync_socket_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         if (
-            !(runtime_transport_is_bind_once_mode() || runtime_transport_is_recvfrom_once_mode())
+            !(runtime_transport_is_bind_once_mode()
+                || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_BIND
@@ -1429,7 +1526,9 @@ static s32 runtime_submit_ioctl(
         runtime_sync_bind_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
         if (
-            !(runtime_transport_is_bind_once_mode() || runtime_transport_is_recvfrom_once_mode())
+            !(runtime_transport_is_bind_once_mode()
+                || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
             || ioctl != IOCTL_SO_CLOSE
@@ -1581,7 +1680,7 @@ static s32 runtime_submit_ioctlv_receive(u32 next_phase)
     runtime_diag_increment(&runtime_c_before_veneer_call_count);
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_C_BEFORE_VENEER_CALL);
     if (
-        !runtime_transport_is_recvfrom_once_mode()
+        !(runtime_transport_is_recvfrom_once_mode() || runtime_transport_is_recv_send_once_mode())
         || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
         || runtime_transport_ip_fd < 0
         || runtime_transport_socket_fd < 0
@@ -1676,6 +1775,127 @@ static s32 runtime_submit_ioctlv_receive(u32 next_phase)
         return result > 0 ? 1 : -1;
     }
     runtime_set_phase(next_phase, RUNTIME_TRANSPORT_POLL_ACTION_RECV);
+    return 0;
+}
+
+static s32 runtime_submit_ioctlv_send(u32 next_phase)
+{
+    s32 result = 0;
+    runtime_diag_increment(&runtime_ios_submit_attempt_count);
+    runtime_diag_increment(&runtime_c_before_veneer_call_count);
+    runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_C_BEFORE_VENEER_CALL);
+    if (
+        !runtime_transport_is_recv_send_once_mode()
+        || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
+        || runtime_transport_ip_fd < 0
+        || runtime_transport_socket_fd < 0
+        || runtime_transport_socket_ready == 0
+        || runtime_transport_host_id_ready == 0
+        || runtime_transport_bound_flag == 0
+        || runtime_transport_receive_count != 1
+        || runtime_transport_send_submit_count != 1
+        || runtime_transport_last_peer_length != RUNTIME_WII_SOCKADDR_IN_SIZE
+        || runtime_transport_last_peer_family != AF_INET
+    ) {
+        runtime_transport_last_ios_result = -1;
+        runtime_transport_last_submit_result = -1;
+        runtime_transport_send_submit_result = -1;
+        runtime_record_submit_evidence(RUNTIME_TRANSPORT_OP_SEND_SOCKET, -1, runtime_transport_pending_generation);
+        runtime_diag_record_submit_return(-1);
+        return -1;
+    }
+
+    runtime_memzero(&runtime_transport_send_request, sizeof(runtime_transport_send_request));
+    runtime_memzero(runtime_transport_send_vectors, sizeof(runtime_transport_send_vectors));
+    runtime_memzero(runtime_transport_send_destination_bytes, sizeof(runtime_transport_send_destination_bytes));
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
+    runtime_memcpy(
+        runtime_transport_send_payload_bytes,
+        (const volatile void*)runtime_send_payload_ascii,
+        RUNTIME_SEND_PAYLOAD_LENGTH
+    );
+    runtime_memcpy(
+        runtime_transport_send_destination_bytes,
+        (const volatile void*)runtime_transport_receive_source_bytes,
+        RUNTIME_WII_SOCKADDR_IN_SIZE
+    );
+    runtime_transport_send_request.socket = (u32)runtime_transport_socket_fd;
+    runtime_transport_send_request.flags = 0;
+    runtime_transport_send_request.has_destaddr = 1;
+    runtime_memcpy(
+        runtime_transport_send_request.destaddr,
+        (const volatile void*)runtime_transport_send_destination_bytes,
+        sizeof(runtime_transport_send_request.destaddr)
+    );
+    runtime_transport_send_vectors[0].data = (void*)runtime_transport_send_payload_bytes;
+    runtime_transport_send_vectors[0].len = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_transport_send_vectors[1].data = (void*)&runtime_transport_send_request;
+    runtime_transport_send_vectors[1].len = RUNTIME_SEND_REQUEST_LOGICAL_SIZE;
+
+    runtime_transport_send_target_address = PRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS;
+    runtime_transport_send_command = IOCTLV_SO_SENDTO;
+    runtime_transport_send_submitted_fd = runtime_transport_ip_fd;
+    runtime_transport_send_submitted_socket = runtime_transport_socket_fd;
+    runtime_transport_send_input_vector_count = RUNTIME_SEND_INPUT_VECTOR_COUNT;
+    runtime_transport_send_output_vector_count = RUNTIME_SEND_OUTPUT_VECTOR_COUNT;
+    runtime_transport_send_request_address = (u32)&runtime_transport_send_request;
+    runtime_transport_send_request_storage_size = sizeof(runtime_transport_send_request);
+    runtime_transport_send_request_logical_size = RUNTIME_SEND_REQUEST_LOGICAL_SIZE;
+    runtime_transport_send_request_alignment = 0x20;
+    runtime_transport_send_request_flags = 0;
+    runtime_transport_send_has_destaddr = 1;
+    runtime_transport_send_vector_address = (u32)runtime_transport_send_vectors;
+    runtime_transport_send_vector_storage_size = sizeof(runtime_transport_send_vectors);
+    runtime_transport_send_vector_logical_size = RUNTIME_SEND_VECTOR_COUNT * sizeof(runtime_ioctlv);
+    runtime_transport_send_vector_alignment = 0x20;
+    runtime_transport_send_vector_0_pointer = (u32)runtime_transport_send_vectors[0].data;
+    runtime_transport_send_vector_0_length = runtime_transport_send_vectors[0].len;
+    runtime_transport_send_vector_1_pointer = (u32)runtime_transport_send_vectors[1].data;
+    runtime_transport_send_vector_1_length = runtime_transport_send_vectors[1].len;
+    runtime_transport_send_payload_address = (u32)runtime_transport_send_payload_bytes;
+    runtime_transport_send_payload_capacity = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_transport_send_payload_alignment = 0x20;
+    runtime_transport_send_destination_address = (u32)runtime_transport_send_destination_bytes;
+    runtime_transport_send_destination_logical_size = RUNTIME_WII_SOCKADDR_IN_SIZE;
+    runtime_transport_send_destination_storage_size = sizeof(runtime_transport_send_destination_bytes);
+    runtime_transport_send_destination_alignment = 0x20;
+    runtime_transport_send_callback_pointer = (u32)runtime_ios_callback;
+    runtime_transport_send_context_pointer = (u32)&runtime_transport_send_context;
+    runtime_memcpy(
+        runtime_transport_send_request_bytes,
+        (volatile const void*)&runtime_transport_send_request,
+        RUNTIME_SEND_REQUEST_LOGICAL_SIZE
+    );
+    runtime_memzero(&runtime_transport_send_context, sizeof(runtime_transport_send_context));
+    runtime_transport_send_context.expected_generation = runtime_transport_pending_generation + 1;
+    runtime_sync_send_context_evidence();
+
+    runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_SEND_SOCKET;
+    runtime_transport_pending_generation += 1;
+    runtime_transport_callback_pending = 0;
+    runtime_transport_last_ios_result = 0;
+    runtime_transport_send_validated_result = 0;
+    runtime_transport_send_context.expected_generation = runtime_transport_pending_generation;
+    result = runtime_call_retail_ios_ioctlv_async(
+        runtime_transport_ip_fd,
+        IOCTLV_SO_SENDTO,
+        RUNTIME_SEND_INPUT_VECTOR_COUNT,
+        RUNTIME_SEND_OUTPUT_VECTOR_COUNT,
+        (runtime_ioctlv*)runtime_transport_send_vectors,
+        runtime_ios_callback,
+        (void*)&runtime_transport_send_context
+    );
+    runtime_diag_increment(&runtime_c_after_veneer_call_count);
+    runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_C_AFTER_VENEER_CALL);
+    runtime_transport_last_submit_result = result;
+    runtime_transport_send_submit_result = result;
+    runtime_record_submit_evidence(RUNTIME_TRANSPORT_OP_SEND_SOCKET, result, runtime_transport_pending_generation);
+    runtime_diag_record_submit_return(result);
+    if (result != 0) {
+        runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
+        return result > 0 ? 1 : -1;
+    }
+    runtime_set_phase(next_phase, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
     return 0;
 }
 
@@ -1794,7 +2014,69 @@ static s32 runtime_consume_receive_completion(void)
         runtime_transport_last_peer_port = 0;
         runtime_transport_last_peer_ipv4 = 0;
     }
-    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RECEIVED_DATAGRAM, RUNTIME_TRANSPORT_POLL_ACTION_RECV);
+    runtime_transport_polls_after_receive = runtime_poll_counter;
+    runtime_set_phase(
+        runtime_transport_is_recv_send_once_mode()
+            ? RUNTIME_TRANSPORT_PHASE_SUBMIT_SEND_ONCE
+            : RUNTIME_TRANSPORT_PHASE_RECEIVED_DATAGRAM,
+        RUNTIME_TRANSPORT_POLL_ACTION_RECV
+    );
+    return 0;
+}
+
+static s32 runtime_consume_send_completion(void)
+{
+    if (runtime_transport_callback_pending == 0) {
+        runtime_transport_polls_while_send_pending = runtime_poll_counter;
+        runtime_set_phase(runtime_transport_phase, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        return 1;
+    }
+    runtime_transport_callback_pending = 0;
+    if (runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        runtime_transport_rejected_callback_count += 1;
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_STALE_CALLBACK, runtime_transport_last_ios_result);
+        return -1;
+    }
+    if (runtime_transport_callback_generation != runtime_transport_pending_generation) {
+        runtime_transport_rejected_callback_count += 1;
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_STALE_CALLBACK, runtime_transport_last_ios_result);
+        return -1;
+    }
+    runtime_record_operation_callback();
+    runtime_sync_send_context_evidence();
+    runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
+    if (runtime_transport_send_stale_callback_count != 0) {
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_STALE_CALLBACK, runtime_transport_last_ios_result);
+        return -1;
+    }
+    if (runtime_transport_send_duplicate_callback_count != 0) {
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_DUPLICATE_CALLBACK, runtime_transport_last_ios_result);
+        return -1;
+    }
+    if (runtime_transport_last_ios_result < 0) {
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_ASYNC_FAILED, runtime_transport_last_ios_result);
+        return -1;
+    }
+    if (runtime_transport_last_ios_result == 0) {
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE, runtime_transport_last_ios_result);
+        return -1;
+    }
+    if ((u32)runtime_transport_last_ios_result != RUNTIME_SEND_PAYLOAD_LENGTH) {
+        runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE, runtime_transport_last_ios_result);
+        return -1;
+    }
+
+    runtime_transport_send_validated_result = (u32)runtime_transport_last_ios_result;
+    runtime_transport_send_count = 1;
+    runtime_transport_send_bytes = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_transport_last_send_length = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_copy_preview(
+        runtime_transport_last_send_preview,
+        runtime_transport_send_payload_bytes,
+        RUNTIME_SEND_PAYLOAD_LENGTH
+    );
+    runtime_transport_polls_after_send = runtime_poll_counter;
+    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SENT_DATAGRAM, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
     return 0;
 }
 
@@ -1806,6 +2088,14 @@ static void runtime_record_init_error(s32 result)
 }
 
 static void runtime_record_receive_error(u32 phase, s32 result)
+{
+    runtime_transport_last_socket_error = result;
+    runtime_transport_last_error = result;
+    runtime_transport_last_ios_result = result;
+    runtime_set_phase(phase, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+}
+
+static void runtime_record_send_error(u32 phase, s32 result)
 {
     runtime_transport_last_socket_error = result;
     runtime_transport_last_error = result;
@@ -1863,6 +2153,8 @@ static void runtime_record_operation_callback(void)
         runtime_transport_cleanup_close_callback_count += 1;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         runtime_transport_receive_callback_result = runtime_transport_last_ios_result;
+    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        runtime_transport_send_callback_result = runtime_transport_last_ios_result;
     }
 }
 
@@ -1899,6 +2191,9 @@ static void runtime_record_submit_evidence(u32 operation, s32 result, u32 genera
         runtime_transport_receive_submit_result = result;
         runtime_transport_receive_submit_result_u32 = (u32)result;
         runtime_transport_receive_submit_generation = generation;
+    } else if (operation == RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        runtime_transport_send_submit_result = result;
+        runtime_transport_send_submit_generation = generation;
     }
 }
 
@@ -1934,6 +2229,9 @@ static void runtime_record_callback_evidence(u32 operation, s32 result, u32 gene
     } else if (operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         runtime_transport_receive_callback_result = result;
         runtime_transport_receive_callback_generation = generation;
+    } else if (operation == RUNTIME_TRANSPORT_OP_SEND_SOCKET) {
+        runtime_transport_send_callback_result = result;
+        runtime_transport_send_callback_generation = generation;
     }
 }
 
@@ -1985,6 +2283,13 @@ static void runtime_sync_receive_context_evidence(void)
     runtime_transport_receive_callback_exit_count = runtime_transport_receive_context.callback_exit_count;
     runtime_transport_receive_stale_callback_count = runtime_transport_receive_context.stale_callback_count;
     runtime_transport_receive_duplicate_callback_count = runtime_transport_receive_context.duplicate_callback_count;
+}
+
+static void runtime_sync_send_context_evidence(void)
+{
+    runtime_transport_send_callback_exit_count = runtime_transport_send_context.callback_exit_count;
+    runtime_transport_send_stale_callback_count = runtime_transport_send_context.stale_callback_count;
+    runtime_transport_send_duplicate_callback_count = runtime_transport_send_context.duplicate_callback_count;
 }
 #endif
 
@@ -2232,42 +2537,87 @@ void runtime_entry_impl(void)
     runtime_transport_receive_submit_result_u32 = 0;
     runtime_transport_receive_submit_result = 0;
     runtime_transport_receive_callback_result = 0;
+    runtime_transport_send_submit_result = 0;
+    runtime_transport_send_callback_result = 0;
+    runtime_transport_send_validated_result = 0;
     runtime_transport_receive_submit_generation = 0;
     runtime_transport_receive_callback_generation = 0;
+    runtime_transport_send_submit_generation = 0;
+    runtime_transport_send_callback_generation = 0;
     runtime_transport_receive_target_address = 0;
     runtime_transport_receive_command = 0;
+    runtime_transport_send_target_address = 0;
+    runtime_transport_send_command = 0;
     runtime_transport_receive_submitted_fd = -1;
     runtime_transport_receive_submitted_socket = -1;
+    runtime_transport_send_submitted_fd = -1;
+    runtime_transport_send_submitted_socket = -1;
     runtime_transport_receive_input_vector_count = 0;
     runtime_transport_receive_output_vector_count = 0;
+    runtime_transport_send_input_vector_count = 0;
+    runtime_transport_send_output_vector_count = 0;
     runtime_transport_receive_request_address = 0;
     runtime_transport_receive_request_storage_size = 0;
     runtime_transport_receive_request_logical_size = 0;
     runtime_transport_receive_request_alignment = 0;
     runtime_transport_receive_request_flags = 0;
+    runtime_transport_send_request_address = 0;
+    runtime_transport_send_request_storage_size = 0;
+    runtime_transport_send_request_logical_size = 0;
+    runtime_transport_send_request_alignment = 0;
+    runtime_transport_send_request_flags = 0;
+    runtime_transport_send_has_destaddr = 0;
     runtime_transport_receive_vector_address = 0;
     runtime_transport_receive_vector_storage_size = 0;
     runtime_transport_receive_vector_logical_size = 0;
     runtime_transport_receive_vector_alignment = 0;
+    runtime_transport_send_vector_address = 0;
+    runtime_transport_send_vector_storage_size = 0;
+    runtime_transport_send_vector_logical_size = 0;
+    runtime_transport_send_vector_alignment = 0;
     runtime_transport_receive_vector_0_pointer = 0;
     runtime_transport_receive_vector_0_length = 0;
     runtime_transport_receive_vector_1_pointer = 0;
     runtime_transport_receive_vector_1_length = 0;
     runtime_transport_receive_vector_2_pointer = 0;
     runtime_transport_receive_vector_2_length = 0;
+    runtime_transport_send_vector_0_pointer = 0;
+    runtime_transport_send_vector_0_length = 0;
+    runtime_transport_send_vector_1_pointer = 0;
+    runtime_transport_send_vector_1_length = 0;
     runtime_transport_receive_payload_buffer_address = 0;
     runtime_transport_receive_payload_capacity = 0;
     runtime_transport_receive_payload_alignment = 0;
+    runtime_transport_send_payload_address = 0;
+    runtime_transport_send_payload_capacity = 0;
+    runtime_transport_send_payload_alignment = 0;
     runtime_transport_receive_source_address = 0;
     runtime_transport_receive_source_logical_size = 0;
     runtime_transport_receive_source_alignment = 0;
+    runtime_transport_send_destination_address = 0;
+    runtime_transport_send_destination_logical_size = 0;
+    runtime_transport_send_destination_storage_size = 0;
+    runtime_transport_send_destination_alignment = 0;
     runtime_transport_receive_callback_pointer = 0;
     runtime_transport_receive_context_pointer = 0;
     runtime_transport_receive_callback_exit_count = 0;
     runtime_transport_receive_stale_callback_count = 0;
     runtime_transport_receive_duplicate_callback_count = 0;
+    runtime_transport_send_callback_pointer = 0;
+    runtime_transport_send_context_pointer = 0;
+    runtime_transport_send_callback_exit_count = 0;
+    runtime_transport_send_stale_callback_count = 0;
+    runtime_transport_send_duplicate_callback_count = 0;
+    runtime_transport_polls_before_receive = 0;
+    runtime_transport_polls_after_receive = 0;
+    runtime_transport_polls_before_send = 0;
+    runtime_transport_polls_while_send_pending = 0;
+    runtime_transport_polls_after_send = 0;
     runtime_memzero(runtime_transport_receive_request_bytes, sizeof(runtime_transport_receive_request_bytes));
     runtime_memzero(runtime_transport_receive_source_bytes, sizeof(runtime_transport_receive_source_bytes));
+    runtime_memzero(runtime_transport_send_request_bytes, sizeof(runtime_transport_send_request_bytes));
+    runtime_memzero(runtime_transport_send_destination_bytes, sizeof(runtime_transport_send_destination_bytes));
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
     runtime_memzero(runtime_transport_last_receive_preview, sizeof(runtime_transport_last_receive_preview));
     runtime_memzero(runtime_transport_last_send_preview, sizeof(runtime_transport_last_send_preview));
     runtime_memzero(runtime_transport_receive_payload_buffer, sizeof(runtime_transport_receive_payload_buffer));
@@ -2281,10 +2631,13 @@ void runtime_entry_impl(void)
     runtime_memzero(&runtime_transport_bind_context, sizeof(runtime_transport_bind_context));
     runtime_memzero(&runtime_transport_cleanup_close_context, sizeof(runtime_transport_cleanup_close_context));
     runtime_memzero(&runtime_transport_receive_context, sizeof(runtime_transport_receive_context));
+    runtime_memzero(&runtime_transport_send_context, sizeof(runtime_transport_send_context));
     runtime_memzero(&runtime_transport_socket_request, sizeof(runtime_transport_socket_request));
     runtime_memzero(&runtime_transport_bind_params, sizeof(runtime_transport_bind_params));
+    runtime_memzero(&runtime_transport_send_request, sizeof(runtime_transport_send_request));
     runtime_memzero(&runtime_transport_receive_request, sizeof(runtime_transport_receive_request));
     runtime_memzero(runtime_transport_receive_vectors, sizeof(runtime_transport_receive_vectors));
+    runtime_memzero(runtime_transport_send_vectors, sizeof(runtime_transport_send_vectors));
     runtime_transport_cleanup_close_request = -1;
 #if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
     runtime_transport_phase = RUNTIME_TRANSPORT_PHASE_OPEN_KD;
@@ -2318,7 +2671,8 @@ void runtime_poll_entry_impl(void)
         runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SO_STARTED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SOCKET_READY
-        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVED_DATAGRAM
+        || (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVED_DATAGRAM
+            && !runtime_transport_is_recv_send_once_mode())
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVE_SUBMIT_FAILED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVE_ASYNC_FAILED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVE_INVALID_POSITIVE
@@ -2326,7 +2680,17 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVE_STALE_CALLBACK
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVE_DUPLICATE_CALLBACK
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RECEIVE_CLEANUP_DEFERRED
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SENT_DATAGRAM
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_SUBMIT_FAILED
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_ASYNC_FAILED
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_STALE_CALLBACK
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_DUPLICATE_CALLBACK
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_CLEANUP_DEFERRED
     ) {
+        if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SENT_DATAGRAM) {
+            runtime_transport_polls_after_send = runtime_poll_counter;
+        }
         runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
         goto runtime_poll_exit;
     }
@@ -2350,13 +2714,19 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
     ) {
         s32 wait_result = runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE
             ? runtime_consume_receive_completion()
+            : runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
+            ? runtime_consume_send_completion()
             : runtime_wait_completion();
         if (wait_result != 0) {
             if (wait_result < 0) {
-                if (runtime_transport_phase != RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE) {
+                if (
+                    runtime_transport_phase != RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE
+                    && runtime_transport_phase != RUNTIME_TRANSPORT_PHASE_WAIT_SEND
+                ) {
                     runtime_record_init_error(runtime_transport_last_ios_result);
                 }
             }
@@ -2442,6 +2812,7 @@ void runtime_poll_entry_impl(void)
                 runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
                 || runtime_transport_is_recvfrom_once_mode()
+                || runtime_transport_is_recv_send_once_mode()
             ) {
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
             } else {
@@ -2481,11 +2852,7 @@ void runtime_poll_entry_impl(void)
             runtime_transport_bound_port = RUNTIME_UDP_PORT;
             runtime_transport_bound_address = INADDR_ANY;
             runtime_transport_bound_flag = 1;
-            if (runtime_transport_is_recvfrom_once_mode()) {
-                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
-            } else {
-                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
-            }
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
             goto runtime_poll_exit;
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
             if (runtime_transport_last_ios_result != 0) {
@@ -2679,7 +3046,7 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV) {
-        if (runtime_transport_is_recvfrom_once_mode()) {
+        if (runtime_transport_is_recvfrom_once_mode() || runtime_transport_is_recv_send_once_mode()) {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SUBMIT_RECEIVE_ONCE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         } else {
             runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
@@ -2687,6 +3054,7 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SUBMIT_RECEIVE_ONCE) {
+        runtime_transport_polls_before_receive = runtime_poll_counter;
         runtime_transport_receive_submit_count += 1;
         {
             s32 receive_submit = runtime_submit_ioctlv_receive(RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE);
@@ -2699,6 +3067,25 @@ void runtime_poll_entry_impl(void)
                 runtime_record_receive_error(
                     RUNTIME_TRANSPORT_PHASE_RECEIVE_INVALID_POSITIVE,
                     runtime_transport_receive_submit_result
+                );
+            }
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SUBMIT_SEND_ONCE) {
+        runtime_transport_polls_before_send = runtime_poll_counter;
+        runtime_transport_send_submit_count += 1;
+        {
+            s32 send_submit = runtime_submit_ioctlv_send(RUNTIME_TRANSPORT_PHASE_WAIT_SEND);
+            if (send_submit < 0) {
+                runtime_record_send_error(
+                    RUNTIME_TRANSPORT_PHASE_SEND_SUBMIT_FAILED,
+                    runtime_transport_send_submit_result
+                );
+            } else if (send_submit > 0) {
+                runtime_record_send_error(
+                    RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE,
+                    runtime_transport_send_submit_result
                 );
             }
         }

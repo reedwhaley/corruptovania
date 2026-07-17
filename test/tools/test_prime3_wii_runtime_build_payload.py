@@ -552,6 +552,41 @@ def test_main_selects_recvfrom_once_mode(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert captured["payload_mode"] == "relocated_continue"
 
 
+def test_main_selects_recv_send_once_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_recv_send_mode")
+    captured: dict[str, object] = {}
+
+    def _fake_build(output_dir: Path, **kwargs):
+        captured["output_dir"] = output_dir
+        captured.update(kwargs)
+        raise RuntimeError("stop after argument selection")
+
+    monkeypatch.setattr(module, "build_prime3_runtime_payload", _fake_build)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-recv-send-once",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after argument selection"):
+        module.main()
+
+    assert captured["ios_udp_mode"] == "retail_wrapper_recv_send_once"
+    assert captured["enable_ios_udp_diagnostic"] is True
+    assert captured["payload_mode"] == "relocated_continue"
+
+
 def test_validate_retail_call_veneer_instructions_accepts_balanced_lr_restore() -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_veneer_validator_good")
 

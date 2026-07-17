@@ -15,7 +15,12 @@ if __package__ in {None, ""}:
     if _repository_root_str not in sys.path:
         sys.path.insert(0, _repository_root_str)
 
-from randovania.game_connection.executor.prime3_wii_protocol import PROTOCOL_VERSION
+from randovania.game_connection.executor.prime3_wii_protocol import (
+    CRC_SIZE,
+    HEADER_SIZE,
+    PROTOCOL_MAGIC,
+    PROTOCOL_VERSION,
+)
 from randovania.games.prime3.exporter.runtime_payload import (
     PRIME3_RUNTIME_CONTINUE_MODES,
     PRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODES,
@@ -400,6 +405,28 @@ RUNTIME_TRANSPORT_POLLS_WHILE_RECEIVE_PENDING_SYMBOL = "runtime_transport_polls_
 RUNTIME_TRANSPORT_POLLS_AFTER_LOOP_COMPLETE_SYMBOL = "runtime_transport_polls_after_loop_complete"
 RUNTIME_TRANSPORT_LAST_RECEIVE_PREVIEW_SYMBOL = "runtime_transport_last_receive_preview"
 RUNTIME_TRANSPORT_LAST_SEND_PREVIEW_SYMBOL = "runtime_transport_last_send_preview"
+RUNTIME_TRANSPORT_PREPARED_SEND_LENGTH_SYMBOL = "runtime_transport_prepared_send_length"
+RUNTIME_TRANSPORT_CP3W_DATAGRAMS_PROCESSED_SYMBOL = "runtime_transport_cp3w_datagrams_processed"
+RUNTIME_TRANSPORT_CP3W_FRAMES_VALID_SYMBOL = "runtime_transport_cp3w_frames_valid"
+RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_SYMBOL = "runtime_transport_cp3w_frames_invalid"
+RUNTIME_TRANSPORT_CP3W_FRAMES_TOO_SHORT_SYMBOL = "runtime_transport_cp3w_frames_too_short"
+RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_MAGIC_SYMBOL = "runtime_transport_cp3w_frames_invalid_magic"
+RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_VERSION_SYMBOL = "runtime_transport_cp3w_frames_invalid_version"
+RUNTIME_TRANSPORT_CP3W_FRAMES_UNSUPPORTED_TYPE_SYMBOL = "runtime_transport_cp3w_frames_unsupported_type"
+RUNTIME_TRANSPORT_CP3W_FRAMES_NONZERO_FLAGS_SYMBOL = "runtime_transport_cp3w_frames_nonzero_flags"
+RUNTIME_TRANSPORT_CP3W_FRAMES_LENGTH_MISMATCH_SYMBOL = "runtime_transport_cp3w_frames_length_mismatch"
+RUNTIME_TRANSPORT_CP3W_FRAMES_PAYLOAD_TOO_LARGE_SYMBOL = "runtime_transport_cp3w_frames_payload_too_large"
+RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_PAYLOAD_SYMBOL = "runtime_transport_cp3w_frames_invalid_payload"
+RUNTIME_TRANSPORT_CP3W_FRAMES_MALFORMED_SYMBOL = "runtime_transport_cp3w_frames_malformed"
+RUNTIME_TRANSPORT_CP3W_FRAMED_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_framed_responses_submitted"
+RUNTIME_TRANSPORT_CP3W_FRAMED_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_framed_responses_completed"
+RUNTIME_TRANSPORT_CP3W_LAST_REQUEST_ID_SYMBOL = "runtime_transport_cp3w_last_request_id"
+RUNTIME_TRANSPORT_CP3W_LAST_RESPONSE_ID_SYMBOL = "runtime_transport_cp3w_last_response_id"
+RUNTIME_TRANSPORT_CP3W_LAST_MESSAGE_TYPE_SYMBOL = "runtime_transport_cp3w_last_message_type"
+RUNTIME_TRANSPORT_CP3W_LAST_DECLARED_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_cp3w_last_declared_payload_length"
+RUNTIME_TRANSPORT_CP3W_LAST_ACTUAL_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_cp3w_last_actual_payload_length"
+RUNTIME_TRANSPORT_CP3W_LAST_FRAME_RESULT_SYMBOL = "runtime_transport_cp3w_last_frame_result"
+RUNTIME_TRANSPORT_CP3W_FINAL_DATAGRAM_INDEX_SYMBOL = "runtime_transport_cp3w_final_datagram_index"
 RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
 
 
@@ -540,6 +567,28 @@ class RelocatedRuntimeBuildResult:
     transport_last_receive_preview_size: int
     transport_last_send_preview_address: int
     transport_last_send_preview_size: int
+    transport_prepared_send_length_address: int
+    transport_cp3w_datagrams_processed_address: int
+    transport_cp3w_frames_valid_address: int
+    transport_cp3w_frames_invalid_address: int
+    transport_cp3w_frames_too_short_address: int
+    transport_cp3w_frames_invalid_magic_address: int
+    transport_cp3w_frames_invalid_version_address: int
+    transport_cp3w_frames_unsupported_type_address: int
+    transport_cp3w_frames_nonzero_flags_address: int
+    transport_cp3w_frames_length_mismatch_address: int
+    transport_cp3w_frames_payload_too_large_address: int
+    transport_cp3w_frames_invalid_payload_address: int
+    transport_cp3w_frames_malformed_address: int
+    transport_cp3w_framed_responses_submitted_address: int
+    transport_cp3w_framed_responses_completed_address: int
+    transport_cp3w_last_request_id_address: int
+    transport_cp3w_last_response_id_address: int
+    transport_cp3w_last_message_type_address: int
+    transport_cp3w_last_declared_payload_length_address: int
+    transport_cp3w_last_actual_payload_length_address: int
+    transport_cp3w_last_frame_result_address: int
+    transport_cp3w_final_datagram_index_address: int
     transport_open_kd_submit_result_address: int
     transport_open_kd_callback_result_address: int
     transport_open_kd_submit_generation_address: int
@@ -718,6 +767,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-recv-send-once", action="store_true")
     parser.add_argument("--ios-recv-send-loop", action="store_true")
     parser.add_argument("--ios-recv-send-loop-count", type=int, default=3)
+    parser.add_argument("--ios-cp3w-frame-validation", action="store_true")
+    parser.add_argument("--ios-cp3w-frame-validation-count", type=int, default=6)
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
@@ -850,6 +901,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_recvfrom_once",
         "retail_wrapper_recv_send_once",
         "retail_wrapper_recv_send_loop",
+        "cp3w_frame_validation",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1218,11 +1270,12 @@ def build_prime3_runtime_payload(  # noqa: C901
             recvfrom_once = ios_udp_mode == "retail_wrapper_recvfrom_once"
             recv_send_once = ios_udp_mode == "retail_wrapper_recv_send_once"
             recv_send_loop = ios_udp_mode == "retail_wrapper_recv_send_loop"
+            cp3w_frame_validation = ios_udp_mode == "cp3w_frame_validation"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
-                receive_enabled=recvfrom_once or recv_send_once or recv_send_loop,
-                send_enabled=recv_send_once or recv_send_loop,
+                receive_enabled=recvfrom_once or recv_send_once or recv_send_loop or cp3w_frame_validation,
+                send_enabled=recv_send_once or recv_send_loop or cp3w_frame_validation,
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
@@ -1238,6 +1291,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else 27
                     if recvfrom_once
+                    else 55
+                    if cp3w_frame_validation
                     else 45
                     if recv_send_loop
                     else 37
@@ -1259,6 +1314,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else "RECEIVED_DATAGRAM"
                     if recvfrom_once
+                    else "CP3W_FRAME_LOOP_COMPLETE"
+                    if cp3w_frame_validation
                     else "LOOP_COMPLETE"
                     if recv_send_loop
                     else "SENT_DATAGRAM"
@@ -1360,6 +1417,74 @@ def build_prime3_runtime_payload(  # noqa: C901
                 send_count_size=4,
                 send_bytes_address=relocated_runtime.transport_send_bytes_address,
                 send_bytes_size=4,
+                cp3w_magic_hex=PROTOCOL_MAGIC.hex(),
+                cp3w_protocol_version=PROTOCOL_VERSION,
+                cp3w_header_size=HEADER_SIZE,
+                cp3w_crc_size=CRC_SIZE,
+                cp3w_crc_initial_value=0xFFFFFFFF,
+                cp3w_crc_final_xor_value=0xFFFFFFFF,
+                cp3w_crc_polynomial=0xEDB88320,
+                cp3w_crc_reflected=True,
+                cp3w_packet_kind_request=1,
+                cp3w_packet_kind_response=2,
+                cp3w_command_reserved_mailbox=127,
+                cp3w_packet_kind_offset=5,
+                cp3w_command_offset=6,
+                cp3w_response_status_offset=7,
+                cp3w_request_id_offset=8,
+                cp3w_payload_length_offset=12,
+                cp3w_request_payload_ascii="P3_FRAME_TEST_20260717",
+                cp3w_response_payload_ascii="P3_FRAME_ACK_20260717",
+                cp3w_request_payload_length=len("P3_FRAME_TEST_20260717"),
+                cp3w_response_payload_length=len("P3_FRAME_ACK_20260717"),
+                prepared_send_length_address=relocated_runtime.transport_prepared_send_length_address,
+                prepared_send_length_size=4,
+                cp3w_datagrams_processed_address=relocated_runtime.transport_cp3w_datagrams_processed_address,
+                cp3w_datagrams_processed_size=4,
+                cp3w_frames_valid_address=relocated_runtime.transport_cp3w_frames_valid_address,
+                cp3w_frames_valid_size=4,
+                cp3w_frames_invalid_address=relocated_runtime.transport_cp3w_frames_invalid_address,
+                cp3w_frames_invalid_size=4,
+                cp3w_frames_too_short_address=relocated_runtime.transport_cp3w_frames_too_short_address,
+                cp3w_frames_too_short_size=4,
+                cp3w_frames_invalid_magic_address=relocated_runtime.transport_cp3w_frames_invalid_magic_address,
+                cp3w_frames_invalid_magic_size=4,
+                cp3w_frames_invalid_version_address=relocated_runtime.transport_cp3w_frames_invalid_version_address,
+                cp3w_frames_invalid_version_size=4,
+                cp3w_frames_unsupported_type_address=relocated_runtime.transport_cp3w_frames_unsupported_type_address,
+                cp3w_frames_unsupported_type_size=4,
+                cp3w_frames_nonzero_flags_address=relocated_runtime.transport_cp3w_frames_nonzero_flags_address,
+                cp3w_frames_nonzero_flags_size=4,
+                cp3w_frames_length_mismatch_address=relocated_runtime.transport_cp3w_frames_length_mismatch_address,
+                cp3w_frames_length_mismatch_size=4,
+                cp3w_frames_payload_too_large_address=relocated_runtime.transport_cp3w_frames_payload_too_large_address,
+                cp3w_frames_payload_too_large_size=4,
+                cp3w_frames_invalid_payload_address=relocated_runtime.transport_cp3w_frames_invalid_payload_address,
+                cp3w_frames_invalid_payload_size=4,
+                cp3w_frames_malformed_address=relocated_runtime.transport_cp3w_frames_malformed_address,
+                cp3w_frames_malformed_size=4,
+                cp3w_framed_responses_submitted_address=relocated_runtime.transport_cp3w_framed_responses_submitted_address,
+                cp3w_framed_responses_submitted_size=4,
+                cp3w_framed_responses_completed_address=relocated_runtime.transport_cp3w_framed_responses_completed_address,
+                cp3w_framed_responses_completed_size=4,
+                cp3w_last_request_id_address=relocated_runtime.transport_cp3w_last_request_id_address,
+                cp3w_last_request_id_size=4,
+                cp3w_last_response_id_address=relocated_runtime.transport_cp3w_last_response_id_address,
+                cp3w_last_response_id_size=4,
+                cp3w_last_message_type_address=relocated_runtime.transport_cp3w_last_message_type_address,
+                cp3w_last_message_type_size=4,
+                cp3w_last_declared_payload_length_address=(
+                    relocated_runtime.transport_cp3w_last_declared_payload_length_address
+                ),
+                cp3w_last_declared_payload_length_size=4,
+                cp3w_last_actual_payload_length_address=(
+                    relocated_runtime.transport_cp3w_last_actual_payload_length_address
+                ),
+                cp3w_last_actual_payload_length_size=4,
+                cp3w_last_frame_result_address=relocated_runtime.transport_cp3w_last_frame_result_address,
+                cp3w_last_frame_result_size=4,
+                cp3w_final_datagram_index_address=relocated_runtime.transport_cp3w_final_datagram_index_address,
+                cp3w_final_datagram_index_size=4,
                 receive_arm_count_address=relocated_runtime.transport_receive_arm_count_address,
                 receive_arm_count_size=4,
                 receive_rearm_count_address=relocated_runtime.transport_receive_rearm_count_address,
@@ -1877,6 +2002,7 @@ def _build_relocated_runtime(
                 "retail_wrapper_recvfrom_once": "14",
                 "retail_wrapper_recv_send_once": "15",
                 "retail_wrapper_recv_send_loop": "16",
+                "cp3w_frame_validation": "17",
             }[ios_udp_mode]
         ),
         f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
@@ -2687,6 +2813,72 @@ def _build_relocated_runtime(
     transport_last_send_preview_size = _extract_symbol_size(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_SEND_PREVIEW_SYMBOL
     )
+    transport_prepared_send_length_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_PREPARED_SEND_LENGTH_SYMBOL
+    )
+    transport_cp3w_datagrams_processed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_DATAGRAMS_PROCESSED_SYMBOL
+    )
+    transport_cp3w_frames_valid_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_VALID_SYMBOL
+    )
+    transport_cp3w_frames_invalid_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_SYMBOL
+    )
+    transport_cp3w_frames_too_short_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_TOO_SHORT_SYMBOL
+    )
+    transport_cp3w_frames_invalid_magic_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_MAGIC_SYMBOL
+    )
+    transport_cp3w_frames_invalid_version_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_VERSION_SYMBOL
+    )
+    transport_cp3w_frames_unsupported_type_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_UNSUPPORTED_TYPE_SYMBOL
+    )
+    transport_cp3w_frames_nonzero_flags_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_NONZERO_FLAGS_SYMBOL
+    )
+    transport_cp3w_frames_length_mismatch_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_LENGTH_MISMATCH_SYMBOL
+    )
+    transport_cp3w_frames_payload_too_large_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_PAYLOAD_TOO_LARGE_SYMBOL
+    )
+    transport_cp3w_frames_invalid_payload_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_INVALID_PAYLOAD_SYMBOL
+    )
+    transport_cp3w_frames_malformed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMES_MALFORMED_SYMBOL
+    )
+    transport_cp3w_framed_responses_submitted_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMED_RESPONSES_SUBMITTED_SYMBOL
+    )
+    transport_cp3w_framed_responses_completed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FRAMED_RESPONSES_COMPLETED_SYMBOL
+    )
+    transport_cp3w_last_request_id_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_REQUEST_ID_SYMBOL
+    )
+    transport_cp3w_last_response_id_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_RESPONSE_ID_SYMBOL
+    )
+    transport_cp3w_last_message_type_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_MESSAGE_TYPE_SYMBOL
+    )
+    transport_cp3w_last_declared_payload_length_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_DECLARED_PAYLOAD_LENGTH_SYMBOL
+    )
+    transport_cp3w_last_actual_payload_length_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_ACTUAL_PAYLOAD_LENGTH_SYMBOL
+    )
+    transport_cp3w_last_frame_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_FRAME_RESULT_SYMBOL
+    )
+    transport_cp3w_final_datagram_index_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_FINAL_DATAGRAM_INDEX_SYMBOL
+    )
     cache_range_start, cache_range_size = compute_cache_range(
         address=runtime_destination,
         size=len(payload_bytes),
@@ -2828,6 +3020,28 @@ def _build_relocated_runtime(
         transport_last_receive_preview_size=transport_last_receive_preview_size,
         transport_last_send_preview_address=transport_last_send_preview_address,
         transport_last_send_preview_size=transport_last_send_preview_size,
+        transport_prepared_send_length_address=transport_prepared_send_length_address,
+        transport_cp3w_datagrams_processed_address=transport_cp3w_datagrams_processed_address,
+        transport_cp3w_frames_valid_address=transport_cp3w_frames_valid_address,
+        transport_cp3w_frames_invalid_address=transport_cp3w_frames_invalid_address,
+        transport_cp3w_frames_too_short_address=transport_cp3w_frames_too_short_address,
+        transport_cp3w_frames_invalid_magic_address=transport_cp3w_frames_invalid_magic_address,
+        transport_cp3w_frames_invalid_version_address=transport_cp3w_frames_invalid_version_address,
+        transport_cp3w_frames_unsupported_type_address=transport_cp3w_frames_unsupported_type_address,
+        transport_cp3w_frames_nonzero_flags_address=transport_cp3w_frames_nonzero_flags_address,
+        transport_cp3w_frames_length_mismatch_address=transport_cp3w_frames_length_mismatch_address,
+        transport_cp3w_frames_payload_too_large_address=transport_cp3w_frames_payload_too_large_address,
+        transport_cp3w_frames_invalid_payload_address=transport_cp3w_frames_invalid_payload_address,
+        transport_cp3w_frames_malformed_address=transport_cp3w_frames_malformed_address,
+        transport_cp3w_framed_responses_submitted_address=transport_cp3w_framed_responses_submitted_address,
+        transport_cp3w_framed_responses_completed_address=transport_cp3w_framed_responses_completed_address,
+        transport_cp3w_last_request_id_address=transport_cp3w_last_request_id_address,
+        transport_cp3w_last_response_id_address=transport_cp3w_last_response_id_address,
+        transport_cp3w_last_message_type_address=transport_cp3w_last_message_type_address,
+        transport_cp3w_last_declared_payload_length_address=transport_cp3w_last_declared_payload_length_address,
+        transport_cp3w_last_actual_payload_length_address=transport_cp3w_last_actual_payload_length_address,
+        transport_cp3w_last_frame_result_address=transport_cp3w_last_frame_result_address,
+        transport_cp3w_final_datagram_index_address=transport_cp3w_final_datagram_index_address,
         transport_open_kd_submit_result_address=transport_open_kd_submit_result_address,
         transport_open_kd_callback_result_address=transport_open_kd_callback_result_address,
         transport_open_kd_submit_generation_address=transport_open_kd_submit_generation_address,
@@ -3337,6 +3551,7 @@ def main() -> None:  # noqa: C901
             args.ios_recvfrom_once,
             args.ios_recv_send_once,
             args.ios_recv_send_loop,
+            args.ios_cp3w_frame_validation,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
@@ -3347,6 +3562,10 @@ def main() -> None:  # noqa: C901
         raise RuntimeError("--ios-recv-send-loop-count must be between 1 and 100.")
     if args.ios_recv_send_loop_count != 3 and not args.ios_recv_send_loop:
         raise RuntimeError("--ios-recv-send-loop-count requires --ios-recv-send-loop.")
+    if args.ios_cp3w_frame_validation_count < 1 or args.ios_cp3w_frame_validation_count > 100:
+        raise RuntimeError("--ios-cp3w-frame-validation-count must be between 1 and 100.")
+    if args.ios_cp3w_frame_validation_count != 6 and not args.ios_cp3w_frame_validation:
+        raise RuntimeError("--ios-cp3w-frame-validation-count requires --ios-cp3w-frame-validation.")
     ios_udp_mode = "normal"
     if args.ios_udp_dry_run:
         ios_udp_mode = "dry_run"
@@ -3372,6 +3591,8 @@ def main() -> None:  # noqa: C901
         ios_udp_mode = "retail_wrapper_recv_send_once"
     elif args.ios_recv_send_loop:
         ios_udp_mode = "retail_wrapper_recv_send_loop"
+    elif args.ios_cp3w_frame_validation:
+        ios_udp_mode = "cp3w_frame_validation"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:
@@ -3396,7 +3617,9 @@ def main() -> None:  # noqa: C901
         enable_recurring_hook_diagnostics=args.enable_recurring_hook_diagnostics,
         enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
         ios_udp_mode=ios_udp_mode,
-        ios_udp_loop_count=args.ios_recv_send_loop_count,
+        ios_udp_loop_count=(
+            args.ios_cp3w_frame_validation_count if args.ios_cp3w_frame_validation else args.ios_recv_send_loop_count
+        ),
         reserved_high=reserved_high,
         diagnostic_address=diagnostic_address,
         runtime_destination=runtime_destination,

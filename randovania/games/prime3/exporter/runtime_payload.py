@@ -297,6 +297,70 @@ class Prime3RuntimeTransportMetadata:
     last_receive_preview_size: int
     last_send_preview_address: int
     last_send_preview_size: int
+    cp3w_magic_hex: str | None = None
+    cp3w_protocol_version: int | None = None
+    cp3w_header_size: int | None = None
+    cp3w_crc_size: int | None = None
+    cp3w_crc_initial_value: int | None = None
+    cp3w_crc_final_xor_value: int | None = None
+    cp3w_crc_polynomial: int | None = None
+    cp3w_crc_reflected: bool | None = None
+    cp3w_packet_kind_request: int | None = None
+    cp3w_packet_kind_response: int | None = None
+    cp3w_command_reserved_mailbox: int | None = None
+    cp3w_packet_kind_offset: int | None = None
+    cp3w_command_offset: int | None = None
+    cp3w_response_status_offset: int | None = None
+    cp3w_request_id_offset: int | None = None
+    cp3w_payload_length_offset: int | None = None
+    cp3w_request_payload_ascii: str | None = None
+    cp3w_response_payload_ascii: str | None = None
+    cp3w_request_payload_length: int | None = None
+    cp3w_response_payload_length: int | None = None
+    prepared_send_length_address: int | None = None
+    prepared_send_length_size: int | None = None
+    cp3w_datagrams_processed_address: int | None = None
+    cp3w_datagrams_processed_size: int | None = None
+    cp3w_frames_valid_address: int | None = None
+    cp3w_frames_valid_size: int | None = None
+    cp3w_frames_invalid_address: int | None = None
+    cp3w_frames_invalid_size: int | None = None
+    cp3w_frames_too_short_address: int | None = None
+    cp3w_frames_too_short_size: int | None = None
+    cp3w_frames_invalid_magic_address: int | None = None
+    cp3w_frames_invalid_magic_size: int | None = None
+    cp3w_frames_invalid_version_address: int | None = None
+    cp3w_frames_invalid_version_size: int | None = None
+    cp3w_frames_unsupported_type_address: int | None = None
+    cp3w_frames_unsupported_type_size: int | None = None
+    cp3w_frames_nonzero_flags_address: int | None = None
+    cp3w_frames_nonzero_flags_size: int | None = None
+    cp3w_frames_length_mismatch_address: int | None = None
+    cp3w_frames_length_mismatch_size: int | None = None
+    cp3w_frames_payload_too_large_address: int | None = None
+    cp3w_frames_payload_too_large_size: int | None = None
+    cp3w_frames_invalid_payload_address: int | None = None
+    cp3w_frames_invalid_payload_size: int | None = None
+    cp3w_frames_malformed_address: int | None = None
+    cp3w_frames_malformed_size: int | None = None
+    cp3w_framed_responses_submitted_address: int | None = None
+    cp3w_framed_responses_submitted_size: int | None = None
+    cp3w_framed_responses_completed_address: int | None = None
+    cp3w_framed_responses_completed_size: int | None = None
+    cp3w_last_request_id_address: int | None = None
+    cp3w_last_request_id_size: int | None = None
+    cp3w_last_response_id_address: int | None = None
+    cp3w_last_response_id_size: int | None = None
+    cp3w_last_message_type_address: int | None = None
+    cp3w_last_message_type_size: int | None = None
+    cp3w_last_declared_payload_length_address: int | None = None
+    cp3w_last_declared_payload_length_size: int | None = None
+    cp3w_last_actual_payload_length_address: int | None = None
+    cp3w_last_actual_payload_length_size: int | None = None
+    cp3w_last_frame_result_address: int | None = None
+    cp3w_last_frame_result_size: int | None = None
+    cp3w_final_datagram_index_address: int | None = None
+    cp3w_final_datagram_index_size: int | None = None
     receive_arm_count_address: int | None = None
     receive_arm_count_size: int | None = None
     receive_rearm_count_address: int | None = None
@@ -616,14 +680,17 @@ class Prime3RuntimeTransportMetadata:
         is_recvfrom_once = self.mode == "retail_wrapper_recvfrom_once"
         is_recv_send_once = self.mode == "retail_wrapper_recv_send_once"
         is_recv_send_loop = self.mode == "retail_wrapper_recv_send_loop"
+        is_cp3w_frame_validation = self.mode == "cp3w_frame_validation"
         if self.receive_enabled and not is_recvfrom_once:
-            if not is_recv_send_once and not is_recv_send_loop:
+            if not is_recv_send_once and not is_recv_send_loop and not is_cp3w_frame_validation:
                 raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
-        if (is_recvfrom_once or is_recv_send_once or is_recv_send_loop) and not self.receive_enabled:
+        if (
+            is_recvfrom_once or is_recv_send_once or is_recv_send_loop or is_cp3w_frame_validation
+        ) and not self.receive_enabled:
             raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
-        if self.send_enabled and not is_recv_send_once and not is_recv_send_loop:
+        if self.send_enabled and not is_recv_send_once and not is_recv_send_loop and not is_cp3w_frame_validation:
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
-        if (is_recv_send_once or is_recv_send_loop) and not self.send_enabled:
+        if (is_recv_send_once or is_recv_send_loop or is_cp3w_frame_validation) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
@@ -665,6 +732,12 @@ class Prime3RuntimeTransportMetadata:
             self.terminal_phase_value != 45 or self.terminal_phase_name != "LOOP_COMPLETE"
         ):
             raise Prime3DolPatchError("Recv-send-loop metadata must use the LOOP_COMPLETE terminal phase.")
+        if is_cp3w_frame_validation and (
+            self.terminal_phase_value != 55 or self.terminal_phase_name != "CP3W_FRAME_LOOP_COMPLETE"
+        ):
+            raise Prime3DolPatchError(
+                "CP3W frame validation metadata must use the CP3W_FRAME_LOOP_COMPLETE terminal phase."
+            )
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -798,6 +871,80 @@ class Prime3RuntimeTransportMetadata:
             if start + size > runtime_state_end:
                 raise Prime3DolPatchError(f"Relocated runtime transport field {name} exceeds the runtime state range.")
         optional_ranges: tuple[tuple[str, int | None, int | None], ...] = (
+            ("transport_prepared_send_length", self.prepared_send_length_address, self.prepared_send_length_size),
+            (
+                "transport_cp3w_datagrams_processed",
+                self.cp3w_datagrams_processed_address,
+                self.cp3w_datagrams_processed_size,
+            ),
+            ("transport_cp3w_frames_valid", self.cp3w_frames_valid_address, self.cp3w_frames_valid_size),
+            ("transport_cp3w_frames_invalid", self.cp3w_frames_invalid_address, self.cp3w_frames_invalid_size),
+            ("transport_cp3w_frames_too_short", self.cp3w_frames_too_short_address, self.cp3w_frames_too_short_size),
+            (
+                "transport_cp3w_frames_invalid_magic",
+                self.cp3w_frames_invalid_magic_address,
+                self.cp3w_frames_invalid_magic_size,
+            ),
+            (
+                "transport_cp3w_frames_invalid_version",
+                self.cp3w_frames_invalid_version_address,
+                self.cp3w_frames_invalid_version_size,
+            ),
+            (
+                "transport_cp3w_frames_unsupported_type",
+                self.cp3w_frames_unsupported_type_address,
+                self.cp3w_frames_unsupported_type_size,
+            ),
+            (
+                "transport_cp3w_frames_nonzero_flags",
+                self.cp3w_frames_nonzero_flags_address,
+                self.cp3w_frames_nonzero_flags_size,
+            ),
+            (
+                "transport_cp3w_frames_length_mismatch",
+                self.cp3w_frames_length_mismatch_address,
+                self.cp3w_frames_length_mismatch_size,
+            ),
+            (
+                "transport_cp3w_frames_payload_too_large",
+                self.cp3w_frames_payload_too_large_address,
+                self.cp3w_frames_payload_too_large_size,
+            ),
+            (
+                "transport_cp3w_frames_invalid_payload",
+                self.cp3w_frames_invalid_payload_address,
+                self.cp3w_frames_invalid_payload_size,
+            ),
+            ("transport_cp3w_frames_malformed", self.cp3w_frames_malformed_address, self.cp3w_frames_malformed_size),
+            (
+                "transport_cp3w_framed_responses_submitted",
+                self.cp3w_framed_responses_submitted_address,
+                self.cp3w_framed_responses_submitted_size,
+            ),
+            (
+                "transport_cp3w_framed_responses_completed",
+                self.cp3w_framed_responses_completed_address,
+                self.cp3w_framed_responses_completed_size,
+            ),
+            ("transport_cp3w_last_request_id", self.cp3w_last_request_id_address, self.cp3w_last_request_id_size),
+            ("transport_cp3w_last_response_id", self.cp3w_last_response_id_address, self.cp3w_last_response_id_size),
+            ("transport_cp3w_last_message_type", self.cp3w_last_message_type_address, self.cp3w_last_message_type_size),
+            (
+                "transport_cp3w_last_declared_payload_length",
+                self.cp3w_last_declared_payload_length_address,
+                self.cp3w_last_declared_payload_length_size,
+            ),
+            (
+                "transport_cp3w_last_actual_payload_length",
+                self.cp3w_last_actual_payload_length_address,
+                self.cp3w_last_actual_payload_length_size,
+            ),
+            ("transport_cp3w_last_frame_result", self.cp3w_last_frame_result_address, self.cp3w_last_frame_result_size),
+            (
+                "transport_cp3w_final_datagram_index",
+                self.cp3w_final_datagram_index_address,
+                self.cp3w_final_datagram_index_size,
+            ),
             ("transport_receive_arm_count", self.receive_arm_count_address, self.receive_arm_count_size),
             ("transport_receive_rearm_count", self.receive_rearm_count_address, self.receive_rearm_count_size),
             (
@@ -1541,6 +1688,72 @@ class Prime3RuntimeTransportMetadata:
             send_count_size=_json_int(data, "send_count_size"),
             send_bytes_address=_json_int(data, "send_bytes_address"),
             send_bytes_size=_json_int(data, "send_bytes_size"),
+            cp3w_magic_hex=_json_optional_string(data, "cp3w_magic_hex"),
+            cp3w_protocol_version=_json_optional_int(data, "cp3w_protocol_version"),
+            cp3w_header_size=_json_optional_int(data, "cp3w_header_size"),
+            cp3w_crc_size=_json_optional_int(data, "cp3w_crc_size"),
+            cp3w_crc_initial_value=_json_optional_int(data, "cp3w_crc_initial_value"),
+            cp3w_crc_final_xor_value=_json_optional_int(data, "cp3w_crc_final_xor_value"),
+            cp3w_crc_polynomial=_json_optional_int(data, "cp3w_crc_polynomial"),
+            cp3w_crc_reflected=_json_optional_bool(data, "cp3w_crc_reflected"),
+            cp3w_packet_kind_request=_json_optional_int(data, "cp3w_packet_kind_request"),
+            cp3w_packet_kind_response=_json_optional_int(data, "cp3w_packet_kind_response"),
+            cp3w_command_reserved_mailbox=_json_optional_int(data, "cp3w_command_reserved_mailbox"),
+            cp3w_packet_kind_offset=_json_optional_int(data, "cp3w_packet_kind_offset"),
+            cp3w_command_offset=_json_optional_int(data, "cp3w_command_offset"),
+            cp3w_response_status_offset=_json_optional_int(data, "cp3w_response_status_offset"),
+            cp3w_request_id_offset=_json_optional_int(data, "cp3w_request_id_offset"),
+            cp3w_payload_length_offset=_json_optional_int(data, "cp3w_payload_length_offset"),
+            cp3w_request_payload_ascii=_json_optional_string(data, "cp3w_request_payload_ascii"),
+            cp3w_response_payload_ascii=_json_optional_string(data, "cp3w_response_payload_ascii"),
+            cp3w_request_payload_length=_json_optional_int(data, "cp3w_request_payload_length"),
+            cp3w_response_payload_length=_json_optional_int(data, "cp3w_response_payload_length"),
+            prepared_send_length_address=_json_optional_int(data, "prepared_send_length_address"),
+            prepared_send_length_size=_json_optional_int(data, "prepared_send_length_size"),
+            cp3w_datagrams_processed_address=_json_optional_int(data, "cp3w_datagrams_processed_address"),
+            cp3w_datagrams_processed_size=_json_optional_int(data, "cp3w_datagrams_processed_size"),
+            cp3w_frames_valid_address=_json_optional_int(data, "cp3w_frames_valid_address"),
+            cp3w_frames_valid_size=_json_optional_int(data, "cp3w_frames_valid_size"),
+            cp3w_frames_invalid_address=_json_optional_int(data, "cp3w_frames_invalid_address"),
+            cp3w_frames_invalid_size=_json_optional_int(data, "cp3w_frames_invalid_size"),
+            cp3w_frames_too_short_address=_json_optional_int(data, "cp3w_frames_too_short_address"),
+            cp3w_frames_too_short_size=_json_optional_int(data, "cp3w_frames_too_short_size"),
+            cp3w_frames_invalid_magic_address=_json_optional_int(data, "cp3w_frames_invalid_magic_address"),
+            cp3w_frames_invalid_magic_size=_json_optional_int(data, "cp3w_frames_invalid_magic_size"),
+            cp3w_frames_invalid_version_address=_json_optional_int(data, "cp3w_frames_invalid_version_address"),
+            cp3w_frames_invalid_version_size=_json_optional_int(data, "cp3w_frames_invalid_version_size"),
+            cp3w_frames_unsupported_type_address=_json_optional_int(data, "cp3w_frames_unsupported_type_address"),
+            cp3w_frames_unsupported_type_size=_json_optional_int(data, "cp3w_frames_unsupported_type_size"),
+            cp3w_frames_nonzero_flags_address=_json_optional_int(data, "cp3w_frames_nonzero_flags_address"),
+            cp3w_frames_nonzero_flags_size=_json_optional_int(data, "cp3w_frames_nonzero_flags_size"),
+            cp3w_frames_length_mismatch_address=_json_optional_int(data, "cp3w_frames_length_mismatch_address"),
+            cp3w_frames_length_mismatch_size=_json_optional_int(data, "cp3w_frames_length_mismatch_size"),
+            cp3w_frames_payload_too_large_address=_json_optional_int(data, "cp3w_frames_payload_too_large_address"),
+            cp3w_frames_payload_too_large_size=_json_optional_int(data, "cp3w_frames_payload_too_large_size"),
+            cp3w_frames_invalid_payload_address=_json_optional_int(data, "cp3w_frames_invalid_payload_address"),
+            cp3w_frames_invalid_payload_size=_json_optional_int(data, "cp3w_frames_invalid_payload_size"),
+            cp3w_frames_malformed_address=_json_optional_int(data, "cp3w_frames_malformed_address"),
+            cp3w_frames_malformed_size=_json_optional_int(data, "cp3w_frames_malformed_size"),
+            cp3w_framed_responses_submitted_address=_json_optional_int(data, "cp3w_framed_responses_submitted_address"),
+            cp3w_framed_responses_submitted_size=_json_optional_int(data, "cp3w_framed_responses_submitted_size"),
+            cp3w_framed_responses_completed_address=_json_optional_int(data, "cp3w_framed_responses_completed_address"),
+            cp3w_framed_responses_completed_size=_json_optional_int(data, "cp3w_framed_responses_completed_size"),
+            cp3w_last_request_id_address=_json_optional_int(data, "cp3w_last_request_id_address"),
+            cp3w_last_request_id_size=_json_optional_int(data, "cp3w_last_request_id_size"),
+            cp3w_last_response_id_address=_json_optional_int(data, "cp3w_last_response_id_address"),
+            cp3w_last_response_id_size=_json_optional_int(data, "cp3w_last_response_id_size"),
+            cp3w_last_message_type_address=_json_optional_int(data, "cp3w_last_message_type_address"),
+            cp3w_last_message_type_size=_json_optional_int(data, "cp3w_last_message_type_size"),
+            cp3w_last_declared_payload_length_address=_json_optional_int(
+                data, "cp3w_last_declared_payload_length_address"
+            ),
+            cp3w_last_declared_payload_length_size=_json_optional_int(data, "cp3w_last_declared_payload_length_size"),
+            cp3w_last_actual_payload_length_address=_json_optional_int(data, "cp3w_last_actual_payload_length_address"),
+            cp3w_last_actual_payload_length_size=_json_optional_int(data, "cp3w_last_actual_payload_length_size"),
+            cp3w_last_frame_result_address=_json_optional_int(data, "cp3w_last_frame_result_address"),
+            cp3w_last_frame_result_size=_json_optional_int(data, "cp3w_last_frame_result_size"),
+            cp3w_final_datagram_index_address=_json_optional_int(data, "cp3w_final_datagram_index_address"),
+            cp3w_final_datagram_index_size=_json_optional_int(data, "cp3w_final_datagram_index_size"),
             receive_arm_count_address=_json_optional_int(data, "receive_arm_count_address"),
             receive_arm_count_size=_json_optional_int(data, "receive_arm_count_size"),
             receive_rearm_count_address=_json_optional_int(data, "receive_rearm_count_address"),
@@ -2973,6 +3186,15 @@ def _json_int(data: dict[str, object], key: str) -> int:
 
 def _json_string(data: dict[str, object], key: str) -> str:
     value = data.get(key)
+    if not isinstance(value, str):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a string.")
+    return value
+
+
+def _json_optional_string(data: dict[str, object], key: str) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
     if not isinstance(value, str):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a string.")
     return value

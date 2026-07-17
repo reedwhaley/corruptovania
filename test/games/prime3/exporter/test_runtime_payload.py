@@ -1118,6 +1118,112 @@ def test_runtime_payload_manifest_accepts_recv_send_loop_transport() -> None:
     assert parsed.relocated_runtime.transport.polls_after_loop_complete_address == 0x817E1284
 
 
+def test_runtime_payload_manifest_accepts_cp3w_frame_validation_transport() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "cp3w_frame_validation"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 55
+    transport["terminal_phase_name"] = "CP3W_FRAME_LOOP_COMPLETE"
+    transport["cp3w_magic_hex"] = "43503357"
+    transport["cp3w_protocol_version"] = 1
+    transport["cp3w_header_size"] = 16
+    transport["cp3w_crc_size"] = 4
+    transport["cp3w_crc_initial_value"] = 0xFFFFFFFF
+    transport["cp3w_crc_final_xor_value"] = 0xFFFFFFFF
+    transport["cp3w_crc_polynomial"] = 0xEDB88320
+    transport["cp3w_crc_reflected"] = True
+    transport["cp3w_packet_kind_request"] = 1
+    transport["cp3w_packet_kind_response"] = 2
+    transport["cp3w_command_reserved_mailbox"] = 127
+    transport["cp3w_packet_kind_offset"] = 5
+    transport["cp3w_command_offset"] = 6
+    transport["cp3w_response_status_offset"] = 7
+    transport["cp3w_request_id_offset"] = 8
+    transport["cp3w_payload_length_offset"] = 12
+    transport["cp3w_request_payload_ascii"] = "P3_FRAME_TEST_20260717"
+    transport["cp3w_response_payload_ascii"] = "P3_FRAME_ACK_20260717"
+    transport["cp3w_request_payload_length"] = 22
+    transport["cp3w_response_payload_length"] = 21
+    transport["prepared_send_length_address"] = 0x817E1254
+    transport["prepared_send_length_size"] = 4
+    transport["cp3w_datagrams_processed_address"] = 0x817E1258
+    transport["cp3w_datagrams_processed_size"] = 4
+    transport["cp3w_frames_valid_address"] = 0x817E125C
+    transport["cp3w_frames_valid_size"] = 4
+    transport["cp3w_frames_invalid_address"] = 0x817E1260
+    transport["cp3w_frames_invalid_size"] = 4
+    transport["cp3w_frames_too_short_address"] = 0x817E1264
+    transport["cp3w_frames_too_short_size"] = 4
+    transport["cp3w_frames_invalid_magic_address"] = 0x817E1268
+    transport["cp3w_frames_invalid_magic_size"] = 4
+    transport["cp3w_frames_invalid_version_address"] = 0x817E126C
+    transport["cp3w_frames_invalid_version_size"] = 4
+    transport["cp3w_frames_unsupported_type_address"] = 0x817E1270
+    transport["cp3w_frames_unsupported_type_size"] = 4
+    transport["cp3w_frames_nonzero_flags_address"] = 0x817E1274
+    transport["cp3w_frames_nonzero_flags_size"] = 4
+    transport["cp3w_frames_length_mismatch_address"] = 0x817E1278
+    transport["cp3w_frames_length_mismatch_size"] = 4
+    transport["cp3w_frames_payload_too_large_address"] = 0x817E127C
+    transport["cp3w_frames_payload_too_large_size"] = 4
+    transport["cp3w_frames_invalid_payload_address"] = 0x817E1280
+    transport["cp3w_frames_invalid_payload_size"] = 4
+    transport["cp3w_frames_malformed_address"] = 0x817E1284
+    transport["cp3w_frames_malformed_size"] = 4
+    transport["cp3w_framed_responses_submitted_address"] = 0x817E1288
+    transport["cp3w_framed_responses_submitted_size"] = 4
+    transport["cp3w_framed_responses_completed_address"] = 0x817E128C
+    transport["cp3w_framed_responses_completed_size"] = 4
+    transport["cp3w_last_request_id_address"] = 0x817E1290
+    transport["cp3w_last_request_id_size"] = 4
+    transport["cp3w_last_response_id_address"] = 0x817E1294
+    transport["cp3w_last_response_id_size"] = 4
+    transport["cp3w_last_message_type_address"] = 0x817E1298
+    transport["cp3w_last_message_type_size"] = 4
+    transport["cp3w_last_declared_payload_length_address"] = 0x817E129C
+    transport["cp3w_last_declared_payload_length_size"] = 4
+    transport["cp3w_last_actual_payload_length_address"] = 0x817E12A0
+    transport["cp3w_last_actual_payload_length_size"] = 4
+    transport["cp3w_last_frame_result_address"] = 0x817E12A4
+    transport["cp3w_last_frame_result_size"] = 4
+    transport["cp3w_final_datagram_index_address"] = 0x817E12A8
+    transport["cp3w_final_datagram_index_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.mode == "cp3w_frame_validation"
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "CP3W_FRAME_LOOP_COMPLETE"
+    assert parsed.relocated_runtime.transport.cp3w_magic_hex == "43503357"
+    assert parsed.relocated_runtime.transport.prepared_send_length_address == 0x817E1254
+    assert parsed.relocated_runtime.transport.cp3w_last_frame_result_address == 0x817E12A4
+
+
+def test_runtime_payload_manifest_rejects_cp3w_frame_validation_wrong_terminal_phase() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "cp3w_frame_validation"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 45
+    transport["terminal_phase_name"] = "LOOP_COMPLETE"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="CP3W_FRAME_LOOP_COMPLETE"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

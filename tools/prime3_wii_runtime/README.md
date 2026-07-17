@@ -77,6 +77,7 @@ python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-r
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-create-socket-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-bind-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-recv-send-loop --ios-recv-send-loop-count 3 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-cp3w-frame-validation --ios-cp3w-frame-validation-count 6 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 ```
 
 Artifacts are written to `build/prime3_wii_runtime/` or the requested `--output-dir`:
@@ -120,22 +121,62 @@ The current `--ios-bind-once` proof reaches terminal `BOUND_NO_RECV` with no rec
 
 The current `--ios-recv-send-loop` proof extends that bounded sequence through `SUBMIT_RECEIVE_ONCE -> WAIT_RECEIVE -> SUBMIT_SEND_ONCE -> WAIT_SEND -> REARM_RECEIVE` until the configured exchange limit is reached, then stops terminally at `LOOP_COMPLETE`. `--ios-recv-send-loop-count` must be in the inclusive range `1..100`; the current live proof uses `3`. For count `3`, the expected stable terminal counters are `receive_submit_count = 3`, `receive_arm_count = 3`, `receive_rearm_count = 2`, `receive_count = 3`, `send_submit_count = 3`, `send_count = 3`, `completed_exchange_count = 3`, `loop_complete_transition_count = 1`, and no fourth receive or reply. Rearm occurs only from poll context after a successful non-final send; callbacks never submit IOS work, cleanup remains disabled, and one-shot recv-only or recv-send-once modes do not rearm.
 
-`observe_probe.py` now supports `--poll-ms` with a default of `500` and a minimum of `10`. The report includes the first and second observation timestamps plus the loop transport counters when the manifest exports them. `--repeat-delay-ms` remains accepted as a compatibility alias for the same interval.
+The current `--ios-cp3w-frame-validation` proof reuses that bounded receive/reply transport but inserts a CP3W parser and framed fixed reply before send submission. `--ios-cp3w-frame-validation-count` defaults to `6`, accepts only `1..100`, rejects `0`, negatives, non-integers, use without the framing flag, and conflicting diagnostic modes. The CP3W-specific runtime phases are `50=CP3W_VALIDATE_FRAME`, `51=CP3W_FRAME_VALID`, `52=CP3W_FRAME_REJECTED`, `53=CP3W_SUBMIT_RESPONSE`, `54=CP3W_WAIT_RESPONSE`, and `55=CP3W_FRAME_LOOP_COMPLETE`.
 
-Live loop validation procedure:
+CP3W packet format:
 
-1. Build the loop payload with `--ios-recv-send-loop --ios-recv-send-loop-count 3`.
+- big-endian, fixed `16`-byte header plus payload plus trailing `4`-byte CRC32
+- `0x00..0x03`: magic `CP3W`
+- `0x04`: protocol version `1`
+- `0x05`: packet kind (`1=request`, `2=response`)
+- `0x06`: command (`127`, reserved mailbox)
+- `0x07`: response status (`0` for the current request and fixed response)
+- `0x08..0x0B`: request id
+- `0x0C..0x0F`: payload length
+- request payload ASCII: `P3_FRAME_TEST_20260717`
+- fixed response payload ASCII: `P3_FRAME_ACK_20260717`
+
+CRC32 semantics:
+
+- reflected polynomial `0xEDB88320`
+- init `0xFFFFFFFF`
+- final XOR `0xFFFFFFFF`
+- CRC covers the header and payload bytes only
+- the trailing CRC field itself is excluded from coverage
+
+Framing-mode behavior:
+
+- exactly one classification is recorded per received datagram
+- accepted frames increment `cp3w_frames_valid`, prepare one retained framed response, and submit exactly one send
+- rejected frames increment exactly one rejection counter and do not submit a send
+- receive rearm occurs only from poll context after a rejected frame or a successful non-final reply
+- callbacks remain evidence-only; they do not parse, submit IOS work, or rearm receive
+- stale and duplicate callback counters are expected to remain `0` in successful runs
+- terminal count `N` means `cp3w_datagrams_processed == N`, no receive beyond `N`, and terminal phase `CP3W_FRAME_LOOP_COMPLETE`
+
+`observe_probe.py` now supports `--poll-ms` with a default of `500` and a minimum of `10`. The report includes the first and second observation timestamps, the existing transport counters, and the CP3W metadata when the manifest exports it. During scripted injection, use `--poll-ms 50` for denser snapshots; `--repeat-delay-ms` remains accepted as a compatibility alias for the same interval.
+
+Live CP3W validation procedure:
+
+1. Build the framing payload with `--ios-cp3w-frame-validation --ios-cp3w-frame-validation-count 6`.
 2. Patch a copied CDV `main.dol` with `build_probe_dol.py --install-recurring-poll-hook --enable-ios-udp-diagnostic`.
 3. Rebuild the ISO, round-trip extract it, and verify the patched DOL hash matches exactly.
 4. Launch the rebuilt ISO in Dolphin and wait for transport phase `WAIT_RECEIVE`.
-5. Send exactly three sequential host UDP payloads such as `P3_LOOP_TEST_01_20260717`, `P3_LOOP_TEST_02_20260717`, and `P3_LOOP_TEST_03_20260717`.
-6. Verify three exact `P3_SENDTO_LOOP_REPLY_20260717` replies, terminal `LOOP_COMPLETE`, continued poll-count growth, and no fourth receive submission.
+5. Use `python host/udp_cp3w_frame_test.py --host 127.0.0.1 --port 43674` to inject the deterministic sequence: valid request id `1`, invalid magic, truncated packet, payload length mismatch, unsupported command, bad CRC, valid request id `42`.
+6. Verify that the two valid packets receive exact framed CP3W replies, every malformed packet times out, and the runtime reaches terminal `CP3W_FRAME_LOOP_COMPLETE` with stable counters and no extra replies.
+
+Workspace cleanup behavior:
+
+- validation workspaces should be created under `E:\Temp\p3-ios-*` while `E:` has at least `25 GB` free
+- if `E:` does not have enough space, use `C:\Temp` for the workspace but continue reading the source extraction from `E:\ROMS\CorruptionCDVExtract`
+- after a successful milestone, delete intermediate workspaces and keep only the newest successful validation workspace plus reports
 
 Known limitations:
 
-- This remains a developer-only diagnostic transport path.
-- CP3W packet parsing, mailbox integration, and general exporter/runtime gameplay integration are not implemented yet.
-- Physical-Wii behavior is not proven by the current Dolphin-only loop milestone.
+- this remains a developer-only diagnostic transport path
+- the current CP3W request/response pair is fixed and does not implement gameplay mailbox semantics yet
+- callback evidence is live-proven in Dolphin, but physical-Wii behavior is not yet validated
+- normal exporter-driven bidirectional game integration is still future work
 
 ## Manifest contract
 

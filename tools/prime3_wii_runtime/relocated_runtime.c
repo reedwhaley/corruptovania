@@ -116,6 +116,12 @@ enum {
     RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE = 47,
     RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID = 48,
     RUNTIME_TRANSPORT_PHASE_EXCHANGE_COUNTER_OVERFLOW = 49,
+    RUNTIME_TRANSPORT_PHASE_CP3W_VALIDATE_FRAME = 50,
+    RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_VALID = 51,
+    RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_REJECTED = 52,
+    RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_RESPONSE = 53,
+    RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_RESPONSE = 54,
+    RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_LOOP_COMPLETE = 55,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -163,6 +169,7 @@ enum {
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECVFROM_ONCE = 14,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECV_SEND_ONCE = 15,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECV_SEND_LOOP = 16,
+    RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_FRAME_VALIDATION = 17,
 };
 
 enum {
@@ -196,6 +203,7 @@ enum {
     INADDR_ANY = 0,
     RUNTIME_UDP_PORT = 43674,
     RUNTIME_UDP_RECEIVE_CAPACITY = 512,
+    RUNTIME_UDP_SEND_CAPACITY = 64,
     RUNTIME_PREVIEW_SIZE = 16,
     RUNTIME_WII_SOCKADDR_IN_SIZE = 8,
     RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS = 0x80504FE0,
@@ -210,12 +218,42 @@ enum {
     RUNTIME_SEND_OUTPUT_VECTOR_COUNT = 0,
     RUNTIME_SEND_PAYLOAD_LENGTH = 29,
     RUNTIME_EXCHANGE_COUNTER_LIMIT_MAX = 100,
+    RUNTIME_CP3W_HEADER_SIZE = 16,
+    RUNTIME_CP3W_CRC_SIZE = 4,
+    RUNTIME_CP3W_PACKET_KIND_REQUEST = 1,
+    RUNTIME_CP3W_PACKET_KIND_RESPONSE = 2,
+    RUNTIME_CP3W_RESPONSE_STATUS_OK = 0,
+    RUNTIME_CP3W_COMMAND_RESERVED_MAILBOX = 127,
 };
 
 static const char runtime_kd_path[] __attribute_section_rodata__ = "/dev/net/kd/request";
 static const char runtime_ip_path[] __attribute_section_rodata__ = "/dev/net/ip/top";
 static const char runtime_send_payload_ascii[RUNTIME_SEND_PAYLOAD_LENGTH + 1] __attribute_section_rodata__ =
     "P3_SENDTO_LOOP_REPLY_20260717";
+static const u8 runtime_cp3w_magic[4] __attribute_section_rodata__ = {'C', 'P', '3', 'W'};
+static const char runtime_cp3w_request_payload_ascii[] __attribute_section_rodata__ = "P3_FRAME_TEST_20260717";
+static const char runtime_cp3w_response_payload_ascii[] __attribute_section_rodata__ = "P3_FRAME_ACK_20260717";
+
+enum {
+    RUNTIME_CP3W_REQUEST_PAYLOAD_LENGTH = sizeof(runtime_cp3w_request_payload_ascii) - 1,
+    RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH = sizeof(runtime_cp3w_response_payload_ascii) - 1,
+    RUNTIME_CP3W_RESPONSE_PACKET_LENGTH =
+        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH + RUNTIME_CP3W_CRC_SIZE,
+};
+
+enum {
+    RUNTIME_CP3W_FRAME_RESULT_NONE = 0,
+    RUNTIME_CP3W_FRAME_RESULT_VALID = 1,
+    RUNTIME_CP3W_FRAME_RESULT_TOO_SHORT = 2,
+    RUNTIME_CP3W_FRAME_RESULT_INVALID_MAGIC = 3,
+    RUNTIME_CP3W_FRAME_RESULT_INVALID_VERSION = 4,
+    RUNTIME_CP3W_FRAME_RESULT_UNSUPPORTED_TYPE = 5,
+    RUNTIME_CP3W_FRAME_RESULT_NONZERO_FLAGS = 6,
+    RUNTIME_CP3W_FRAME_RESULT_LENGTH_MISMATCH = 7,
+    RUNTIME_CP3W_FRAME_RESULT_PAYLOAD_TOO_LARGE = 8,
+    RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD = 9,
+    RUNTIME_CP3W_FRAME_RESULT_MALFORMED = 10,
+};
 
 #ifndef PRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT
 #define PRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT 3
@@ -470,6 +508,7 @@ volatile u32 runtime_transport_send_count __attribute_section_state__ __attribut
 volatile u32 runtime_transport_send_bytes __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_last_receive_length __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_last_send_length __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_prepared_send_length __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_last_peer_ipv4 __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_last_peer_port __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_last_peer_family __attribute_section_state__ __attribute_used__ = 0;
@@ -567,6 +606,27 @@ volatile u32 runtime_transport_polls_before_send __attribute_section_state__ __a
 volatile u32 runtime_transport_polls_while_send_pending __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_polls_after_send __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_polls_after_loop_complete __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_datagrams_processed __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_valid __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_invalid __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_too_short __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_invalid_magic __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_invalid_version __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_unsupported_type __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_nonzero_flags __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_length_mismatch __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_payload_too_large __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_invalid_payload __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_frames_malformed __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_framed_responses_submitted __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_framed_responses_completed __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_last_request_id __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_last_response_id __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_last_message_type __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_last_declared_payload_length __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_last_actual_payload_length __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_last_frame_result __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_final_datagram_index __attribute_section_state__ __attribute_used__ = 0;
 volatile u8 runtime_transport_receive_request_bytes[RUNTIME_RECEIVE_REQUEST_LOGICAL_SIZE]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_receive_source_bytes[RUNTIME_WII_SOCKADDR_IN_SIZE]
@@ -574,7 +634,7 @@ volatile u8 runtime_transport_receive_source_bytes[RUNTIME_WII_SOCKADDR_IN_SIZE]
 volatile u8 runtime_transport_send_request_bytes[RUNTIME_SEND_REQUEST_LOGICAL_SIZE]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_send_destination_bytes[28] __attribute_section_state_aligned_32__ __attribute_used__ = {0};
-volatile u8 runtime_transport_send_payload_bytes[RUNTIME_SEND_PAYLOAD_LENGTH]
+volatile u8 runtime_transport_send_payload_bytes[RUNTIME_UDP_SEND_CAPACITY]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 
 volatile u8 runtime_transport_last_receive_preview[RUNTIME_PREVIEW_SIZE]
@@ -622,6 +682,11 @@ static void runtime_memcpy(volatile void* destination, const volatile void* sour
 static u16 runtime_bswap16(u16 value) __attribute_section_code__;
 static void runtime_copy_preview(volatile u8* destination, const volatile u8* source, u32 size) __attribute_section_code__;
 static void runtime_copy_sockaddr_in(volatile u8* destination, u32 address_be, u16 port_be) __attribute_section_code__;
+static u16 runtime_read_be16(const volatile u8* source) __attribute_section_code__;
+static u32 runtime_read_be32(const volatile u8* source) __attribute_section_code__;
+static void runtime_write_be16(volatile u8* destination, u16 value) __attribute_section_code__;
+static void runtime_write_be32(volatile u8* destination, u32 value) __attribute_section_code__;
+static u32 runtime_crc32(const volatile u8* source, u32 size) __attribute_section_code__;
 static void runtime_set_phase(u32 phase, u32 action) __attribute_section_code__;
 static void runtime_diag_increment(volatile u32* counter) __attribute_section_code__;
 static void runtime_diag_store_marker(u32 value) __attribute_section_code__;
@@ -641,10 +706,16 @@ static u32 runtime_transport_is_bind_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_recvfrom_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_recv_send_once_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_recv_send_loop_mode(void) __attribute_section_code__;
+static u32 runtime_transport_is_cp3w_frame_validation_mode(void) __attribute_section_code__;
 static u32 runtime_transport_uses_receive_mode(void) __attribute_section_code__;
 static u32 runtime_transport_uses_send_mode(void) __attribute_section_code__;
 static u32 runtime_transport_validate_loop_limit(void) __attribute_section_code__;
 static void runtime_transport_note_loop_complete(void) __attribute_section_code__;
+static void runtime_transport_note_cp3w_loop_complete(void) __attribute_section_code__;
+static void runtime_transport_record_cp3w_frame_result(u32 result) __attribute_section_code__;
+static s32 runtime_transport_validate_cp3w_frame(void) __attribute_section_code__;
+static void runtime_transport_prepare_loop_reply(void) __attribute_section_code__;
+static void runtime_transport_prepare_cp3w_response(u32 request_id) __attribute_section_code__;
 static void runtime_cache_flush(const volatile void* address, u32 size) __attribute_section_code__;
 static void runtime_cache_invalidate(const volatile void* address, u32 size) __attribute_section_code__;
 extern s32 runtime_call_retail_ios_open_async(
@@ -786,6 +857,47 @@ static void runtime_copy_sockaddr_in(volatile u8* destination, u32 address_be, u
     destination[5] = (u8)(address_be >> 16);
     destination[6] = (u8)(address_be >> 8);
     destination[7] = (u8)address_be;
+}
+
+static u16 runtime_read_be16(const volatile u8* source)
+{
+    return (u16)(((u16)source[0] << 8) | (u16)source[1]);
+}
+
+static u32 runtime_read_be32(const volatile u8* source)
+{
+    return ((u32)source[0] << 24) | ((u32)source[1] << 16) | ((u32)source[2] << 8) | (u32)source[3];
+}
+
+static void runtime_write_be16(volatile u8* destination, u16 value)
+{
+    destination[0] = (u8)(value >> 8);
+    destination[1] = (u8)value;
+}
+
+static void runtime_write_be32(volatile u8* destination, u32 value)
+{
+    destination[0] = (u8)(value >> 24);
+    destination[1] = (u8)(value >> 16);
+    destination[2] = (u8)(value >> 8);
+    destination[3] = (u8)value;
+}
+
+static u32 runtime_crc32(const volatile u8* source, u32 size)
+{
+    u32 crc = 0xFFFFFFFFU;
+    u32 index = 0;
+    while (index < size) {
+        u32 current = (crc ^ source[index]) & 0xFFU;
+        u32 bit = 0;
+        while (bit < 8) {
+            current = (current & 1U) != 0 ? (current >> 1) ^ 0xEDB88320U : current >> 1;
+            bit += 1;
+        }
+        crc = (crc >> 8) ^ current;
+        index += 1;
+    }
+    return crc ^ 0xFFFFFFFFU;
 }
 
 static void runtime_set_phase(u32 phase, u32 action)
@@ -1004,16 +1116,24 @@ static u32 runtime_transport_is_recv_send_loop_mode(void)
         && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECV_SEND_LOOP;
 }
 
+static u32 runtime_transport_is_cp3w_frame_validation_mode(void)
+{
+    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_FRAME_VALIDATION;
+}
+
 static u32 runtime_transport_uses_receive_mode(void)
 {
     return runtime_transport_is_recvfrom_once_mode()
         || runtime_transport_is_recv_send_once_mode()
-        || runtime_transport_is_recv_send_loop_mode();
+        || runtime_transport_is_recv_send_loop_mode()
+        || runtime_transport_is_cp3w_frame_validation_mode();
 }
 
 static u32 runtime_transport_uses_send_mode(void)
 {
-    return runtime_transport_is_recv_send_once_mode() || runtime_transport_is_recv_send_loop_mode();
+    return runtime_transport_is_recv_send_once_mode() || runtime_transport_is_recv_send_loop_mode()
+        || runtime_transport_is_cp3w_frame_validation_mode();
 }
 
 static u32 runtime_transport_validate_loop_limit(void)
@@ -1026,6 +1146,43 @@ static void runtime_transport_note_loop_complete(void)
 {
     runtime_transport_loop_complete_transition_count += 1;
     runtime_set_phase(RUNTIME_TRANSPORT_PHASE_LOOP_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+}
+
+static void runtime_transport_note_cp3w_loop_complete(void)
+{
+    runtime_transport_loop_complete_transition_count += 1;
+    runtime_transport_cp3w_final_datagram_index = runtime_transport_cp3w_datagrams_processed;
+    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_LOOP_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+}
+
+static void runtime_transport_record_cp3w_frame_result(u32 result)
+{
+    runtime_transport_cp3w_last_frame_result = result;
+    if (result == RUNTIME_CP3W_FRAME_RESULT_VALID) {
+        runtime_transport_cp3w_frames_valid += 1;
+        return;
+    }
+
+    runtime_transport_cp3w_frames_invalid += 1;
+    if (result == RUNTIME_CP3W_FRAME_RESULT_TOO_SHORT) {
+        runtime_transport_cp3w_frames_too_short += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_INVALID_MAGIC) {
+        runtime_transport_cp3w_frames_invalid_magic += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_INVALID_VERSION) {
+        runtime_transport_cp3w_frames_invalid_version += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_UNSUPPORTED_TYPE) {
+        runtime_transport_cp3w_frames_unsupported_type += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_NONZERO_FLAGS) {
+        runtime_transport_cp3w_frames_nonzero_flags += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_LENGTH_MISMATCH) {
+        runtime_transport_cp3w_frames_length_mismatch += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_PAYLOAD_TOO_LARGE) {
+        runtime_transport_cp3w_frames_payload_too_large += 1;
+    } else if (result == RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD) {
+        runtime_transport_cp3w_frames_invalid_payload += 1;
+    } else {
+        runtime_transport_cp3w_frames_malformed += 1;
+    }
 }
 
 static u32 runtime_transport_is_ioctl_async_abi_probe_mode(void)
@@ -1043,6 +1200,140 @@ static u32 runtime_digest_words(const volatile u8* source, u32 size)
         index += 1;
     }
     return digest;
+}
+
+static void runtime_transport_prepare_loop_reply(void)
+{
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
+    runtime_memcpy(
+        runtime_transport_send_payload_bytes,
+        (const volatile void*)runtime_send_payload_ascii,
+        RUNTIME_SEND_PAYLOAD_LENGTH
+    );
+    runtime_transport_prepared_send_length = RUNTIME_SEND_PAYLOAD_LENGTH;
+}
+
+static void runtime_transport_prepare_cp3w_response(u32 request_id)
+{
+    u32 crc = 0;
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
+    runtime_memcpy(runtime_transport_send_payload_bytes, runtime_cp3w_magic, sizeof(runtime_cp3w_magic));
+    runtime_transport_send_payload_bytes[4] = 1;
+    runtime_transport_send_payload_bytes[5] = RUNTIME_CP3W_PACKET_KIND_RESPONSE;
+    runtime_transport_send_payload_bytes[6] = RUNTIME_CP3W_COMMAND_RESERVED_MAILBOX;
+    runtime_transport_send_payload_bytes[7] = RUNTIME_CP3W_RESPONSE_STATUS_OK;
+    runtime_write_be32(runtime_transport_send_payload_bytes + 8, request_id);
+    runtime_write_be32(runtime_transport_send_payload_bytes + 12, RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH);
+    runtime_memcpy(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE,
+        (const volatile void*)runtime_cp3w_response_payload_ascii,
+        RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH
+    );
+    crc = runtime_crc32(
+        runtime_transport_send_payload_bytes,
+        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH
+    );
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH,
+        crc
+    );
+    runtime_transport_prepared_send_length = RUNTIME_CP3W_RESPONSE_PACKET_LENGTH;
+    runtime_transport_cp3w_last_response_id = request_id;
+}
+
+static s32 runtime_transport_validate_cp3w_frame(void)
+{
+    u32 payload_length = 0;
+    u32 actual_payload_length = 0;
+    u32 expected_total_length = 0;
+    u32 computed_crc = 0;
+    u32 received_crc = 0;
+    u32 request_id = 0;
+    runtime_transport_cp3w_datagrams_processed = runtime_transport_receive_count;
+    runtime_transport_cp3w_last_message_type = 0;
+    runtime_transport_cp3w_last_declared_payload_length = 0;
+    runtime_transport_cp3w_last_actual_payload_length = runtime_transport_last_receive_length;
+    runtime_transport_cp3w_last_request_id = 0;
+
+    if (runtime_transport_last_receive_length < (RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_CRC_SIZE)) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_TOO_SHORT);
+        return -1;
+    }
+    if (
+        runtime_transport_receive_payload_buffer[0] != runtime_cp3w_magic[0]
+        || runtime_transport_receive_payload_buffer[1] != runtime_cp3w_magic[1]
+        || runtime_transport_receive_payload_buffer[2] != runtime_cp3w_magic[2]
+        || runtime_transport_receive_payload_buffer[3] != runtime_cp3w_magic[3]
+    ) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_MAGIC);
+        return -1;
+    }
+    if (runtime_transport_receive_payload_buffer[4] != 1) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_VERSION);
+        return -1;
+    }
+    runtime_transport_cp3w_last_message_type = runtime_transport_receive_payload_buffer[5];
+    if (
+        runtime_transport_receive_payload_buffer[5] != RUNTIME_CP3W_PACKET_KIND_REQUEST
+        || runtime_transport_receive_payload_buffer[6] != RUNTIME_CP3W_COMMAND_RESERVED_MAILBOX
+    ) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_UNSUPPORTED_TYPE);
+        return -1;
+    }
+    if (runtime_transport_receive_payload_buffer[7] != RUNTIME_CP3W_RESPONSE_STATUS_OK) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_NONZERO_FLAGS);
+        return -1;
+    }
+
+    request_id = runtime_read_be32(runtime_transport_receive_payload_buffer + 8);
+    payload_length = runtime_read_be32(runtime_transport_receive_payload_buffer + 12);
+    runtime_transport_cp3w_last_request_id = request_id;
+    runtime_transport_cp3w_last_declared_payload_length = payload_length;
+    actual_payload_length = runtime_transport_last_receive_length - RUNTIME_CP3W_HEADER_SIZE - RUNTIME_CP3W_CRC_SIZE;
+    runtime_transport_cp3w_last_actual_payload_length = actual_payload_length;
+    if (payload_length > RUNTIME_UDP_RECEIVE_CAPACITY - RUNTIME_CP3W_HEADER_SIZE - RUNTIME_CP3W_CRC_SIZE) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_PAYLOAD_TOO_LARGE);
+        return -1;
+    }
+    expected_total_length = RUNTIME_CP3W_HEADER_SIZE + payload_length + RUNTIME_CP3W_CRC_SIZE;
+    if (expected_total_length != runtime_transport_last_receive_length) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_LENGTH_MISMATCH);
+        return -1;
+    }
+    computed_crc = runtime_crc32(runtime_transport_receive_payload_buffer, runtime_transport_last_receive_length - 4);
+    received_crc = runtime_read_be32(runtime_transport_receive_payload_buffer + runtime_transport_last_receive_length - 4);
+    if (computed_crc != received_crc) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_MALFORMED);
+        return -1;
+    }
+    if (payload_length != RUNTIME_CP3W_REQUEST_PAYLOAD_LENGTH) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD);
+        return -1;
+    }
+    if (
+        runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE] != (u8)runtime_cp3w_request_payload_ascii[0]
+        || runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + 1]
+            != (u8)runtime_cp3w_request_payload_ascii[1]
+    ) {
+        /* fall through to full comparison */
+    }
+    {
+        u32 index = 0;
+        while (index < RUNTIME_CP3W_REQUEST_PAYLOAD_LENGTH) {
+            if (
+                runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + index]
+                != (u8)runtime_cp3w_request_payload_ascii[index]
+            ) {
+                runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD);
+                return -1;
+            }
+            index += 1;
+        }
+    }
+
+    runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_VALID);
+    runtime_transport_prepare_cp3w_response(request_id);
+    return 0;
 }
 
 static void runtime_cache_flush(const volatile void* address, u32 size)
@@ -1846,12 +2137,21 @@ static s32 runtime_submit_ioctlv_send(u32 next_phase)
         || runtime_transport_socket_ready == 0
         || runtime_transport_host_id_ready == 0
         || runtime_transport_bound_flag == 0
-        || runtime_transport_receive_count == 0
-        || runtime_transport_send_submit_count == 0
-        || runtime_transport_send_submit_count != runtime_transport_receive_count
+        || (runtime_transport_is_cp3w_frame_validation_mode()
+                ? (runtime_transport_cp3w_frames_valid == 0 || runtime_transport_send_submit_count == 0)
+                : (runtime_transport_receive_count == 0 || runtime_transport_send_submit_count == 0
+                    || runtime_transport_send_submit_count != runtime_transport_receive_count))
         || runtime_transport_last_peer_length != RUNTIME_WII_SOCKADDR_IN_SIZE
         || runtime_transport_last_peer_family != AF_INET
     ) {
+        runtime_transport_last_ios_result = -1;
+        runtime_transport_last_submit_result = -1;
+        runtime_transport_send_submit_result = -1;
+        runtime_record_submit_evidence(RUNTIME_TRANSPORT_OP_SEND_SOCKET, -1, runtime_transport_pending_generation);
+        runtime_diag_record_submit_return(-1);
+        return -1;
+    }
+    if (runtime_transport_prepared_send_length == 0 || runtime_transport_prepared_send_length > RUNTIME_UDP_SEND_CAPACITY) {
         runtime_transport_last_ios_result = -1;
         runtime_transport_last_submit_result = -1;
         runtime_transport_send_submit_result = -1;
@@ -1863,12 +2163,6 @@ static s32 runtime_submit_ioctlv_send(u32 next_phase)
     runtime_memzero(&runtime_transport_send_request, sizeof(runtime_transport_send_request));
     runtime_memzero(runtime_transport_send_vectors, sizeof(runtime_transport_send_vectors));
     runtime_memzero(runtime_transport_send_destination_bytes, sizeof(runtime_transport_send_destination_bytes));
-    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
-    runtime_memcpy(
-        runtime_transport_send_payload_bytes,
-        (const volatile void*)runtime_send_payload_ascii,
-        RUNTIME_SEND_PAYLOAD_LENGTH
-    );
     runtime_memcpy(
         runtime_transport_send_destination_bytes,
         (const volatile void*)runtime_transport_receive_source_bytes,
@@ -1883,7 +2177,7 @@ static s32 runtime_submit_ioctlv_send(u32 next_phase)
         sizeof(runtime_transport_send_request.destaddr)
     );
     runtime_transport_send_vectors[0].data = (void*)runtime_transport_send_payload_bytes;
-    runtime_transport_send_vectors[0].len = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_transport_send_vectors[0].len = runtime_transport_prepared_send_length;
     runtime_transport_send_vectors[1].data = (void*)&runtime_transport_send_request;
     runtime_transport_send_vectors[1].len = RUNTIME_SEND_REQUEST_LOGICAL_SIZE;
 
@@ -1908,7 +2202,7 @@ static s32 runtime_submit_ioctlv_send(u32 next_phase)
     runtime_transport_send_vector_1_pointer = (u32)runtime_transport_send_vectors[1].data;
     runtime_transport_send_vector_1_length = runtime_transport_send_vectors[1].len;
     runtime_transport_send_payload_address = (u32)runtime_transport_send_payload_bytes;
-    runtime_transport_send_payload_capacity = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_transport_send_payload_capacity = RUNTIME_UDP_SEND_CAPACITY;
     runtime_transport_send_payload_alignment = 0x20;
     runtime_transport_send_destination_address = (u32)runtime_transport_send_destination_bytes;
     runtime_transport_send_destination_logical_size = RUNTIME_WII_SOCKADDR_IN_SIZE;
@@ -2084,7 +2378,9 @@ static s32 runtime_consume_receive_completion(void)
     }
     runtime_transport_polls_after_receive = runtime_poll_counter;
     runtime_set_phase(
-        runtime_transport_uses_send_mode()
+        runtime_transport_is_cp3w_frame_validation_mode()
+            ? RUNTIME_TRANSPORT_PHASE_CP3W_VALIDATE_FRAME
+            : runtime_transport_uses_send_mode()
             ? RUNTIME_TRANSPORT_PHASE_SUBMIT_SEND_ONCE
             : RUNTIME_TRANSPORT_PHASE_RECEIVED_DATAGRAM,
         RUNTIME_TRANSPORT_POLL_ACTION_RECV
@@ -2129,7 +2425,7 @@ static s32 runtime_consume_send_completion(void)
         runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE, runtime_transport_last_ios_result);
         return -1;
     }
-    if ((u32)runtime_transport_last_ios_result != RUNTIME_SEND_PAYLOAD_LENGTH) {
+    if ((u32)runtime_transport_last_ios_result != runtime_transport_prepared_send_length) {
         runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE, runtime_transport_last_ios_result);
         return -1;
     }
@@ -2140,16 +2436,29 @@ static s32 runtime_consume_send_completion(void)
     }
     runtime_transport_send_validated_result = (u32)runtime_transport_last_ios_result;
     runtime_transport_send_count += 1;
-    runtime_transport_send_bytes += RUNTIME_SEND_PAYLOAD_LENGTH;
-    runtime_transport_last_send_length = RUNTIME_SEND_PAYLOAD_LENGTH;
+    runtime_transport_send_bytes += runtime_transport_prepared_send_length;
+    runtime_transport_last_send_length = runtime_transport_prepared_send_length;
     runtime_copy_preview(
         runtime_transport_last_send_preview,
         runtime_transport_send_payload_bytes,
-        RUNTIME_SEND_PAYLOAD_LENGTH
+        runtime_transport_prepared_send_length
     );
     runtime_transport_completed_exchange_count += 1;
     runtime_transport_last_completed_exchange_index = runtime_transport_completed_exchange_count;
     runtime_transport_polls_after_send = runtime_poll_counter;
+    if (runtime_transport_is_cp3w_frame_validation_mode()) {
+        runtime_transport_cp3w_framed_responses_completed += 1;
+        if (!runtime_transport_validate_loop_limit()) {
+            runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
+            return -1;
+        }
+        if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+            runtime_transport_note_cp3w_loop_complete();
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
+        }
+        return 0;
+    }
     if (runtime_transport_is_recv_send_loop_mode()) {
         if (!runtime_transport_validate_loop_limit()) {
             runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
@@ -2617,6 +2926,7 @@ void runtime_entry_impl(void)
     runtime_transport_send_bytes = 0;
     runtime_transport_last_receive_length = 0;
     runtime_transport_last_send_length = 0;
+    runtime_transport_prepared_send_length = 0;
     runtime_transport_last_peer_ipv4 = 0;
     runtime_transport_last_peer_port = 0;
     runtime_transport_last_peer_family = 0;
@@ -2712,6 +3022,27 @@ void runtime_entry_impl(void)
     runtime_transport_polls_while_send_pending = 0;
     runtime_transport_polls_after_send = 0;
     runtime_transport_polls_after_loop_complete = 0;
+    runtime_transport_cp3w_datagrams_processed = 0;
+    runtime_transport_cp3w_frames_valid = 0;
+    runtime_transport_cp3w_frames_invalid = 0;
+    runtime_transport_cp3w_frames_too_short = 0;
+    runtime_transport_cp3w_frames_invalid_magic = 0;
+    runtime_transport_cp3w_frames_invalid_version = 0;
+    runtime_transport_cp3w_frames_unsupported_type = 0;
+    runtime_transport_cp3w_frames_nonzero_flags = 0;
+    runtime_transport_cp3w_frames_length_mismatch = 0;
+    runtime_transport_cp3w_frames_payload_too_large = 0;
+    runtime_transport_cp3w_frames_invalid_payload = 0;
+    runtime_transport_cp3w_frames_malformed = 0;
+    runtime_transport_cp3w_framed_responses_submitted = 0;
+    runtime_transport_cp3w_framed_responses_completed = 0;
+    runtime_transport_cp3w_last_request_id = 0;
+    runtime_transport_cp3w_last_response_id = 0;
+    runtime_transport_cp3w_last_message_type = 0;
+    runtime_transport_cp3w_last_declared_payload_length = 0;
+    runtime_transport_cp3w_last_actual_payload_length = 0;
+    runtime_transport_cp3w_last_frame_result = 0;
+    runtime_transport_cp3w_final_datagram_index = 0;
     runtime_memzero(runtime_transport_receive_request_bytes, sizeof(runtime_transport_receive_request_bytes));
     runtime_memzero(runtime_transport_receive_source_bytes, sizeof(runtime_transport_receive_source_bytes));
     runtime_memzero(runtime_transport_send_request_bytes, sizeof(runtime_transport_send_request_bytes));
@@ -2787,6 +3118,7 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_DUPLICATE_CALLBACK
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SEND_CLEANUP_DEFERRED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_COMPLETE
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_SUBMIT_FAILED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID
@@ -2794,7 +3126,10 @@ void runtime_poll_entry_impl(void)
     ) {
         if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SENT_DATAGRAM) {
             runtime_transport_polls_after_send = runtime_poll_counter;
-        } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_COMPLETE) {
+        } else if (
+            runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_COMPLETE
+            || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_LOOP_COMPLETE
+        ) {
             runtime_transport_polls_after_loop_complete = runtime_poll_counter;
         }
         runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
@@ -2821,10 +3156,12 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_RESPONSE
     ) {
         s32 wait_result = runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE
             ? runtime_consume_receive_completion()
-            : runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
+            : (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
+                || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_RESPONSE)
             ? runtime_consume_send_completion()
             : runtime_wait_completion();
         if (wait_result != 0) {
@@ -3180,10 +3517,13 @@ void runtime_poll_entry_impl(void)
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE) {
         if (
-            !runtime_transport_is_recv_send_loop_mode()
+            (!runtime_transport_is_recv_send_loop_mode() && !runtime_transport_is_cp3w_frame_validation_mode())
             || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
-            || runtime_transport_send_count != runtime_transport_completed_exchange_count
-            || runtime_transport_completed_exchange_count >= runtime_transport_configured_exchange_limit
+            || (runtime_transport_is_recv_send_loop_mode()
+                && (runtime_transport_send_count != runtime_transport_completed_exchange_count
+                    || runtime_transport_completed_exchange_count >= runtime_transport_configured_exchange_limit))
+            || (runtime_transport_is_cp3w_frame_validation_mode()
+                && runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit)
         ) {
             runtime_transport_rearm_submission_failure_count += 1;
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
@@ -3208,8 +3548,49 @@ void runtime_poll_entry_impl(void)
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SUBMIT_SEND_ONCE) {
         runtime_transport_polls_before_send = runtime_poll_counter;
         runtime_transport_send_submit_count += 1;
+        runtime_transport_prepare_loop_reply();
         {
             s32 send_submit = runtime_submit_ioctlv_send(RUNTIME_TRANSPORT_PHASE_WAIT_SEND);
+            if (send_submit < 0) {
+                runtime_record_send_error(
+                    RUNTIME_TRANSPORT_PHASE_SEND_SUBMIT_FAILED,
+                    runtime_transport_send_submit_result
+                );
+            } else if (send_submit > 0) {
+                runtime_record_send_error(
+                    RUNTIME_TRANSPORT_PHASE_SEND_INVALID_POSITIVE,
+                    runtime_transport_send_submit_result
+                );
+            }
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_VALIDATE_FRAME) {
+        if (runtime_transport_validate_cp3w_frame() == 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_VALID, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        } else if (!runtime_transport_validate_loop_limit()) {
+            runtime_record_receive_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
+        } else if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+            runtime_transport_note_cp3w_loop_complete();
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_REJECTED, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_VALID) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_REJECTED) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_RESPONSE) {
+        runtime_transport_polls_before_send = runtime_poll_counter;
+        runtime_transport_send_submit_count += 1;
+        runtime_transport_cp3w_framed_responses_submitted += 1;
+        {
+            s32 send_submit = runtime_submit_ioctlv_send(RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_RESPONSE);
             if (send_submit < 0) {
                 runtime_record_send_error(
                     RUNTIME_TRANSPORT_PHASE_SEND_SUBMIT_FAILED,

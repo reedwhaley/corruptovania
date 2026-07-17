@@ -652,6 +652,156 @@ def test_main_rejects_recv_send_loop_count_without_loop_flag(
         module.main()
 
 
+def test_main_selects_cp3w_frame_validation_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_mode")
+    captured: dict[str, object] = {}
+
+    def _fake_build(output_dir: Path, **kwargs):
+        captured["output_dir"] = output_dir
+        captured.update(kwargs)
+        raise RuntimeError("stop after argument selection")
+
+    monkeypatch.setattr(module, "build_prime3_runtime_payload", _fake_build)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-frame-validation",
+            "--ios-cp3w-frame-validation-count",
+            "6",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after argument selection"):
+        module.main()
+
+    assert captured["ios_udp_mode"] == "cp3w_frame_validation"
+    assert captured["ios_udp_loop_count"] == 6
+    assert captured["enable_ios_udp_diagnostic"] is True
+    assert captured["payload_mode"] == "relocated_continue"
+
+
+def test_main_rejects_cp3w_frame_validation_count_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_count_rejected")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-frame-validation-count",
+            "7",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="requires --ios-cp3w-frame-validation"):
+        module.main()
+
+
+@pytest.mark.parametrize("count", [0, -1, 101])
+def test_main_rejects_out_of_range_cp3w_frame_validation_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    count: int,
+) -> None:
+    module = _load_build_module(f"prime3_wii_runtime_build_payload_cp3w_count_{count}")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-frame-validation",
+            "--ios-cp3w-frame-validation-count",
+            str(count),
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="must be between 1 and 100"):
+        module.main()
+
+
+def test_main_rejects_non_integer_cp3w_frame_validation_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_count_non_integer")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-frame-validation",
+            "--ios-cp3w-frame-validation-count",
+            "abc",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        module.main()
+
+
+def test_main_rejects_conflicting_cp3w_and_loop_modes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_mode_conflict")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-recv-send-loop",
+            "--ios-cp3w-frame-validation",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="at most one IOS UDP diagnostic sub-mode flag"):
+        module.main()
+
+
 def test_build_prime3_runtime_payload_relocated_continue_recv_send_loop_manifest(tmp_path: Path) -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_recv_send_loop_test")
     if not _devkitppc_is_available():
@@ -686,6 +836,72 @@ def test_build_prime3_runtime_payload_relocated_continue_recv_send_loop_manifest
     assert transport.loop_complete_transition_count_address is not None
     assert transport.polls_while_receive_pending_address is not None
     assert transport.polls_after_loop_complete_address is not None
+
+
+def test_build_prime3_runtime_payload_relocated_continue_cp3w_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_manifest_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="cp3w_frame_validation",
+        ios_udp_loop_count=6,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "cp3w_frame_validation"
+    assert transport.receive_enabled is True
+    assert transport.send_enabled is True
+    assert transport.terminal_phase_value == 55
+    assert transport.terminal_phase_name == "CP3W_FRAME_LOOP_COMPLETE"
+    assert transport.cp3w_magic_hex == "43503357"
+    assert transport.cp3w_protocol_version == 1
+    assert transport.cp3w_header_size == 16
+    assert transport.cp3w_crc_size == 4
+    assert transport.cp3w_crc_initial_value == 0xFFFFFFFF
+    assert transport.cp3w_crc_final_xor_value == 0xFFFFFFFF
+    assert transport.cp3w_crc_polynomial == 0xEDB88320
+    assert transport.cp3w_crc_reflected is True
+    assert transport.cp3w_packet_kind_request == 1
+    assert transport.cp3w_packet_kind_response == 2
+    assert transport.cp3w_command_reserved_mailbox == 127
+    assert transport.cp3w_packet_kind_offset == 5
+    assert transport.cp3w_command_offset == 6
+    assert transport.cp3w_response_status_offset == 7
+    assert transport.cp3w_request_id_offset == 8
+    assert transport.cp3w_payload_length_offset == 12
+    assert transport.cp3w_request_payload_ascii == "P3_FRAME_TEST_20260717"
+    assert transport.cp3w_response_payload_ascii == "P3_FRAME_ACK_20260717"
+    assert transport.prepared_send_length_address is not None
+    assert transport.cp3w_datagrams_processed_address is not None
+    assert transport.cp3w_frames_valid_address is not None
+    assert transport.cp3w_frames_invalid_address is not None
+    assert transport.cp3w_frames_too_short_address is not None
+    assert transport.cp3w_frames_invalid_magic_address is not None
+    assert transport.cp3w_frames_invalid_version_address is not None
+    assert transport.cp3w_frames_unsupported_type_address is not None
+    assert transport.cp3w_frames_nonzero_flags_address is not None
+    assert transport.cp3w_frames_length_mismatch_address is not None
+    assert transport.cp3w_frames_payload_too_large_address is not None
+    assert transport.cp3w_frames_invalid_payload_address is not None
+    assert transport.cp3w_frames_malformed_address is not None
+    assert transport.cp3w_framed_responses_submitted_address is not None
+    assert transport.cp3w_framed_responses_completed_address is not None
+    assert transport.cp3w_last_request_id_address is not None
+    assert transport.cp3w_last_response_id_address is not None
+    assert transport.cp3w_last_message_type_address is not None
+    assert transport.cp3w_last_declared_payload_length_address is not None
+    assert transport.cp3w_last_actual_payload_length_address is not None
+    assert transport.cp3w_last_frame_result_address is not None
+    assert transport.cp3w_final_datagram_index_address is not None
 
 
 def test_validate_retail_call_veneer_instructions_accepts_balanced_lr_restore() -> None:

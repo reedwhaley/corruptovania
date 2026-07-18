@@ -63,6 +63,13 @@ def test_game_identity_phase_names_are_appended() -> None:
     assert module.TRANSPORT_PHASE_NAMES[79] == "CP3W_GAME_IDENTITY_LOOP_COMPLETE"
 
 
+def test_inventory_phase_names_are_appended() -> None:
+    module = _load_module()
+    assert module.TRANSPORT_PHASE_NAMES[80] == "CP3W_INVENTORY_VALIDATE_REQUEST"
+    assert module.TRANSPORT_PHASE_NAMES[86] == "CP3W_INVENTORY_READ_RECORDS"
+    assert module.TRANSPORT_PHASE_NAMES[93] == "CP3W_INVENTORY_LOOP_COMPLETE"
+
+
 def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
     return Prime3RuntimePayloadManifest(
         schema_version=3,

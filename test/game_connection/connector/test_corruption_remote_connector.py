@@ -7,6 +7,14 @@ from open_prime_rando.dol_patching.corruption import dol_versions
 
 from randovania.game_connection.connector.corruption_remote_connector import CorruptionRemoteConnector
 from randovania.game_connection.executor.memory_operation import MemoryOperation
+from randovania.game_connection.executor.prime3_wii_executor import Prime3WiiExecutor
+from randovania.game_connection.executor.prime3_wii_protocol import (
+    Prime3WiiCapability,
+    Prime3WiiInventoryAvailability,
+    Prime3WiiInventoryRecord,
+    Prime3WiiInventorySnapshot,
+)
+from randovania.game_description.resources.inventory import InventoryItem
 
 
 @pytest.fixture(name="connector")
@@ -63,3 +71,32 @@ async def test_fetch_game_status(
         )
     else:
         connector.executor.perform_single_memory_operation.assert_not_awaited()
+
+
+async def test_cp3w_inventory_uses_shared_semantics_and_preserves_suit_transform() -> None:
+    executor = Prime3WiiExecutor("127.0.0.1")
+    executor._accepted_capabilities = Prime3WiiCapability.INVENTORY_STATE
+    executor._identity_validated = True
+    records = list(Prime3WiiInventorySnapshot().records)
+    records[4] = Prime3WiiInventoryRecord(10, 255)
+    records[17] = Prime3WiiInventoryRecord(5, 5)
+    executor.get_inventory_snapshot = AsyncMock(
+        return_value=Prime3WiiInventorySnapshot(
+            availability_flags=(
+                Prime3WiiInventoryAvailability.EXECUTABLE_RECOGNIZED
+                | Prime3WiiInventoryAvailability.GAME_STATE_POINTER_VALID
+                | Prime3WiiInventoryAvailability.INVENTORY_ROOT_VALID
+                | Prime3WiiInventoryAvailability.RANGE_VALID
+                | Prime3WiiInventoryAvailability.CONSISTENCY_CHECK_PASSED
+                | Prime3WiiInventoryAvailability.SNAPSHOT_AVAILABLE
+            ),
+            records=tuple(records),
+        )
+    )
+    connector = CorruptionRemoteConnector(dol_versions.ALL_VERSIONS[0], executor)
+
+    inventory = await connector.get_inventory()
+
+    assert inventory[connector.game.resource_database.get_item("Missile")] == InventoryItem(10, 255)
+    assert inventory[connector.game.resource_database.get_item("SuitType")] == InventoryItem(True, True)
+    assert all(item.extra["item_id"] < 1000 for item in inventory.raw)

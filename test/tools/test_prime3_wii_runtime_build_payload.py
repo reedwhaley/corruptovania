@@ -1299,11 +1299,62 @@ def test_receive_completion_routes_all_cp3w_modes_to_frame_validation() -> None:
     assert "runtime_transport_is_cp3w_mode()" in receive_completion
 
 
-def test_identity_error_packets_fit_send_buffer_without_expanding_ping_limit() -> None:
+def test_inventory_packet_fits_send_buffer_without_expanding_ping_limit() -> None:
     source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
 
-    assert "RUNTIME_UDP_SEND_CAPACITY = 96" in source
+    assert "RUNTIME_UDP_SEND_CAPACITY = 512" in source
     assert "RUNTIME_CP3W_MAX_PING_PAYLOAD_LENGTH = 44" in source
+
+
+def test_build_prime3_runtime_payload_cp3w_inventory_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_inventory_manifest_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="cp3w_inventory",
+        ios_udp_loop_count=14,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "cp3w_inventory"
+    assert transport.terminal_phase_value == 93
+    assert transport.cp3w_inventory is not None
+    assert transport.cp3w_game_identity is not None
+    inventory = transport.cp3w_inventory
+    assert inventory.command_value == 6
+    assert inventory.capability_value == 1 << 12
+    assert len(inventory.item_ids) == 59
+    assert inventory.payload_size == 484
+    assert inventory.frame_size == 504
+    assert inventory.send_buffer_size == 512
+    assert inventory.ping_payload_limit == 44
+    assert inventory.phase_names["LOOP_COMPLETE"] == 93
+
+
+@pytest.mark.parametrize("count", [0, -1, 101])
+def test_main_rejects_out_of_range_cp3w_inventory_count(count: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_build_module(f"prime3_wii_runtime_build_payload_cp3w_inventory_count_{count}")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["build_payload.py", "--relocated-continue", "--ios-cp3w-inventory", "--ios-cp3w-inventory-count", str(count)],
+    )
+    with pytest.raises(RuntimeError, match="between 1 and 100"):
+        module.main()
+
+
+def test_main_rejects_cp3w_inventory_count_without_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_inventory_count_without_mode")
+    monkeypatch.setattr(sys, "argv", ["build_payload.py", "--ios-cp3w-inventory-count", "14"])
+    with pytest.raises(RuntimeError, match="requires --ios-cp3w-inventory"):
+        module.main()
 
 
 @pytest.mark.parametrize("count", [0, -1, 101])

@@ -14,6 +14,9 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     HELLO_METADATA_VERSION,
     HELLO_RUNTIME_CAPABILITIES,
     INVALID_STATE_MESSAGE,
+    INVENTORY_CAPABILITY_MESSAGE,
+    INVENTORY_INVALID_PAYLOAD_MESSAGE,
+    INVENTORY_NOT_NEGOTIATED_MESSAGE,
     NOT_NEGOTIATED_MESSAGE,
     UNKNOWN_COMMAND_MESSAGE,
     UNSUPPORTED_VERSION_MESSAGE,
@@ -24,6 +27,9 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
+    Prime3WiiInventoryAvailability,
+    Prime3WiiInventoryRecord,
+    Prime3WiiInventorySnapshot,
     Prime3WiiRequest,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
@@ -36,6 +42,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     encode_error_response,
     encode_game_identity_payload,
     encode_hello_response_payload,
+    encode_inventory_payload,
     encode_response,
 )
 
@@ -69,6 +76,9 @@ class Prime3WiiFakeServer:
         capabilities: Prime3WiiCapability = Prime3WiiCapability.READ_MEMORY,
         valid_ranges: tuple[tuple[int, int], ...] = ((0x80000000, 0x81800000),),
         identity_availability: Prime3WiiAvailability = Prime3WiiAvailability(0),
+        inventory_availability: Prime3WiiInventoryAvailability = Prime3WiiInventoryAvailability(0),
+        inventory_records: tuple[Prime3WiiInventoryRecord, ...] | None = None,
+        inventory_sequence: int = 0,
     ):
         self.max_read_size = max_read_size
         self.capabilities = capabilities
@@ -82,12 +92,23 @@ class Prime3WiiFakeServer:
         self._behaviors: dict[Prime3WiiCommand, PendingBehavior] = defaultdict(PendingBehavior)
         self.disconnect_requests = 0
         self.disconnect_event = asyncio.Event()
-        self.runtime_mode = 20 if capabilities & Prime3WiiCapability.GAME_IDENTITY else 19
+        self.runtime_mode = (
+            21
+            if capabilities & Prime3WiiCapability.INVENTORY_STATE
+            else 20
+            if capabilities & Prime3WiiCapability.GAME_IDENTITY
+            else 19
+        )
         self.runtime_build_id = DEFAULT_RUNTIME_BUILD_ID
         self.runtime_name = DEFAULT_RUNTIME_NAME
         self.negotiated_request: HelloRequestPayload | None = None
         self.negotiated_response: HelloResponsePayload | None = None
         self.identity_payload = GameIdentityPayload(availability_flags=identity_availability)
+        self.inventory_payload = Prime3WiiInventorySnapshot(
+            availability_flags=inventory_availability,
+            snapshot_sequence=inventory_sequence,
+            records=inventory_records or Prime3WiiInventorySnapshot().records,
+        )
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
@@ -170,6 +191,7 @@ class Prime3WiiFakeServer:
             Prime3WiiCommand.READ_MEMORY,
             Prime3WiiCommand.DISCONNECT,
             Prime3WiiCommand.GET_GAME_IDENTITY,
+            Prime3WiiCommand.GET_INVENTORY,
         } and self.negotiated_request is None:
             return encode_error_response(
                 request.command,
@@ -177,7 +199,42 @@ class Prime3WiiFakeServer:
                 Prime3WiiErrorCode.NOT_NEGOTIATED,
                 GAME_IDENTITY_NOT_NEGOTIATED_MESSAGE
                 if request.command is Prime3WiiCommand.GET_GAME_IDENTITY
+                else INVENTORY_NOT_NEGOTIATED_MESSAGE
+                if request.command is Prime3WiiCommand.GET_INVENTORY
                 else NOT_NEGOTIATED_MESSAGE,
+            )
+
+        if request.command is Prime3WiiCommand.GET_INVENTORY:
+            assert self.negotiated_response is not None
+            if not self.negotiated_response.accepted_client_capabilities & Prime3WiiCapability.INVENTORY_STATE:
+                return encode_error_response(
+                    request.command,
+                    request.request_id,
+                    Prime3WiiErrorCode.CAPABILITY_NOT_NEGOTIATED,
+                    INVENTORY_CAPABILITY_MESSAGE,
+                )
+            if request.payload:
+                return encode_error_response(
+                    request.command,
+                    request.request_id,
+                    Prime3WiiErrorCode.INVALID_PAYLOAD_LENGTH,
+                    INVENTORY_INVALID_PAYLOAD_MESSAGE,
+                )
+            payload = dataclasses.replace(
+                self.inventory_payload,
+                snapshot_sequence=self.inventory_payload.snapshot_sequence,
+            )
+            self.inventory_payload = dataclasses.replace(
+                self.inventory_payload,
+                snapshot_sequence=(self.inventory_payload.snapshot_sequence + 1) & 0xFFFFFFFF,
+            )
+            return encode_response(
+                Prime3WiiResponse(
+                    command=request.command,
+                    request_id=request.request_id,
+                    status=Prime3WiiResponseStatus.OK,
+                    payload=encode_inventory_payload(payload),
+                )
             )
 
         if request.command is Prime3WiiCommand.GET_GAME_IDENTITY:

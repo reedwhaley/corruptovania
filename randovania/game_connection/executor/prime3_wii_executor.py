@@ -17,6 +17,7 @@ from randovania.game_connection.executor.memory_operation import (
 from randovania.game_connection.executor.prime3_wii_protocol import (
     DEFAULT_RUNTIME_BUILD_ID,
     GAME_IDENTITY_SCHEMA_VERSION,
+    INVENTORY_SCHEMA_VERSION,
     PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT,
     PRIME3_NTSC_RETAIL_PROFILE_ID,
     GameIdentityPayload,
@@ -25,6 +26,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiGameId,
+    Prime3WiiInventorySnapshot,
     Prime3WiiPlatformId,
     Prime3WiiProtocolError,
     Prime3WiiRegionId,
@@ -37,6 +39,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     compute_accepted_capabilities,
     decode_game_identity_payload,
     decode_hello_response_payload,
+    decode_inventory_payload,
     decode_response,
     encode_hello_request_payload,
     encode_read_memory_payload,
@@ -56,6 +59,7 @@ CLIENT_CAPABILITIES = (
     | Prime3WiiCapability.DETERMINISTIC_SESSION_ID
     | Prime3WiiCapability.READ_MEMORY
     | Prime3WiiCapability.GAME_IDENTITY
+    | Prime3WiiCapability.INVENTORY_STATE
 )
 CLIENT_NONCE = 0x43503357
 CLIENT_NAME = "randovania"
@@ -138,6 +142,8 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
         self._accepted_capabilities = Prime3WiiCapability(0)
         self._runtime_build_id: int | None = None
         self._runtime_mode: int | None = None
+        self._identity_validated = False
+        self._game_identity: GameIdentityPayload | None = None
 
     @property
     def ip(self) -> str:
@@ -202,7 +208,9 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
                 )
             if hello.runtime_build_id == 0:
                 raise MemoryOperationException("Server reported an invalid runtime build ID of zero.")
-            if not hello.accepted_client_capabilities & Prime3WiiCapability.READ_MEMORY:
+            if not hello.accepted_client_capabilities & (
+                Prime3WiiCapability.READ_MEMORY | Prime3WiiCapability.INVENTORY_STATE
+            ):
                 raise MemoryOperationException("Server does not advertise read-memory support.")
             expected_accept = compute_accepted_capabilities(CLIENT_CAPABILITIES, hello.runtime_capabilities)
             if hello.accepted_client_capabilities != expected_accept:
@@ -217,6 +225,8 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
             self._accepted_capabilities = hello.accepted_client_capabilities
             self._runtime_build_id = hello.runtime_build_id
             self._runtime_mode = hello.runtime_mode
+            self._identity_validated = False
+            self._game_identity = None
             return None
         except MemoryOperationException as e:
             self.logger.debug("HELLO negotiation failed: %s", e)
@@ -239,6 +249,8 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
             self._accepted_capabilities = Prime3WiiCapability(0)
             self._runtime_build_id = None
             self._runtime_mode = None
+            self._identity_validated = False
+            self._game_identity = None
             self._transport = None
             self._protocol_state = None
             try:
@@ -344,6 +356,10 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
     def accepted_capabilities(self) -> Prime3WiiCapability:
         return self._accepted_capabilities
 
+    @property
+    def identity_validated(self) -> bool:
+        return self._identity_validated
+
     async def get_game_identity(self) -> GameIdentityPayload:
         if not self.is_connected():
             raise MemoryOperationException("Not connected")
@@ -377,7 +393,37 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
                 raise MemoryOperationException(
                     f"GET_GAME_IDENTITY {field_name} mismatch: received {actual!r}, expected {wanted!r}."
                 )
+        self._identity_validated = True
+        self._game_identity = identity
         return identity
+
+    async def ensure_game_identity(self) -> GameIdentityPayload:
+        if self._game_identity is None:
+            return await self.get_game_identity()
+        return self._game_identity
+
+    async def get_inventory_snapshot(self) -> Prime3WiiInventorySnapshot:
+        if not self.is_connected():
+            raise MemoryOperationException("Not connected")
+        if not self._accepted_capabilities & Prime3WiiCapability.INVENTORY_STATE:
+            raise MemoryOperationException("Server did not negotiate INVENTORY_STATE capability.")
+        if not self._identity_validated:
+            raise MemoryOperationException("GET_GAME_IDENTITY must be validated before GET_INVENTORY.")
+        response = await self._request(
+            Prime3WiiCommand.GET_INVENTORY,
+            b"",
+            expected_command=Prime3WiiCommand.GET_INVENTORY,
+        )
+        try:
+            snapshot = decode_inventory_payload(response.payload)
+        except Prime3WiiProtocolError as exc:
+            raise MemoryOperationException(f"Malformed GET_INVENTORY response: {exc}") from exc
+        if snapshot.schema_version != INVENTORY_SCHEMA_VERSION:
+            raise MemoryOperationException(
+                "GET_INVENTORY schema mismatch: "
+                f"received {snapshot.schema_version}, expected {INVENTORY_SCHEMA_VERSION}."
+            )
+        return snapshot
 
     async def _read_memory_raw(self, address: int, size: int) -> bytes:
         _validate_read(address, size)

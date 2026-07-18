@@ -22,6 +22,13 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     GAME_IDENTITY_PAYLOAD_SIZE,
     GAME_IDENTITY_SCHEMA_VERSION,
     HEADER_SIZE,
+    INVENTORY_FIELD_OFFSETS,
+    INVENTORY_FRAME_SIZE,
+    INVENTORY_ITEM_IDS,
+    INVENTORY_PAYLOAD_SIZE,
+    INVENTORY_RECORD_COUNT,
+    INVENTORY_RECORD_SIZE,
+    INVENTORY_SCHEMA_VERSION,
     PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT,
     PRIME3_NTSC_RETAIL_PROFILE_ID,
     PROTOCOL_MAGIC,
@@ -30,6 +37,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiGameId,
+    Prime3WiiInventoryAvailability,
     Prime3WiiPlatformId,
     Prime3WiiRegionId,
     Prime3WiiRevisionId,
@@ -58,6 +66,7 @@ from randovania.games.prime3.exporter.runtime_payload import (
     Prime3RuntimeAbiProbeMetadata,
     Prime3RuntimeDiagnosticMetadata,
     Prime3RuntimeGameIdentityMetadata,
+    Prime3RuntimeInventoryMetadata,
     Prime3RuntimePayloadManifest,
     Prime3RuntimeTransportMetadata,
     compute_cache_range,
@@ -508,6 +517,32 @@ RUNTIME_TRANSPORT_CP3W_GAME_IDENTITY_SYMBOLS = {
         "runtime_transport_cp3w_game_identity_inventory_root_pointer",
     )
 }
+RUNTIME_TRANSPORT_CP3W_INVENTORY_SYMBOLS = {
+    name.removeprefix("runtime_transport_cp3w_inventory_"): name
+    for name in (
+        "runtime_transport_cp3w_inventory_requests",
+        "runtime_transport_cp3w_inventory_available_snapshots",
+        "runtime_transport_cp3w_inventory_unavailable_snapshots",
+        "runtime_transport_cp3w_inventory_pre_hello_rejections",
+        "runtime_transport_cp3w_inventory_capability_rejections",
+        "runtime_transport_cp3w_inventory_invalid_payload_rejections",
+        "runtime_transport_cp3w_inventory_executable_failures",
+        "runtime_transport_cp3w_inventory_game_state_valid",
+        "runtime_transport_cp3w_inventory_game_state_invalid",
+        "runtime_transport_cp3w_inventory_root_valid",
+        "runtime_transport_cp3w_inventory_root_invalid",
+        "runtime_transport_cp3w_inventory_range_failures",
+        "runtime_transport_cp3w_inventory_consistency_successes",
+        "runtime_transport_cp3w_inventory_consistency_failures",
+        "runtime_transport_cp3w_inventory_responses_submitted",
+        "runtime_transport_cp3w_inventory_responses_completed",
+        "runtime_transport_cp3w_inventory_last_request_id",
+        "runtime_transport_cp3w_inventory_last_status",
+        "runtime_transport_cp3w_inventory_last_availability",
+        "runtime_transport_cp3w_inventory_snapshot_sequence",
+        "runtime_transport_cp3w_inventory_last_root",
+    )
+}
 RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
 
 
@@ -700,6 +735,7 @@ class RelocatedRuntimeBuildResult:
     transport_cp3w_last_ping_payload_length_address: int
     transport_cp3w_last_dispatch_result_address: int
     transport_cp3w_game_identity_state_addresses: dict[str, int]
+    transport_cp3w_inventory_state_addresses: dict[str, int]
     transport_open_kd_submit_result_address: int
     transport_open_kd_callback_result_address: int
     transport_open_kd_submit_generation_address: int
@@ -886,6 +922,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-cp3w-hello-session-count", type=int, default=10)
     parser.add_argument("--ios-cp3w-game-identity", action="store_true")
     parser.add_argument("--ios-cp3w-game-identity-count", type=int, default=12)
+    parser.add_argument("--ios-cp3w-inventory", action="store_true")
+    parser.add_argument("--ios-cp3w-inventory-count", type=int, default=14)
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
@@ -1026,6 +1064,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "cp3w_ping_pong",
         "cp3w_hello_session",
         "cp3w_game_identity",
+        "cp3w_inventory",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1398,6 +1437,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             cp3w_ping_pong = ios_udp_mode == "cp3w_ping_pong"
             cp3w_hello_session = ios_udp_mode == "cp3w_hello_session"
             cp3w_game_identity = ios_udp_mode == "cp3w_game_identity"
+            cp3w_inventory = ios_udp_mode == "cp3w_inventory"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
@@ -1409,6 +1449,7 @@ def build_prime3_runtime_payload(  # noqa: C901
                     or cp3w_ping_pong
                     or cp3w_hello_session
                     or cp3w_game_identity
+                    or cp3w_inventory
                 ),
                 send_enabled=(
                     recv_send_once
@@ -1417,6 +1458,7 @@ def build_prime3_runtime_payload(  # noqa: C901
                     or cp3w_ping_pong
                     or cp3w_hello_session
                     or cp3w_game_identity
+                    or cp3w_inventory
                 ),
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
@@ -1439,6 +1481,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if cp3w_hello_session
                     else 79
                     if cp3w_game_identity
+                    else 93
+                    if cp3w_inventory
                     else 55
                     if cp3w_frame_validation
                     else 45
@@ -1468,6 +1512,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if cp3w_hello_session
                     else "CP3W_GAME_IDENTITY_LOOP_COMPLETE"
                     if cp3w_game_identity
+                    else "CP3W_INVENTORY_LOOP_COMPLETE"
+                    if cp3w_inventory
                     else "CP3W_FRAME_LOOP_COMPLETE"
                     if cp3w_frame_validation
                     else "LOOP_COMPLETE"
@@ -2152,7 +2198,45 @@ def build_prime3_runtime_payload(  # noqa: C901
                         configured_count=ios_udp_loop_count,
                         state_addresses=relocated_runtime.transport_cp3w_game_identity_state_addresses,
                     )
-                    if cp3w_game_identity
+                    if cp3w_game_identity or cp3w_inventory
+                    else None
+                ),
+                cp3w_inventory=(
+                    Prime3RuntimeInventoryMetadata(
+                        mode_value=21,
+                        mode_name="cp3w_inventory",
+                        command_value=int(Prime3WiiCommand.GET_INVENTORY),
+                        capability_value=int(Prime3WiiCapability.INVENTORY_STATE),
+                        schema_version=INVENTORY_SCHEMA_VERSION,
+                        item_ids=list(INVENTORY_ITEM_IDS),
+                        header_size=INVENTORY_FIELD_OFFSETS["records"],
+                        record_size=INVENTORY_RECORD_SIZE,
+                        payload_size=INVENTORY_PAYLOAD_SIZE,
+                        frame_size=INVENTORY_FRAME_SIZE,
+                        field_offsets=INVENTORY_FIELD_OFFSETS,
+                        availability_flags={item.name: int(item) for item in Prime3WiiInventoryAvailability},
+                        phase_names={
+                            "VALIDATE_REQUEST": 80,
+                            "VALIDATE_CAPABILITY": 81,
+                            "VALIDATE_IDENTITY": 82,
+                            "RESOLVE_GAME_STATE": 83,
+                            "RESOLVE_ROOT": 84,
+                            "VALIDATE_RANGE": 85,
+                            "READ_RECORDS": 86,
+                            "REVALIDATE_ROOT": 87,
+                            "BUILD_RESPONSE": 88,
+                            "SUBMIT_RESPONSE": 89,
+                            "RESPONSE_COMPLETE": 90,
+                            "HANDLE_UNAVAILABLE": 91,
+                            "HANDLE_ERROR": 92,
+                            "LOOP_COMPLETE": 93,
+                        },
+                        configured_count=ios_udp_loop_count,
+                        send_buffer_size=512,
+                        ping_payload_limit=44,
+                        state_addresses=relocated_runtime.transport_cp3w_inventory_state_addresses,
+                    )
+                    if cp3w_inventory
                     else None
                 ),
             )
@@ -2257,6 +2341,12 @@ def _build_relocated_runtime(
         f"-DPRIME3_CP3W_GAME_IDENTITY_COMMAND={int(Prime3WiiCommand.GET_GAME_IDENTITY)}",
         f"-DPRIME3_CP3W_GAME_IDENTITY_CAPABILITY={int(Prime3WiiCapability.GAME_IDENTITY)}",
         f"-DPRIME3_CP3W_GAME_IDENTITY_SCHEMA_VERSION={GAME_IDENTITY_SCHEMA_VERSION}",
+        f"-DPRIME3_CP3W_INVENTORY_COMMAND={int(Prime3WiiCommand.GET_INVENTORY)}",
+        f"-DPRIME3_CP3W_INVENTORY_CAPABILITY={int(Prime3WiiCapability.INVENTORY_STATE)}",
+        f"-DPRIME3_CP3W_INVENTORY_SCHEMA_VERSION={INVENTORY_SCHEMA_VERSION}",
+        f"-DPRIME3_CP3W_INVENTORY_RECORD_COUNT={INVENTORY_RECORD_COUNT}",
+        f"-DPRIME3_CP3W_INVENTORY_RECORD_SIZE={INVENTORY_RECORD_SIZE}",
+        f"-DPRIME3_CP3W_INVENTORY_PAYLOAD_SIZE={INVENTORY_PAYLOAD_SIZE}",
         f"-DPRIME3_CP3W_GAME_IDENTITY_PROFILE_ID=0x{PRIME3_NTSC_RETAIL_PROFILE_ID:08X}",
         f"-DPRIME3_CP3W_GAME_IDENTITY_PROFILE_FINGERPRINT=0x{PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT:08X}",
         f"-DPRIME3_CP3W_RUNTIME_BUILD_ID=0x{DEFAULT_RUNTIME_BUILD_ID:08X}",
@@ -2294,6 +2384,7 @@ def _build_relocated_runtime(
                 "cp3w_ping_pong": "18",
                 "cp3w_hello_session": "19",
                 "cp3w_game_identity": "20",
+                "cp3w_inventory": "21",
             }[ios_udp_mode]
         ),
         f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
@@ -3261,6 +3352,10 @@ def _build_relocated_runtime(
         name: _extract_symbol_address(readelf_symbols, symbol)
         for name, symbol in RUNTIME_TRANSPORT_CP3W_GAME_IDENTITY_SYMBOLS.items()
     }
+    transport_cp3w_inventory_state_addresses = {
+        name: _extract_symbol_address(readelf_symbols, symbol)
+        for name, symbol in RUNTIME_TRANSPORT_CP3W_INVENTORY_SYMBOLS.items()
+    }
     cache_range_start, cache_range_size = compute_cache_range(
         address=runtime_destination,
         size=len(payload_bytes),
@@ -3460,6 +3555,7 @@ def _build_relocated_runtime(
         transport_cp3w_last_ping_payload_length_address=transport_cp3w_last_ping_payload_length_address,
         transport_cp3w_last_dispatch_result_address=transport_cp3w_last_dispatch_result_address,
         transport_cp3w_game_identity_state_addresses=transport_cp3w_game_identity_state_addresses,
+        transport_cp3w_inventory_state_addresses=transport_cp3w_inventory_state_addresses,
         transport_open_kd_submit_result_address=transport_open_kd_submit_result_address,
         transport_open_kd_callback_result_address=transport_open_kd_callback_result_address,
         transport_open_kd_submit_generation_address=transport_open_kd_submit_generation_address,
@@ -3973,6 +4069,7 @@ def main() -> None:  # noqa: C901
             args.ios_cp3w_ping_pong,
             args.ios_cp3w_hello_session,
             args.ios_cp3w_game_identity,
+            args.ios_cp3w_inventory,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
@@ -3999,6 +4096,10 @@ def main() -> None:  # noqa: C901
         raise RuntimeError("--ios-cp3w-game-identity-count must be between 1 and 100.")
     if _argument_was_supplied("--ios-cp3w-game-identity-count") and not args.ios_cp3w_game_identity:
         raise RuntimeError("--ios-cp3w-game-identity-count requires --ios-cp3w-game-identity.")
+    if args.ios_cp3w_inventory_count < 1 or args.ios_cp3w_inventory_count > 100:
+        raise RuntimeError("--ios-cp3w-inventory-count must be between 1 and 100.")
+    if _argument_was_supplied("--ios-cp3w-inventory-count") and not args.ios_cp3w_inventory:
+        raise RuntimeError("--ios-cp3w-inventory-count requires --ios-cp3w-inventory.")
     ios_udp_mode = "normal"
     if args.ios_udp_dry_run:
         ios_udp_mode = "dry_run"
@@ -4032,6 +4133,8 @@ def main() -> None:  # noqa: C901
         ios_udp_mode = "cp3w_hello_session"
     elif args.ios_cp3w_game_identity:
         ios_udp_mode = "cp3w_game_identity"
+    elif args.ios_cp3w_inventory:
+        ios_udp_mode = "cp3w_inventory"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:
@@ -4065,6 +4168,8 @@ def main() -> None:  # noqa: C901
             if args.ios_cp3w_hello_session
             else args.ios_cp3w_game_identity_count
             if args.ios_cp3w_game_identity
+            else args.ios_cp3w_inventory_count
+            if args.ios_cp3w_inventory
             else args.ios_recv_send_loop_count
         ),
         reserved_high=reserved_high,

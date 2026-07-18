@@ -25,6 +25,16 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     HELLO_RESPONSE_FIXED_FORMAT,
     HELLO_RESPONSE_FIXED_SIZE,
     HELLO_RUNTIME_CAPABILITIES,
+    INVENTORY_FIELD_OFFSETS,
+    INVENTORY_FRAME_SIZE,
+    INVENTORY_HEADER_FORMAT,
+    INVENTORY_HEADER_SIZE,
+    INVENTORY_ITEM_IDS,
+    INVENTORY_PAYLOAD_SIZE,
+    INVENTORY_RECORD_COUNT,
+    INVENTORY_RECORD_FORMAT,
+    INVENTORY_RECORD_SIZE,
+    INVENTORY_SCHEMA_VERSION,
     PROTOCOL_MAGIC,
     PROTOCOL_VERSION,
     READ_MEMORY_PAYLOAD_FORMAT,
@@ -38,6 +48,9 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCommand,
     Prime3WiiErrorCode,
     Prime3WiiGameId,
+    Prime3WiiInventoryAvailability,
+    Prime3WiiInventoryRecord,
+    Prime3WiiInventorySnapshot,
     Prime3WiiPlatformId,
     Prime3WiiRegionId,
     Prime3WiiRequest,
@@ -49,11 +62,13 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     decode_game_identity_payload,
     decode_hello_request_payload,
     decode_hello_response_payload,
+    decode_inventory_payload,
     derive_session_id,
     encode_error_response,
     encode_game_identity_payload,
     encode_hello_request_payload,
     encode_hello_response_payload,
+    encode_inventory_payload,
     encode_read_memory_payload,
     encode_request,
     encode_response,
@@ -136,6 +151,17 @@ def _normalized_response(response: Prime3WiiResponse | prime3_wii_protocol.Prime
                     item.name for item in Prime3WiiAvailability if item in identity.availability_flags
                 ],
             }
+        elif response.command is Prime3WiiCommand.GET_INVENTORY:
+            inventory = decode_inventory_payload(response.payload)
+            result["payload"] = {
+                "schema_version": inventory.schema_version,
+                "availability_flags": int(inventory.availability_flags),
+                "availability_names": [
+                    item.name for item in Prime3WiiInventoryAvailability if item in inventory.availability_flags
+                ],
+                "snapshot_sequence": inventory.snapshot_sequence,
+                "records": [dataclasses.asdict(record) for record in inventory.records],
+            }
         return result
 
     result["status"] = "ERROR"
@@ -198,6 +224,7 @@ def protocol_manifest() -> dict[str, Any]:
         "region_ids": _enum_values(Prime3WiiRegionId),
         "revision_ids": _enum_values(Prime3WiiRevisionId),
         "availability_flags": _enum_values(Prime3WiiAvailability),
+        "inventory_availability_flags": _enum_values(Prime3WiiInventoryAvailability),
         "payload_layouts": {
             "hello_request": {
                 "struct_format": HELLO_REQUEST_FIXED_FORMAT,
@@ -262,6 +289,19 @@ def protocol_manifest() -> dict[str, Any]:
                     {"name": "availability_flags", "type": "uint32"},
                     {"name": "reserved", "type": "uint32", "required_value": 0},
                 ],
+            },
+            "inventory_request": {"payload_size": 0},
+            "inventory_response": {
+                "header_format": INVENTORY_HEADER_FORMAT,
+                "record_format": INVENTORY_RECORD_FORMAT,
+                "header_size": INVENTORY_HEADER_SIZE,
+                "record_size": INVENTORY_RECORD_SIZE,
+                "record_count": INVENTORY_RECORD_COUNT,
+                "payload_size": INVENTORY_PAYLOAD_SIZE,
+                "frame_size": INVENTORY_FRAME_SIZE,
+                "schema_version": INVENTORY_SCHEMA_VERSION,
+                "field_offsets": INVENTORY_FIELD_OFFSETS,
+                "item_ids": list(INVENTORY_ITEM_IDS),
             },
             "ping_request": {"payload_size": "variable"},
             "ping_response": {"payload_size": "variable"},
@@ -377,6 +417,26 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
             )
         ),
     )
+    inventory_request = Prime3WiiRequest(Prime3WiiCommand.GET_INVENTORY, 0x1008)
+    inventory_response = Prime3WiiResponse(
+        Prime3WiiCommand.GET_INVENTORY,
+        0x1008,
+        Prime3WiiResponseStatus.OK,
+        encode_inventory_payload(
+            Prime3WiiInventorySnapshot(
+                availability_flags=(
+                    Prime3WiiInventoryAvailability.EXECUTABLE_RECOGNIZED
+                    | Prime3WiiInventoryAvailability.GAME_STATE_POINTER_VALID
+                    | Prime3WiiInventoryAvailability.INVENTORY_ROOT_VALID
+                    | Prime3WiiInventoryAvailability.RANGE_VALID
+                    | Prime3WiiInventoryAvailability.CONSISTENCY_CHECK_PASSED
+                    | Prime3WiiInventoryAvailability.SNAPSHOT_AVAILABLE
+                ),
+                snapshot_sequence=1,
+                records=(Prime3WiiInventoryRecord(0, 1),) * INVENTORY_RECORD_COUNT,
+            )
+        ),
+    )
     mailbox_request = Prime3WiiRequest(Prime3WiiCommand.RESERVED_MAILBOX, 0x1005)
 
     invalid_state_response = encode_error_response(
@@ -457,6 +517,24 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
                 "payload_length": GAME_IDENTITY_PAYLOAD_SIZE,
             },
             expected=_normalized_response(identity_response),
+        ),
+        ProtocolVector(
+            name="inventory_request",
+            decode_as="request",
+            packet_hex=_hex_bytes(encode_request(inventory_request)),
+            fields={"command": "GET_INVENTORY", "request_id": 0x1008, "payload_length": 0},
+            expected=_normalized_request(inventory_request),
+        ),
+        ProtocolVector(
+            name="inventory_success_response",
+            decode_as="response",
+            packet_hex=_hex_bytes(encode_response(inventory_response)),
+            fields={
+                "command": "GET_INVENTORY",
+                "request_id": 0x1008,
+                "payload_length": INVENTORY_PAYLOAD_SIZE,
+            },
+            expected=_normalized_response(inventory_response),
         ),
         ProtocolVector(
             name="ping_request",

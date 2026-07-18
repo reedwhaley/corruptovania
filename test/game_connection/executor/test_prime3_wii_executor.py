@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 
 import pytest
 
@@ -20,6 +21,8 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCommand,
     Prime3WiiErrorCode,
     Prime3WiiErrorResponse,
+    Prime3WiiInventoryAvailability,
+    Prime3WiiInventoryRecord,
     Prime3WiiRequest,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
@@ -47,11 +50,21 @@ def sleep_spy_fixture():
 async def fake_server():
     server = Prime3WiiFakeServer(
         max_read_size=32,
-        capabilities=Prime3WiiCapability.READ_MEMORY | Prime3WiiCapability.GAME_IDENTITY,
-        identity_availability=(
-            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
-            | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+        capabilities=(
+            Prime3WiiCapability.READ_MEMORY | Prime3WiiCapability.GAME_IDENTITY | Prime3WiiCapability.INVENTORY_STATE
         ),
+        identity_availability=(
+            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+        ),
+        inventory_availability=(
+            Prime3WiiInventoryAvailability.EXECUTABLE_RECOGNIZED
+            | Prime3WiiInventoryAvailability.GAME_STATE_POINTER_VALID
+            | Prime3WiiInventoryAvailability.INVENTORY_ROOT_VALID
+            | Prime3WiiInventoryAvailability.RANGE_VALID
+            | Prime3WiiInventoryAvailability.CONSISTENCY_CHECK_PASSED
+            | Prime3WiiInventoryAvailability.SNAPSHOT_AVAILABLE
+        ),
+        inventory_records=tuple(Prime3WiiInventoryRecord(i, i + 100) for i in range(59)),
     )
     server.load_bytes(0x80000020, b"ABCD")
     server.load_bytes(0x80000040, b"EFGH")
@@ -90,6 +103,37 @@ async def test_get_game_identity_returns_typed_availability(executor: Prime3WiiE
     assert identity.availability_flags & Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
     assert identity.availability_flags & Prime3WiiAvailability.GAME_STATE_POINTER_VALID
     assert not identity.availability_flags & Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID
+
+
+async def test_get_inventory_returns_typed_snapshot_after_identity(executor: Prime3WiiExecutor) -> None:
+    assert await executor.connect() is None
+    await executor.get_game_identity()
+    snapshot = await executor.get_inventory_snapshot()
+    assert snapshot.is_available
+    assert snapshot.snapshot_sequence == 0
+    assert len(snapshot.records) == 59
+    assert snapshot.records[17] == Prime3WiiInventoryRecord(17, 117)
+
+
+async def test_get_inventory_requires_validated_identity(executor: Prime3WiiExecutor) -> None:
+    assert await executor.connect() is None
+    with pytest.raises(MemoryOperationException, match="must be validated"):
+        await executor.get_inventory_snapshot()
+
+
+async def test_get_inventory_temporary_unavailable_is_valid(
+    executor: Prime3WiiExecutor, server: Prime3WiiFakeServer
+) -> None:
+    server.inventory_payload = dataclasses.replace(
+        server.inventory_payload,
+        availability_flags=Prime3WiiInventoryAvailability.TEMPORARILY_UNAVAILABLE,
+        records=type(server.inventory_payload)().records,
+    )
+    assert await executor.connect() is None
+    await executor.get_game_identity()
+    snapshot = await executor.get_inventory_snapshot()
+    assert not snapshot.is_available
+    assert snapshot.availability_flags & Prime3WiiInventoryAvailability.TEMPORARILY_UNAVAILABLE
 
 
 async def test_get_game_identity_rejects_omitted_capability(
@@ -146,6 +190,18 @@ async def test_connect_missing_required_capability(executor: Prime3WiiExecutor, 
 
     assert message == "Server does not advertise read-memory support."
     assert not executor.is_connected()
+
+
+async def test_connect_accepts_structured_inventory_without_arbitrary_read_memory(
+    server: Prime3WiiFakeServer, sleep_spy
+) -> None:
+    server.capabilities = Prime3WiiCapability.GAME_IDENTITY | Prime3WiiCapability.INVENTORY_STATE
+    _, sleep = sleep_spy
+    executor = Prime3WiiExecutor("127.0.0.1", port=server.port, timeout=0.05, retry_count=0, sleep=sleep)
+    assert await executor.connect() is None
+    assert not executor.accepted_capabilities & Prime3WiiCapability.READ_MEMORY
+    await executor.ensure_game_identity()
+    assert (await executor.get_inventory_snapshot()).is_available
 
 
 async def test_connect_unexpected_accepted_capability_mask(executor: Prime3WiiExecutor, server: Prime3WiiFakeServer):
@@ -384,15 +440,11 @@ def test_fake_server_repeats_identical_hello_session() -> None:
         client_name="randovania",
     )
     first = decode_response(
-        server._build_response(
-            Prime3WiiRequest(Prime3WiiCommand.HELLO, 1, encode_hello_request_payload(hello))
-        ),
+        server._build_response(Prime3WiiRequest(Prime3WiiCommand.HELLO, 1, encode_hello_request_payload(hello))),
         expected_request_id=1,
     )
     second = decode_response(
-        server._build_response(
-            Prime3WiiRequest(Prime3WiiCommand.HELLO, 2, encode_hello_request_payload(hello))
-        ),
+        server._build_response(Prime3WiiRequest(Prime3WiiCommand.HELLO, 2, encode_hello_request_payload(hello))),
         expected_request_id=2,
     )
 

@@ -165,6 +165,20 @@ enum {
     RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_RESPONSE_COMPLETE = 77,
     RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_HANDLE_ERROR = 78,
     RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_LOOP_COMPLETE = 79,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_REQUEST = 80,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_CAPABILITY = 81,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_IDENTITY = 82,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_RESOLVE_GAME_STATE = 83,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_RESOLVE_ROOT = 84,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_RANGE = 85,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_READ_RECORDS = 86,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_REVALIDATE_ROOT = 87,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_BUILD_RESPONSE = 88,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_SUBMIT_RESPONSE = 89,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_RESPONSE_COMPLETE = 90,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_HANDLE_UNAVAILABLE = 91,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_HANDLE_ERROR = 92,
+    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_LOOP_COMPLETE = 93,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -216,6 +230,7 @@ enum {
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_PING_PONG = 18,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_HELLO_SESSION = 19,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_GAME_IDENTITY = 20,
+    RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY = 21,
 };
 
 enum {
@@ -249,7 +264,7 @@ enum {
     INADDR_ANY = 0,
     RUNTIME_UDP_PORT = 43674,
     RUNTIME_UDP_RECEIVE_CAPACITY = 512,
-    RUNTIME_UDP_SEND_CAPACITY = 96,
+    RUNTIME_UDP_SEND_CAPACITY = 512,
     RUNTIME_PREVIEW_SIZE = 16,
     RUNTIME_WII_SOCKADDR_IN_SIZE = 8,
     RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS = 0x80504FE0,
@@ -275,6 +290,7 @@ enum {
     RUNTIME_CP3W_COMMAND_PING = 3,
     RUNTIME_CP3W_COMMAND_DISCONNECT = 4,
     RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY = PRIME3_CP3W_GAME_IDENTITY_COMMAND,
+    RUNTIME_CP3W_COMMAND_GET_INVENTORY = PRIME3_CP3W_INVENTORY_COMMAND,
     RUNTIME_CP3W_COMMAND_RESERVED_MAILBOX = 127,
     RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION = 1,
     RUNTIME_CP3W_ERROR_CODE_UNSUPPORTED_VERSION = 3,
@@ -295,6 +311,7 @@ enum {
     RUNTIME_CP3W_CAPABILITY_DETERMINISTIC_SESSION_ID = 1 << 3,
     RUNTIME_CP3W_CAPABILITY_READ_MEMORY = 1 << 4,
     RUNTIME_CP3W_CAPABILITY_GAME_IDENTITY = PRIME3_CP3W_GAME_IDENTITY_CAPABILITY,
+    RUNTIME_CP3W_CAPABILITY_INVENTORY_STATE = PRIME3_CP3W_INVENTORY_CAPABILITY,
     RUNTIME_CP3W_RUNTIME_CAPABILITIES = RUNTIME_CP3W_CAPABILITY_HELLO_NEGOTIATION
         | RUNTIME_CP3W_CAPABILITY_PING
         | RUNTIME_CP3W_CAPABILITY_STRUCTURED_ERRORS
@@ -307,11 +324,24 @@ enum {
     RUNTIME_CP3W_PROFILE_ID = PRIME3_CP3W_GAME_IDENTITY_PROFILE_ID,
     RUNTIME_CP3W_PROFILE_FINGERPRINT = PRIME3_CP3W_GAME_IDENTITY_PROFILE_FINGERPRINT,
     RUNTIME_CP3W_GAME_IDENTITY_PAYLOAD_SIZE = 28,
+    RUNTIME_CP3W_INVENTORY_SCHEMA_VERSION = PRIME3_CP3W_INVENTORY_SCHEMA_VERSION,
+    RUNTIME_CP3W_INVENTORY_RECORD_COUNT = PRIME3_CP3W_INVENTORY_RECORD_COUNT,
+    RUNTIME_CP3W_INVENTORY_RECORD_SIZE = PRIME3_CP3W_INVENTORY_RECORD_SIZE,
+    RUNTIME_CP3W_INVENTORY_HEADER_SIZE = 12,
+    RUNTIME_CP3W_INVENTORY_PAYLOAD_SIZE = PRIME3_CP3W_INVENTORY_PAYLOAD_SIZE,
     RUNTIME_CP3W_AVAILABILITY_EXECUTABLE_RECOGNIZED = 1 << 0,
     RUNTIME_CP3W_AVAILABILITY_GAME_STATE_POINTER_VALID = 1 << 1,
     RUNTIME_CP3W_AVAILABILITY_PLAYER_STATE_POINTER_VALID = 1 << 2,
     RUNTIME_CP3W_AVAILABILITY_INVENTORY_ROOT_AVAILABLE = 1 << 3,
     RUNTIME_CP3W_AVAILABILITY_WORLD_STATE_AVAILABLE = 1 << 4,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_EXECUTABLE_RECOGNIZED = 1 << 0,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_GAME_STATE_POINTER_VALID = 1 << 1,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_ROOT_VALID = 1 << 2,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_SNAPSHOT_AVAILABLE = 1 << 3,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_TEMPORARILY_UNAVAILABLE = 1 << 4,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_CONSISTENCY_PASSED = 1 << 5,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_INCONSISTENT = 1 << 6,
+    RUNTIME_CP3W_INVENTORY_AVAILABILITY_RANGE_VALID = 1 << 7,
     RUNTIME_MEM1_START = 0x80000000,
     RUNTIME_MEM1_END = 0x81800000,
     RUNTIME_PRIME3_NTSC_BUILD_STRING_ADDRESS = 0x805822B0,
@@ -343,6 +373,18 @@ static const char runtime_cp3w_identity_capability_message_ascii[] __attribute_s
     "GAME_IDENTITY capability was not negotiated.";
 static const char runtime_cp3w_identity_invalid_payload_message_ascii[] __attribute_section_rodata__ =
     "GET_GAME_IDENTITY request payload must be empty.";
+static const char runtime_cp3w_inventory_not_negotiated_message_ascii[] __attribute_section_rodata__ =
+    "Negotiation required before GET_INVENTORY.";
+static const char runtime_cp3w_inventory_capability_message_ascii[] __attribute_section_rodata__ =
+    "INVENTORY_STATE capability was not negotiated.";
+static const char runtime_cp3w_inventory_invalid_payload_message_ascii[] __attribute_section_rodata__ =
+    "GET_INVENTORY request payload must be empty.";
+static const u8 runtime_cp3w_inventory_item_ids[RUNTIME_CP3W_INVENTORY_RECORD_COUNT]
+    __attribute_section_rodata__ = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+        40, 41, 42, 44, 45, 46, 48, 49, 50, 51, 52, 62, 63, 64, 65, 66, 67, 68, 69
+    };
 
 enum {
     RUNTIME_CP3W_REQUEST_PAYLOAD_LENGTH = sizeof(runtime_cp3w_request_payload_ascii) - 1,
@@ -357,6 +399,11 @@ enum {
     RUNTIME_CP3W_IDENTITY_CAPABILITY_MESSAGE_LENGTH = sizeof(runtime_cp3w_identity_capability_message_ascii) - 1,
     RUNTIME_CP3W_IDENTITY_INVALID_PAYLOAD_MESSAGE_LENGTH =
         sizeof(runtime_cp3w_identity_invalid_payload_message_ascii) - 1,
+    RUNTIME_CP3W_INVENTORY_NOT_NEGOTIATED_MESSAGE_LENGTH =
+        sizeof(runtime_cp3w_inventory_not_negotiated_message_ascii) - 1,
+    RUNTIME_CP3W_INVENTORY_CAPABILITY_MESSAGE_LENGTH = sizeof(runtime_cp3w_inventory_capability_message_ascii) - 1,
+    RUNTIME_CP3W_INVENTORY_INVALID_PAYLOAD_MESSAGE_LENGTH =
+        sizeof(runtime_cp3w_inventory_invalid_payload_message_ascii) - 1,
     RUNTIME_CP3W_RESPONSE_PACKET_LENGTH =
         RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH + RUNTIME_CP3W_CRC_SIZE,
     RUNTIME_CP3W_ERROR_RESPONSE_PACKET_LENGTH = RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_ERROR_HEADER_SIZE
@@ -813,6 +860,27 @@ volatile u32 runtime_transport_cp3w_game_identity_executable_recognized __attrib
 volatile u32 runtime_transport_cp3w_game_identity_game_state_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_game_identity_player_state_pointer __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_game_identity_inventory_root_pointer __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_requests __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_available_snapshots __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_unavailable_snapshots __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_pre_hello_rejections __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_capability_rejections __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_invalid_payload_rejections __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_executable_failures __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_game_state_valid __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_game_state_invalid __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_root_valid __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_root_invalid __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_range_failures __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_consistency_successes __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_consistency_failures __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_responses_submitted __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_responses_completed __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_last_request_id __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_last_status __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_last_availability __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_snapshot_sequence __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_inventory_last_root __attribute_section_state__ __attribute_used__ = 0;
 volatile u8 runtime_transport_receive_request_bytes[RUNTIME_RECEIVE_REQUEST_LOGICAL_SIZE]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_receive_source_bytes[RUNTIME_WII_SOCKADDR_IN_SIZE]
@@ -898,6 +966,7 @@ static u32 runtime_transport_is_cp3w_frame_validation_mode(void) __attribute_sec
 static u32 runtime_transport_is_cp3w_ping_pong_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_cp3w_hello_session_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_cp3w_game_identity_mode(void) __attribute_section_code__;
+static u32 runtime_transport_is_cp3w_inventory_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_cp3w_mode(void) __attribute_section_code__;
 static u32 runtime_transport_uses_receive_mode(void) __attribute_section_code__;
 static u32 runtime_transport_uses_send_mode(void) __attribute_section_code__;
@@ -907,6 +976,7 @@ static void runtime_transport_note_cp3w_loop_complete(void) __attribute_section_
 static void runtime_transport_note_cp3w_ping_pong_loop_complete(void) __attribute_section_code__;
 static void runtime_transport_note_cp3w_hello_session_loop_complete(void) __attribute_section_code__;
 static void runtime_transport_note_cp3w_game_identity_loop_complete(void) __attribute_section_code__;
+static void runtime_transport_note_cp3w_inventory_loop_complete(void) __attribute_section_code__;
 static void runtime_transport_record_cp3w_frame_result(u32 result) __attribute_section_code__;
 static s32 runtime_transport_validate_cp3w_frame(void) __attribute_section_code__;
 static s32 runtime_transport_validate_cp3w_ping_pong_frame(void) __attribute_section_code__;
@@ -925,6 +995,13 @@ static void runtime_transport_prepare_cp3w_hello_response(u32 request_id) __attr
 static void runtime_transport_prepare_cp3w_game_identity_response(
     u32 request_id,
     u32 availability
+) __attribute_section_code__;
+static u32 runtime_transport_prepare_cp3w_inventory_response(
+    u32 request_id,
+    u32 game_state,
+    u32 inventory_root,
+    u32 availability,
+    u32 sequence
 ) __attribute_section_code__;
 static void runtime_transport_prepare_cp3w_error_response(
     u32 request_id,
@@ -1357,12 +1434,19 @@ static u32 runtime_transport_is_cp3w_game_identity_mode(void)
         && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_GAME_IDENTITY;
 }
 
+static u32 runtime_transport_is_cp3w_inventory_mode(void)
+{
+    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY;
+}
+
 static u32 runtime_transport_is_cp3w_mode(void)
 {
     return runtime_transport_is_cp3w_frame_validation_mode()
         || runtime_transport_is_cp3w_ping_pong_mode()
         || runtime_transport_is_cp3w_hello_session_mode()
-        || runtime_transport_is_cp3w_game_identity_mode();
+        || runtime_transport_is_cp3w_game_identity_mode()
+        || runtime_transport_is_cp3w_inventory_mode();
 }
 
 static u32 runtime_transport_uses_receive_mode(void)
@@ -1417,6 +1501,13 @@ static void runtime_transport_note_cp3w_game_identity_loop_complete(void)
     runtime_transport_loop_complete_transition_count += 1;
     runtime_transport_cp3w_final_datagram_index = runtime_transport_cp3w_datagrams_processed;
     runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_LOOP_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+}
+
+static void runtime_transport_note_cp3w_inventory_loop_complete(void)
+{
+    runtime_transport_loop_complete_transition_count += 1;
+    runtime_transport_cp3w_final_datagram_index = runtime_transport_cp3w_datagrams_processed;
+    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_LOOP_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
 }
 
 static void runtime_transport_record_cp3w_frame_result(u32 result)
@@ -1613,7 +1704,7 @@ static void runtime_transport_prepare_cp3w_game_identity_response(u32 request_id
     payload[3] = RUNTIME_CP3W_REGION_ID;
     runtime_write_be16(payload + 4, RUNTIME_CP3W_REVISION_ID);
     payload[6] = RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION;
-    payload[7] = RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_GAME_IDENTITY;
+    payload[7] = PRIME3_IOS_UDP_DIAGNOSTIC_MODE;
     runtime_write_be32(payload + 8, RUNTIME_CP3W_PROFILE_ID);
     runtime_write_be32(payload + 12, RUNTIME_CP3W_PROFILE_FINGERPRINT);
     runtime_write_be32(payload + 16, RUNTIME_CP3W_RUNTIME_BUILD_ID);
@@ -1633,6 +1724,86 @@ static void runtime_transport_prepare_cp3w_game_identity_response(u32 request_id
     runtime_transport_cp3w_last_response_status = RUNTIME_CP3W_RESPONSE_STATUS_OK;
     runtime_transport_cp3w_game_identity_last_status = RUNTIME_CP3W_RESPONSE_STATUS_OK;
     runtime_transport_cp3w_game_identity_last_availability = availability;
+}
+
+static u32 runtime_transport_prepare_cp3w_inventory_response(
+    u32 request_id,
+    u32 game_state,
+    u32 inventory_root,
+    u32 availability,
+    u32 sequence
+)
+{
+    u32 i = 0;
+    u32 crc = 0;
+    u32 current_game_state = 0;
+    u32 current_inventory_root = 0;
+    volatile u8* payload = runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE;
+    volatile u8* records = payload + RUNTIME_CP3W_INVENTORY_HEADER_SIZE;
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
+    runtime_memcpy(runtime_transport_send_payload_bytes, runtime_cp3w_magic, sizeof(runtime_cp3w_magic));
+    runtime_transport_send_payload_bytes[4] = RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION;
+    runtime_transport_send_payload_bytes[5] = RUNTIME_CP3W_PACKET_KIND_RESPONSE;
+    runtime_transport_send_payload_bytes[6] = RUNTIME_CP3W_COMMAND_GET_INVENTORY;
+    runtime_transport_send_payload_bytes[7] = RUNTIME_CP3W_RESPONSE_STATUS_OK;
+    runtime_write_be32(runtime_transport_send_payload_bytes + 8, request_id);
+    runtime_write_be32(runtime_transport_send_payload_bytes + 12, RUNTIME_CP3W_INVENTORY_PAYLOAD_SIZE);
+    payload[0] = RUNTIME_CP3W_INVENTORY_SCHEMA_VERSION;
+    payload[1] = RUNTIME_CP3W_INVENTORY_RECORD_COUNT;
+    payload[2] = RUNTIME_CP3W_INVENTORY_RECORD_SIZE;
+    payload[3] = 0;
+    runtime_write_be32(payload + 8, sequence);
+
+    if (
+        (availability & RUNTIME_CP3W_INVENTORY_AVAILABILITY_ROOT_VALID) != 0
+        && (availability & RUNTIME_CP3W_INVENTORY_AVAILABILITY_RANGE_VALID) != 0
+    ) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_READ_RECORDS, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        for (i = 0; i < RUNTIME_CP3W_INVENTORY_RECORD_COUNT; i += 1) {
+            u32 slot = inventory_root + 0x54U + ((u32)runtime_cp3w_inventory_item_ids[i] * 0x0CU);
+            runtime_write_be32(records + i * RUNTIME_CP3W_INVENTORY_RECORD_SIZE, *(const volatile u32*)slot);
+            runtime_write_be32(records + i * RUNTIME_CP3W_INVENTORY_RECORD_SIZE + 4, *(const volatile u32*)(slot + 4U));
+        }
+        runtime_set_phase(
+            RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_REVALIDATE_ROOT,
+            RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+        );
+        current_game_state = *(const volatile u32*)RUNTIME_PRIME3_NTSC_GAME_STATE_POINTER_ADDRESS;
+        if (current_game_state == game_state && runtime_transport_is_valid_mem1_range(current_game_state, 0x28U)) {
+            current_inventory_root = *(const volatile u32*)(current_game_state + 0x24U);
+        }
+        if (current_inventory_root == inventory_root) {
+            availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_SNAPSHOT_AVAILABLE
+                | RUNTIME_CP3W_INVENTORY_AVAILABILITY_CONSISTENCY_PASSED;
+            runtime_transport_cp3w_inventory_consistency_successes += 1;
+            runtime_transport_cp3w_inventory_available_snapshots += 1;
+        } else {
+            runtime_memzero(records, RUNTIME_CP3W_INVENTORY_RECORD_COUNT * RUNTIME_CP3W_INVENTORY_RECORD_SIZE);
+            availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_TEMPORARILY_UNAVAILABLE
+                | RUNTIME_CP3W_INVENTORY_AVAILABILITY_INCONSISTENT;
+            runtime_transport_cp3w_inventory_consistency_failures += 1;
+            runtime_transport_cp3w_inventory_unavailable_snapshots += 1;
+        }
+    } else {
+        availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_TEMPORARILY_UNAVAILABLE;
+        runtime_transport_cp3w_inventory_unavailable_snapshots += 1;
+    }
+    runtime_write_be32(payload + 4, availability);
+    crc = runtime_crc32(
+        runtime_transport_send_payload_bytes,
+        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_INVENTORY_PAYLOAD_SIZE
+    );
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_INVENTORY_PAYLOAD_SIZE,
+        crc
+    );
+    runtime_transport_prepared_send_length =
+        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_INVENTORY_PAYLOAD_SIZE + RUNTIME_CP3W_CRC_SIZE;
+    runtime_transport_cp3w_last_response_id = request_id;
+    runtime_transport_cp3w_last_response_status = RUNTIME_CP3W_RESPONSE_STATUS_OK;
+    runtime_transport_cp3w_inventory_last_status = RUNTIME_CP3W_RESPONSE_STATUS_OK;
+    runtime_transport_cp3w_inventory_last_availability = availability;
+    return availability;
 }
 
 static void runtime_transport_prepare_cp3w_error_response(
@@ -1938,6 +2109,7 @@ static s32 runtime_transport_validate_cp3w_ping_pong_frame(void)
         && runtime_transport_cp3w_last_command != RUNTIME_CP3W_COMMAND_PING
         && runtime_transport_cp3w_last_command != RUNTIME_CP3W_COMMAND_DISCONNECT
         && runtime_transport_cp3w_last_command != RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
+        && runtime_transport_cp3w_last_command != RUNTIME_CP3W_COMMAND_GET_INVENTORY
         && runtime_transport_cp3w_last_command != RUNTIME_CP3W_COMMAND_RESERVED_MAILBOX
     ) {
         runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_UNSUPPORTED_TYPE);
@@ -1994,8 +2166,11 @@ static s32 runtime_transport_dispatch_cp3w_hello_session_request(void)
         u32 client_nonce = 0;
         u32 accepted_capabilities = 0;
         u32 runtime_capabilities = RUNTIME_CP3W_RUNTIME_CAPABILITIES;
-        if (runtime_transport_is_cp3w_game_identity_mode()) {
+        if (runtime_transport_is_cp3w_game_identity_mode() || runtime_transport_is_cp3w_inventory_mode()) {
             runtime_capabilities |= RUNTIME_CP3W_CAPABILITY_GAME_IDENTITY;
+        }
+        if (runtime_transport_is_cp3w_inventory_mode()) {
+            runtime_capabilities |= RUNTIME_CP3W_CAPABILITY_INVENTORY_STATE;
         }
         runtime_transport_cp3w_hello_requests_received += 1;
         if (runtime_transport_validate_cp3w_hello_payload(payload_length) != 0) {
@@ -2063,7 +2238,8 @@ static s32 runtime_transport_dispatch_cp3w_hello_session_request(void)
         && (command == RUNTIME_CP3W_COMMAND_PING
             || command == RUNTIME_CP3W_COMMAND_READ_MEMORY
             || command == RUNTIME_CP3W_COMMAND_DISCONNECT
-            || command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY)
+            || command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
+            || command == RUNTIME_CP3W_COMMAND_GET_INVENTORY)
     ) {
         runtime_transport_cp3w_pre_hello_gated_commands += 1;
         if (command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY) {
@@ -2071,15 +2247,24 @@ static s32 runtime_transport_dispatch_cp3w_hello_session_request(void)
             runtime_transport_cp3w_game_identity_pre_hello_rejections += 1;
             runtime_transport_cp3w_game_identity_last_request_id = runtime_transport_cp3w_last_request_id;
         }
+        if (command == RUNTIME_CP3W_COMMAND_GET_INVENTORY) {
+            runtime_transport_cp3w_inventory_requests += 1;
+            runtime_transport_cp3w_inventory_pre_hello_rejections += 1;
+            runtime_transport_cp3w_inventory_last_request_id = runtime_transport_cp3w_last_request_id;
+        }
         runtime_transport_prepare_cp3w_error_response(
             runtime_transport_cp3w_last_request_id,
             command,
             RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED,
             command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
                 ? runtime_cp3w_identity_not_negotiated_message_ascii
+                : command == RUNTIME_CP3W_COMMAND_GET_INVENTORY
+                ? runtime_cp3w_inventory_not_negotiated_message_ascii
                 : runtime_cp3w_not_negotiated_message_ascii,
             command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
                 ? RUNTIME_CP3W_IDENTITY_NOT_NEGOTIATED_MESSAGE_LENGTH
+                : command == RUNTIME_CP3W_COMMAND_GET_INVENTORY
+                ? RUNTIME_CP3W_INVENTORY_NOT_NEGOTIATED_MESSAGE_LENGTH
                 : RUNTIME_CP3W_NOT_NEGOTIATED_MESSAGE_LENGTH
         );
         runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED;
@@ -2195,6 +2380,104 @@ static s32 runtime_transport_dispatch_cp3w_hello_session_request(void)
         runtime_transport_cp3w_game_identity_successes += 1;
         runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_VALID;
         return 10;
+    }
+
+    if (command == RUNTIME_CP3W_COMMAND_GET_INVENTORY) {
+        u32 availability = 0;
+        u32 game_state = 0;
+        u32 inventory_root = 0;
+        runtime_transport_cp3w_inventory_requests += 1;
+        runtime_transport_cp3w_inventory_last_request_id = runtime_transport_cp3w_last_request_id;
+        runtime_set_phase(
+            RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_CAPABILITY,
+            RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+        );
+        if ((runtime_transport_cp3w_accepted_capabilities & RUNTIME_CP3W_CAPABILITY_INVENTORY_STATE) == 0) {
+            runtime_transport_cp3w_inventory_capability_rejections += 1;
+            runtime_transport_prepare_cp3w_error_response(
+                runtime_transport_cp3w_last_request_id,
+                command,
+                RUNTIME_CP3W_ERROR_CODE_CAPABILITY_NOT_NEGOTIATED,
+                runtime_cp3w_inventory_capability_message_ascii,
+                RUNTIME_CP3W_INVENTORY_CAPABILITY_MESSAGE_LENGTH
+            );
+            runtime_transport_cp3w_inventory_last_status = RUNTIME_CP3W_RESPONSE_STATUS_ERROR;
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_CAPABILITY_NOT_NEGOTIATED;
+            return 11;
+        }
+        runtime_set_phase(
+            RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_REQUEST,
+            RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+        );
+        if (payload_length != 0) {
+            runtime_transport_cp3w_inventory_invalid_payload_rejections += 1;
+            runtime_transport_prepare_cp3w_error_response(
+                runtime_transport_cp3w_last_request_id,
+                command,
+                RUNTIME_CP3W_ERROR_CODE_INVALID_PAYLOAD_LENGTH,
+                runtime_cp3w_inventory_invalid_payload_message_ascii,
+                RUNTIME_CP3W_INVENTORY_INVALID_PAYLOAD_MESSAGE_LENGTH
+            );
+            runtime_transport_cp3w_inventory_last_status = RUNTIME_CP3W_RESPONSE_STATUS_ERROR;
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_INVALID_PAYLOAD_LENGTH;
+            return 12;
+        }
+        runtime_set_phase(
+            RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_IDENTITY,
+            RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+        );
+        if (runtime_transport_prime3_executable_recognized() != 0) {
+            availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_EXECUTABLE_RECOGNIZED;
+            runtime_set_phase(
+                RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_RESOLVE_GAME_STATE,
+                RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+            );
+            game_state = *(const volatile u32*)RUNTIME_PRIME3_NTSC_GAME_STATE_POINTER_ADDRESS;
+            if (runtime_transport_is_valid_mem1_range(game_state, 0x28U)) {
+                availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_GAME_STATE_POINTER_VALID;
+                runtime_transport_cp3w_inventory_game_state_valid += 1;
+                runtime_set_phase(
+                    RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_RESOLVE_ROOT,
+                    RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+                );
+                inventory_root = *(const volatile u32*)(game_state + 0x24U);
+                runtime_transport_cp3w_inventory_last_root = inventory_root;
+                if (runtime_transport_is_valid_mem1_range(inventory_root, 4U)) {
+                    availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_ROOT_VALID;
+                    runtime_transport_cp3w_inventory_root_valid += 1;
+                    runtime_set_phase(
+                        RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_VALIDATE_RANGE,
+                        RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+                    );
+                    if (runtime_transport_is_valid_mem1_range(inventory_root, 0x398U)) {
+                        availability |= RUNTIME_CP3W_INVENTORY_AVAILABILITY_RANGE_VALID;
+                    } else {
+                        runtime_transport_cp3w_inventory_range_failures += 1;
+                    }
+                } else {
+                    runtime_transport_cp3w_inventory_root_invalid += 1;
+                }
+            } else {
+                runtime_transport_cp3w_inventory_game_state_invalid += 1;
+            }
+        } else {
+            runtime_transport_cp3w_inventory_executable_failures += 1;
+        }
+        runtime_transport_cp3w_inventory_snapshot_sequence += 1;
+        runtime_set_phase(
+            RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_BUILD_RESPONSE,
+            RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+        );
+        availability = runtime_transport_prepare_cp3w_inventory_response(
+            runtime_transport_cp3w_last_request_id,
+            game_state,
+            inventory_root,
+            availability,
+            runtime_transport_cp3w_inventory_snapshot_sequence
+        );
+        runtime_transport_cp3w_inventory_last_availability = availability;
+        runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_VALID;
+        return 13;
     }
 
     if (command == RUNTIME_CP3W_COMMAND_PING) {
@@ -3036,6 +3319,8 @@ static s32 runtime_submit_ioctlv_send(u32 next_phase)
                 ? (runtime_transport_cp3w_requests_dispatched == 0 || runtime_transport_send_submit_count == 0)
                 : runtime_transport_is_cp3w_game_identity_mode()
                 ? (runtime_transport_cp3w_requests_dispatched == 0 || runtime_transport_send_submit_count == 0)
+                : runtime_transport_is_cp3w_inventory_mode()
+                ? (runtime_transport_cp3w_requests_dispatched == 0 || runtime_transport_send_submit_count == 0)
                 : (runtime_transport_receive_count == 0 || runtime_transport_send_submit_count == 0
                     || runtime_transport_send_submit_count != runtime_transport_receive_count))
         || runtime_transport_last_peer_length != RUNTIME_WII_SOCKADDR_IN_SIZE
@@ -3389,6 +3674,44 @@ static s32 runtime_consume_send_completion(void)
         }
         if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
             runtime_transport_note_cp3w_hello_session_loop_complete();
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
+        }
+        return 0;
+    }
+    if (runtime_transport_is_cp3w_inventory_mode()) {
+        if (runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_HELLO) {
+            runtime_transport_cp3w_hello_responses_completed += 1;
+        } else if (
+            runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
+            && runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK
+        ) {
+            runtime_transport_cp3w_game_identity_responses_completed += 1;
+        } else if (
+            runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_GET_INVENTORY
+            && runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK
+        ) {
+            runtime_transport_cp3w_inventory_responses_completed += 1;
+            runtime_set_phase(
+                RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_RESPONSE_COMPLETE,
+                RUNTIME_TRANSPORT_POLL_ACTION_SEND
+            );
+        } else if (runtime_transport_cp3w_last_dispatch_result == RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED) {
+            runtime_transport_cp3w_not_negotiated_responses_completed += 1;
+        } else if (
+            runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_PING
+            && runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK
+        ) {
+            runtime_transport_cp3w_pong_responses_completed += 1;
+        } else if (runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_ERROR) {
+            runtime_transport_cp3w_unsupported_responses_completed += 1;
+        }
+        if (!runtime_transport_validate_loop_limit()) {
+            runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
+            return -1;
+        }
+        if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+            runtime_transport_note_cp3w_inventory_loop_complete();
         } else {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
         }
@@ -4078,6 +4401,27 @@ void runtime_entry_impl(void)
     runtime_transport_cp3w_game_identity_game_state_pointer = 0;
     runtime_transport_cp3w_game_identity_player_state_pointer = 0;
     runtime_transport_cp3w_game_identity_inventory_root_pointer = 0;
+    runtime_transport_cp3w_inventory_requests = 0;
+    runtime_transport_cp3w_inventory_available_snapshots = 0;
+    runtime_transport_cp3w_inventory_unavailable_snapshots = 0;
+    runtime_transport_cp3w_inventory_pre_hello_rejections = 0;
+    runtime_transport_cp3w_inventory_capability_rejections = 0;
+    runtime_transport_cp3w_inventory_invalid_payload_rejections = 0;
+    runtime_transport_cp3w_inventory_executable_failures = 0;
+    runtime_transport_cp3w_inventory_game_state_valid = 0;
+    runtime_transport_cp3w_inventory_game_state_invalid = 0;
+    runtime_transport_cp3w_inventory_root_valid = 0;
+    runtime_transport_cp3w_inventory_root_invalid = 0;
+    runtime_transport_cp3w_inventory_range_failures = 0;
+    runtime_transport_cp3w_inventory_consistency_successes = 0;
+    runtime_transport_cp3w_inventory_consistency_failures = 0;
+    runtime_transport_cp3w_inventory_responses_submitted = 0;
+    runtime_transport_cp3w_inventory_responses_completed = 0;
+    runtime_transport_cp3w_inventory_last_request_id = 0;
+    runtime_transport_cp3w_inventory_last_status = 0;
+    runtime_transport_cp3w_inventory_last_availability = 0;
+    runtime_transport_cp3w_inventory_snapshot_sequence = 0;
+    runtime_transport_cp3w_inventory_last_root = 0;
     runtime_memzero(runtime_transport_cp3w_hello_client_name_bytes, sizeof(runtime_transport_cp3w_hello_client_name_bytes));
     runtime_memzero(runtime_transport_receive_request_bytes, sizeof(runtime_transport_receive_request_bytes));
     runtime_memzero(runtime_transport_receive_source_bytes, sizeof(runtime_transport_receive_source_bytes));
@@ -4158,6 +4502,7 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_PING_PONG_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HELLO_SESSION_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_LOOP_COMPLETE
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_SUBMIT_FAILED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID
@@ -4171,6 +4516,7 @@ void runtime_poll_entry_impl(void)
             || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_PING_PONG_LOOP_COMPLETE
             || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HELLO_SESSION_LOOP_COMPLETE
             || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_LOOP_COMPLETE
+            || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_LOOP_COMPLETE
         ) {
             runtime_transport_polls_after_loop_complete = runtime_poll_counter;
         }
@@ -4616,11 +4962,14 @@ void runtime_poll_entry_impl(void)
             || (runtime_transport_is_cp3w_hello_session_mode() && runtime_transport_validate_cp3w_ping_pong_frame() == 0)
             || (runtime_transport_is_cp3w_game_identity_mode()
                 && runtime_transport_validate_cp3w_ping_pong_frame() == 0)
+            || (runtime_transport_is_cp3w_inventory_mode()
+                && runtime_transport_validate_cp3w_ping_pong_frame() == 0)
         ) {
             runtime_set_phase(
                 runtime_transport_is_cp3w_ping_pong_mode()
                     || runtime_transport_is_cp3w_hello_session_mode()
                     || runtime_transport_is_cp3w_game_identity_mode()
+                    || runtime_transport_is_cp3w_inventory_mode()
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_DISPATCH_REQUEST
                     : RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_VALID,
                 RUNTIME_TRANSPORT_POLL_ACTION_WAIT
@@ -4634,6 +4983,8 @@ void runtime_poll_entry_impl(void)
                 runtime_transport_note_cp3w_hello_session_loop_complete();
             } else if (runtime_transport_is_cp3w_game_identity_mode()) {
                 runtime_transport_note_cp3w_game_identity_loop_complete();
+            } else if (runtime_transport_is_cp3w_inventory_mode()) {
+                runtime_transport_note_cp3w_inventory_loop_complete();
             } else {
                 runtime_transport_note_cp3w_loop_complete();
             }
@@ -4643,7 +4994,8 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_DISPATCH_REQUEST) {
-        s32 dispatch_result = runtime_transport_is_cp3w_game_identity_mode()
+        s32 dispatch_result = (runtime_transport_is_cp3w_game_identity_mode()
+            || runtime_transport_is_cp3w_inventory_mode())
             ? runtime_transport_dispatch_cp3w_game_identity_request()
             : runtime_transport_is_cp3w_hello_session_mode()
             ? runtime_transport_dispatch_cp3w_hello_session_request()
@@ -4651,7 +5003,8 @@ void runtime_poll_entry_impl(void)
         if (dispatch_result == 0) {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_PING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         } else if (
-            (runtime_transport_is_cp3w_hello_session_mode() || runtime_transport_is_cp3w_game_identity_mode())
+            (runtime_transport_is_cp3w_hello_session_mode() || runtime_transport_is_cp3w_game_identity_mode()
+                || runtime_transport_is_cp3w_inventory_mode())
             && dispatch_result == 1
         ) {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_PING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
@@ -4671,6 +5024,10 @@ void runtime_poll_entry_impl(void)
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_BUILD_RESPONSE
                     : dispatch_result == 8 || dispatch_result == 9
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_HANDLE_ERROR
+                    : dispatch_result == 13
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_BUILD_RESPONSE
+                    : dispatch_result == 11 || dispatch_result == 12
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_HANDLE_ERROR
                     : RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_UNSUPPORTED_COMMAND,
                 RUNTIME_TRANSPORT_POLL_ACTION_WAIT
             );
@@ -4681,6 +5038,8 @@ void runtime_poll_entry_impl(void)
                 runtime_transport_note_cp3w_hello_session_loop_complete();
             } else if (runtime_transport_is_cp3w_game_identity_mode()) {
                 runtime_transport_note_cp3w_game_identity_loop_complete();
+            } else if (runtime_transport_is_cp3w_inventory_mode()) {
+                runtime_transport_note_cp3w_inventory_loop_complete();
             } else {
                 runtime_transport_note_cp3w_ping_pong_loop_complete();
             }
@@ -4736,6 +5095,18 @@ void runtime_poll_entry_impl(void)
         runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         goto runtime_poll_exit;
     }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_BUILD_RESPONSE) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_SUBMIT_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_HANDLE_ERROR) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_SUBMIT_RESPONSE) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_REJECTED) {
         runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         goto runtime_poll_exit;
@@ -4771,10 +5142,19 @@ void runtime_poll_entry_impl(void)
         ) {
             runtime_transport_cp3w_game_identity_responses_submitted += 1;
         } else if (
+            runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_GET_INVENTORY
+            && runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK
+        ) {
+            runtime_transport_cp3w_inventory_responses_submitted += 1;
+        } else if (
+            runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
+            &&
             runtime_transport_cp3w_last_dispatch_result == RUNTIME_CP3W_ERROR_CODE_CAPABILITY_NOT_NEGOTIATED
         ) {
             runtime_transport_cp3w_game_identity_capability_errors_submitted += 1;
         } else if (
+            runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_GET_GAME_IDENTITY
+            &&
             runtime_transport_cp3w_last_dispatch_result == RUNTIME_CP3W_ERROR_CODE_INVALID_PAYLOAD_LENGTH
         ) {
             runtime_transport_cp3w_game_identity_invalid_payload_errors_submitted += 1;

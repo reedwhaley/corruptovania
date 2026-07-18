@@ -246,6 +246,74 @@ class Prime3RuntimeGameIdentityMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3RuntimeInventoryMetadata:
+    mode_value: int
+    mode_name: str
+    command_value: int
+    capability_value: int
+    schema_version: int
+    item_ids: list[int]
+    header_size: int
+    record_size: int
+    payload_size: int
+    frame_size: int
+    field_offsets: dict[str, int]
+    availability_flags: dict[str, int]
+    phase_names: dict[str, int]
+    configured_count: int
+    send_buffer_size: int
+    ping_payload_limit: int
+    state_addresses: dict[str, int]
+
+    def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
+        if self.mode_value != 21 or self.mode_name != "cp3w_inventory":
+            raise Prime3DolPatchError("CP3W inventory metadata must use diagnostic mode 21.")
+        if self.command_value != 6 or self.capability_value != 1 << 12:
+            raise Prime3DolPatchError("CP3W inventory command or capability metadata is invalid.")
+        if self.schema_version != 1 or len(self.item_ids) != 59 or len(set(self.item_ids)) != 59:
+            raise Prime3DolPatchError("CP3W inventory schema or item ordering metadata is invalid.")
+        if self.header_size != 12 or self.record_size != 8 or self.payload_size != 484 or self.frame_size != 504:
+            raise Prime3DolPatchError("CP3W inventory payload sizing metadata is invalid.")
+        if self.send_buffer_size < self.frame_size or self.ping_payload_limit != 44:
+            raise Prime3DolPatchError("CP3W inventory send capacity or retained PING limit is invalid.")
+        if self.configured_count < 1 or self.configured_count > 100:
+            raise Prime3DolPatchError("CP3W inventory configured count must be between 1 and 100.")
+        if self.field_offsets.get("records") != 12 or self.phase_names.get("LOOP_COMPLETE") != 93:
+            raise Prime3DolPatchError("CP3W inventory layout or terminal phase metadata is invalid.")
+        ranges = tuple((name, address, 4) for name, address in self.state_addresses.items())
+        for name, address, size in ranges:
+            if not (runtime_state_start <= address < runtime_state_end) or address + size > runtime_state_end:
+                raise Prime3DolPatchError(f"CP3W inventory state field {name} is outside runtime state.")
+        _validate_non_overlapping_ranges(ranges)
+        return ranges
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeInventoryMetadata:
+        return cls(
+            mode_value=_json_int(data, "mode_value"),
+            mode_name=_json_string(data, "mode_name"),
+            command_value=_json_int(data, "command_value"),
+            capability_value=_json_int(data, "capability_value"),
+            schema_version=_json_int(data, "schema_version"),
+            item_ids=_json_int_list(data, "item_ids"),
+            header_size=_json_int(data, "header_size"),
+            record_size=_json_int(data, "record_size"),
+            payload_size=_json_int(data, "payload_size"),
+            frame_size=_json_int(data, "frame_size"),
+            field_offsets=_json_int_dict(data, "field_offsets"),
+            availability_flags=_json_int_dict(data, "availability_flags"),
+            phase_names=_json_int_dict(data, "phase_names"),
+            configured_count=_json_int(data, "configured_count"),
+            send_buffer_size=_json_int(data, "send_buffer_size"),
+            ping_payload_limit=_json_int(data, "ping_payload_limit"),
+            state_addresses=_json_int_dict(data, "state_addresses"),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3RuntimeTransportMetadata:
     mode: str
     initialization_enabled: bool
@@ -804,6 +872,7 @@ class Prime3RuntimeTransportMetadata:
     socket_leak_detected_address: int | None = None
     socket_leak_detected_size: int | None = None
     cp3w_game_identity: Prime3RuntimeGameIdentityMetadata | None = None
+    cp3w_inventory: Prime3RuntimeInventoryMetadata | None = None
 
     def validate(  # noqa: C901
         self, *, runtime_state_start: int, runtime_state_end: int
@@ -819,6 +888,7 @@ class Prime3RuntimeTransportMetadata:
         is_cp3w_ping_pong = self.mode == "cp3w_ping_pong"
         is_cp3w_hello_session = self.mode == "cp3w_hello_session"
         is_cp3w_game_identity = self.mode == "cp3w_game_identity"
+        is_cp3w_inventory = self.mode == "cp3w_inventory"
         if self.receive_enabled and not is_recvfrom_once:
             if (
                 not is_recv_send_once
@@ -827,6 +897,7 @@ class Prime3RuntimeTransportMetadata:
                 and not is_cp3w_ping_pong
                 and not is_cp3w_hello_session
                 and not is_cp3w_game_identity
+                and not is_cp3w_inventory
             ):
                 raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
         if (
@@ -837,6 +908,7 @@ class Prime3RuntimeTransportMetadata:
             or is_cp3w_ping_pong
             or is_cp3w_hello_session
             or is_cp3w_game_identity
+            or is_cp3w_inventory
         ) and not self.receive_enabled:
             raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
         if (
@@ -847,6 +919,7 @@ class Prime3RuntimeTransportMetadata:
             and not is_cp3w_ping_pong
             and not is_cp3w_hello_session
             and not is_cp3w_game_identity
+            and not is_cp3w_inventory
         ):
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
         if (
@@ -856,6 +929,7 @@ class Prime3RuntimeTransportMetadata:
             or is_cp3w_ping_pong
             or is_cp3w_hello_session
             or is_cp3w_game_identity
+            or is_cp3w_inventory
         ) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
@@ -922,11 +996,20 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError(
                 "CP3W game identity metadata must use the CP3W_GAME_IDENTITY_LOOP_COMPLETE terminal phase."
             )
-        if is_cp3w_game_identity:
+        if is_cp3w_game_identity or is_cp3w_inventory:
             if self.cp3w_game_identity is None:
-                raise Prime3DolPatchError("CP3W game identity metadata is missing identity details.")
+                raise Prime3DolPatchError("Structured CP3W metadata is missing game identity details.")
         elif self.cp3w_game_identity is not None:
-            raise Prime3DolPatchError("CP3W game identity details require game identity mode.")
+            raise Prime3DolPatchError("CP3W game identity details require game identity or inventory mode.")
+        if is_cp3w_inventory and (
+            self.terminal_phase_value != 93 or self.terminal_phase_name != "CP3W_INVENTORY_LOOP_COMPLETE"
+        ):
+            raise Prime3DolPatchError("CP3W inventory metadata must use the CP3W_INVENTORY_LOOP_COMPLETE phase.")
+        if is_cp3w_inventory:
+            if self.cp3w_inventory is None:
+                raise Prime3DolPatchError("CP3W inventory metadata is missing inventory details.")
+        elif self.cp3w_inventory is not None:
+            raise Prime3DolPatchError("CP3W inventory details require inventory mode.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -1819,6 +1902,11 @@ class Prime3RuntimeTransportMetadata:
                 runtime_state_start=runtime_state_start,
                 runtime_state_end=runtime_state_end,
             )
+        if self.cp3w_inventory is not None:
+            ranges += self.cp3w_inventory.validate(
+                runtime_state_start=runtime_state_start,
+                runtime_state_end=runtime_state_end,
+            )
         _validate_non_overlapping_ranges(ranges)
         return ranges
 
@@ -2507,6 +2595,7 @@ class Prime3RuntimeTransportMetadata:
             socket_leak_detected_address=_json_optional_int(data, "socket_leak_detected_address"),
             socket_leak_detected_size=_json_optional_int(data, "socket_leak_detected_size"),
             cp3w_game_identity=_json_optional_game_identity(data, "cp3w_game_identity"),
+            cp3w_inventory=_json_optional_inventory(data, "cp3w_inventory"),
         )
 
 
@@ -3638,6 +3727,18 @@ def _json_optional_game_identity(
     if not isinstance(value, dict):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
     return Prime3RuntimeGameIdentityMetadata.from_json_dict(value)
+
+
+def _json_optional_inventory(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RuntimeInventoryMetadata | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RuntimeInventoryMetadata.from_json_dict(value)
 
 
 def _json_optional_runtime_diagnostics(

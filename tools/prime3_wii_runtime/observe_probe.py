@@ -24,6 +24,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiGameId,
+    Prime3WiiInventoryAvailability,
     Prime3WiiPlatformId,
     Prime3WiiRegionId,
     Prime3WiiRevisionId,
@@ -130,6 +131,20 @@ TRANSPORT_PHASE_NAMES = {
     77: "CP3W_GAME_IDENTITY_RESPONSE_COMPLETE",
     78: "CP3W_GAME_IDENTITY_HANDLE_ERROR",
     79: "CP3W_GAME_IDENTITY_LOOP_COMPLETE",
+    80: "CP3W_INVENTORY_VALIDATE_REQUEST",
+    81: "CP3W_INVENTORY_VALIDATE_CAPABILITY",
+    82: "CP3W_INVENTORY_VALIDATE_IDENTITY",
+    83: "CP3W_INVENTORY_RESOLVE_GAME_STATE",
+    84: "CP3W_INVENTORY_RESOLVE_ROOT",
+    85: "CP3W_INVENTORY_VALIDATE_RANGE",
+    86: "CP3W_INVENTORY_READ_RECORDS",
+    87: "CP3W_INVENTORY_REVALIDATE_ROOT",
+    88: "CP3W_INVENTORY_BUILD_RESPONSE",
+    89: "CP3W_INVENTORY_SUBMIT_RESPONSE",
+    90: "CP3W_INVENTORY_RESPONSE_COMPLETE",
+    91: "CP3W_INVENTORY_HANDLE_UNAVAILABLE",
+    92: "CP3W_INVENTORY_HANDLE_ERROR",
+    93: "CP3W_INVENTORY_LOOP_COMPLETE",
     21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
     22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
     23: "BIND_FAILED_CLEANED",
@@ -1323,6 +1338,24 @@ def _read_probe_state(  # noqa: C901
                         "inventory_root_validated": bool(
                             availability & int(Prime3WiiAvailability.INVENTORY_ROOT_AVAILABLE)
                         ),
+                    }
+                if transport.cp3w_inventory is not None:
+                    inventory = transport.cp3w_inventory
+                    inventory_state = {
+                        name: _runtime_u32(address) for name, address in inventory.state_addresses.items()
+                    }
+                    availability = inventory_state["last_availability"]
+                    known_availability_mask = sum(inventory.availability_flags.values())
+                    relocated_runtime["transport"]["cp3w_inventory"] = {
+                        **inventory.to_json_dict(),
+                        "command_name": Prime3WiiCommand(inventory.command_value).name,
+                        "capability_name": Prime3WiiCapability(inventory.capability_value).name,
+                        "state": inventory_state,
+                        "availability_raw": availability,
+                        "availability_names": [
+                            item.name for item in Prime3WiiInventoryAvailability if availability & int(item)
+                        ],
+                        "availability_unknown_bits": availability & ~known_availability_mask,
                     }
 
     boot_info_pointer = low_memory_words["0x800000F4"]

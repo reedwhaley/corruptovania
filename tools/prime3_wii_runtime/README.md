@@ -255,6 +255,23 @@ python host/udp_cp3w_game_identity_test.py --host 127.0.0.1 --port 43674
 
 `--ios-cp3w-game-identity-count` accepts `1..100`; explicit use without `--ios-cp3w-game-identity`, zero, negatives, non-integers, and conflicting diagnostic modes are rejected. Added phases are `70=CP3W_GAME_IDENTITY_VALIDATE_REQUEST`, `71=...VALIDATE_CAPABILITY`, `72=...VALIDATE_EXECUTABLE`, `73=...RESOLVE_GAME_STATE`, `74=...RESOLVE_PLAYER_STATE`, `75=...BUILD_RESPONSE`, `76=...SUBMIT_RESPONSE`, `77=...RESPONSE_COMPLETE`, `78=...HANDLE_ERROR`, and `79=CP3W_GAME_IDENTITY_LOOP_COMPLETE`.
 
+## CP3W inventory snapshot
+
+`GET_INVENTORY` is command `6`, gated by `INVENTORY_STATE` (`1 << 12`) after HELLO. The request payload is empty. The version-1 response is fixed-width and big-endian: `>BBBBII` header (`schema=1`, `count=59`, `record_size=8`, zero reserved byte, availability flags, u32 sequence) followed by 59 `>II` amount/capacity records. The arithmetic is 12 + 59 * 8 = 484 payload bytes and 504 bytes including the 16-byte CP3W header and 4-byte CRC. Records follow native item IDs `0..42, 44..46, 48..52, 62..69`; synthetic resource IDs at 1000 and above are not on the wire.
+
+```powershell
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-ios-udp-diagnostic --ios-cp3w-inventory --ios-cp3w-inventory-count 14 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python host/udp_cp3w_inventory_test.py --help
+```
+
+Mode `21` is `cp3w_inventory`; `--ios-cp3w-inventory-count` accepts `1..100`. Phases `80..93` cover request/capability/identity validation, game-state and root resolution, range validation, record reads, root revalidation, response submission/completion, unavailable/error handling, and terminal completion. The static send buffer is 512 bytes; PING remains independently limited to 44 payload bytes.
+
+The runtime validates the NTSC-U executable marker, aligned MEM1 game-state/root pointers, and the complete root range through native item ID 69. It reads only each slot's amount and capacity, then rereads the game-state and inventory-root chain. A changed root produces a successful response with zero records, `TEMPORARILY_UNAVAILABLE` and `INCONSISTENT_SNAPSHOT`, and no `SNAPSHOT_AVAILABLE`. Other temporary pointer loss also returns zero records with `TEMPORARILY_UNAVAILABLE`. The u32 sequence advances for every constructed inventory response, including unavailable responses, wraps naturally, and resets with the runtime.
+
+Host Python maps the structural IDs to `ItemResourceInfo`, validates capacities, constructs `InventoryItem`, filters host-only resources, and retains Corruption's `SuitType >= 5` ownership transform. Existing dolphin-memory-engine reads remain available and feed the same semantic conversion. Inventory polling remains the connector's 2.5-second non-overlapping update loop and is used only after HELLO, negotiated identity/inventory capabilities, and accepted identity. No location state, item grants, writes, subscriptions, or arbitrary production memory service are added.
+
+Before HELLO, GET_INVENTORY returns `NOT_NEGOTIATED`; without the capability it returns `CAPABILITY_NOT_NEGOTIATED`; a nonempty request returns `INVALID_PAYLOAD_LENGTH`; malformed frames receive no response. Dolphin validation uses an isolated user directory. Physical Wii behavior is not validated by this diagnostic milestone, and screenshots are intentionally skipped.
+
 Protocol contract:
 
 - the `GAME_IDENTITY` capability is advertised only by this implemented service mode and must be requested and accepted during HELLO

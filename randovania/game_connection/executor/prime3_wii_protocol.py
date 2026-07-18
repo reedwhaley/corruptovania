@@ -35,6 +35,8 @@ HELLO_RESPONSE_FIXED_FORMAT = ">BIIIIBB"
 READ_MEMORY_PAYLOAD_FORMAT = ">II"
 GAME_IDENTITY_PAYLOAD_FORMAT = ">BBBBHBBIIIII"
 GAME_IDENTITY_PROFILE_FINGERPRINT_FORMAT = ">BBBHIIIII"
+INVENTORY_HEADER_FORMAT = ">BBBBII"
+INVENTORY_RECORD_FORMAT = ">II"
 ERROR_HEADER_FORMAT = ">HHH"
 HELLO_NAME_LENGTH_FORMAT = ">B"
 HELLO_REQUEST_FIXED_SIZE = struct.calcsize(HELLO_REQUEST_FIXED_FORMAT)
@@ -46,6 +48,22 @@ DEFAULT_RUNTIME_NAME = "Prime3 Wii Runtime"
 DEFAULT_RUNTIME_BUILD_ID = 0x50335731
 GAME_IDENTITY_SCHEMA_VERSION = 1
 GAME_IDENTITY_PAYLOAD_SIZE = struct.calcsize(GAME_IDENTITY_PAYLOAD_FORMAT)
+INVENTORY_SCHEMA_VERSION = 1
+INVENTORY_ITEM_IDS = (*range(43), 44, 45, 46, 48, 49, 50, 51, 52, *range(62, 70))
+INVENTORY_RECORD_COUNT = len(INVENTORY_ITEM_IDS)
+INVENTORY_HEADER_SIZE = struct.calcsize(INVENTORY_HEADER_FORMAT)
+INVENTORY_RECORD_SIZE = struct.calcsize(INVENTORY_RECORD_FORMAT)
+INVENTORY_PAYLOAD_SIZE = INVENTORY_HEADER_SIZE + INVENTORY_RECORD_COUNT * INVENTORY_RECORD_SIZE
+INVENTORY_FRAME_SIZE = HEADER_SIZE + INVENTORY_PAYLOAD_SIZE + CRC_SIZE
+INVENTORY_FIELD_OFFSETS = {
+    "schema_version": 0,
+    "record_count": 1,
+    "record_size": 2,
+    "reserved0": 3,
+    "availability_flags": 4,
+    "snapshot_sequence": 8,
+    "records": INVENTORY_HEADER_SIZE,
+}
 GAME_IDENTITY_FIELD_OFFSETS = {
     "schema_version": 0,
     "game_id": 1,
@@ -70,6 +88,9 @@ NOT_NEGOTIATED_MESSAGE = "Negotiation required before PING."
 GAME_IDENTITY_NOT_NEGOTIATED_MESSAGE = "Negotiation required before GET_GAME_IDENTITY."
 GAME_IDENTITY_CAPABILITY_MESSAGE = "GAME_IDENTITY capability was not negotiated."
 GAME_IDENTITY_INVALID_PAYLOAD_MESSAGE = "GET_GAME_IDENTITY request payload must be empty."
+INVENTORY_NOT_NEGOTIATED_MESSAGE = "Negotiation required before GET_INVENTORY."
+INVENTORY_CAPABILITY_MESSAGE = "INVENTORY_STATE capability was not negotiated."
+INVENTORY_INVALID_PAYLOAD_MESSAGE = "GET_INVENTORY request payload must be empty."
 UNSUPPORTED_VERSION_MESSAGE = "Unsupported protocol version range."
 INVALID_STATE_MESSAGE = "Session is already negotiated."
 UNKNOWN_COMMAND_MESSAGE = "Command is unsupported"
@@ -111,6 +132,10 @@ class UnsupportedIdentitySchemaError(Prime3WiiProtocolError):
     pass
 
 
+class UnsupportedInventorySchemaError(Prime3WiiProtocolError):
+    pass
+
+
 class ServerSideProtocolError(Prime3WiiProtocolError):
     def __init__(self, error_code: Prime3WiiErrorCode, message: str, command: Prime3WiiCommand):
         super().__init__(f"{error_code.name} for {command.name}: {message}")
@@ -130,6 +155,7 @@ class Prime3WiiCommand(enum.IntEnum):
     PING = 3
     DISCONNECT = 4
     GET_GAME_IDENTITY = 5
+    GET_INVENTORY = 6
     RESERVED_MAILBOX = 127
 
 
@@ -151,6 +177,7 @@ class Prime3WiiCapability(enum.IntFlag):
     RECONNECT = 1 << 9
     AUTHENTICATION = 1 << 10
     GAME_IDENTITY = 1 << 11
+    INVENTORY_STATE = 1 << 12
 
 
 HELLO_RUNTIME_CAPABILITIES = (
@@ -162,6 +189,7 @@ HELLO_RUNTIME_CAPABILITIES = (
 
 READ_ONLY_RUNTIME_CAPABILITIES = HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY
 GAME_IDENTITY_RUNTIME_CAPABILITIES = HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.GAME_IDENTITY
+INVENTORY_RUNTIME_CAPABILITIES = GAME_IDENTITY_RUNTIME_CAPABILITIES | Prime3WiiCapability.INVENTORY_STATE
 
 
 class Prime3WiiErrorCode(enum.IntEnum):
@@ -204,6 +232,17 @@ class Prime3WiiAvailability(enum.IntFlag):
     PLAYER_STATE_POINTER_VALID = 1 << 2
     INVENTORY_ROOT_AVAILABLE = 1 << 3
     WORLD_STATE_AVAILABLE = 1 << 4
+
+
+class Prime3WiiInventoryAvailability(enum.IntFlag):
+    EXECUTABLE_RECOGNIZED = 1 << 0
+    GAME_STATE_POINTER_VALID = 1 << 1
+    INVENTORY_ROOT_VALID = 1 << 2
+    SNAPSHOT_AVAILABLE = 1 << 3
+    TEMPORARILY_UNAVAILABLE = 1 << 4
+    CONSISTENCY_CHECK_PASSED = 1 << 5
+    INCONSISTENT_SNAPSHOT = 1 << 6
+    RANGE_VALID = 1 << 7
 
 
 def derive_profile_fingerprint(
@@ -290,6 +329,33 @@ class GameIdentityPayload:
     runtime_build_id: int = DEFAULT_RUNTIME_BUILD_ID
     availability_flags: Prime3WiiAvailability = Prime3WiiAvailability(0)
     reserved: int = 0
+
+
+@dataclasses.dataclass(frozen=True)
+class Prime3WiiInventoryRecord:
+    amount: int
+    capacity: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Prime3WiiInventorySnapshot:
+    schema_version: int = INVENTORY_SCHEMA_VERSION
+    availability_flags: Prime3WiiInventoryAvailability = Prime3WiiInventoryAvailability(0)
+    snapshot_sequence: int = 0
+    records: tuple[Prime3WiiInventoryRecord, ...] = dataclasses.field(
+        default_factory=lambda: (Prime3WiiInventoryRecord(0, 0),) * INVENTORY_RECORD_COUNT
+    )
+
+    @property
+    def is_available(self) -> bool:
+        return bool(self.availability_flags & Prime3WiiInventoryAvailability.SNAPSHOT_AVAILABLE)
+
+    def record_for_item_id(self, item_id: int) -> Prime3WiiInventoryRecord:
+        try:
+            index = INVENTORY_ITEM_IDS.index(item_id)
+        except ValueError as exc:
+            raise KeyError(item_id) from exc
+        return self.records[index]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -694,6 +760,86 @@ def decode_game_identity_payload(payload: bytes) -> GameIdentityPayload:
         runtime_build_id=runtime_build_id,
         availability_flags=Prime3WiiAvailability(availability_flags),
         reserved=reserved,
+    )
+
+
+def encode_inventory_payload(snapshot: Prime3WiiInventorySnapshot) -> bytes:
+    if snapshot.schema_version != INVENTORY_SCHEMA_VERSION:
+        raise UnsupportedInventorySchemaError(
+            f"Unsupported GET_INVENTORY schema {snapshot.schema_version}; expected {INVENTORY_SCHEMA_VERSION}."
+        )
+    if len(snapshot.records) != INVENTORY_RECORD_COUNT:
+        raise InvalidPayloadLengthError(
+            f"GET_INVENTORY requires {INVENTORY_RECORD_COUNT} records, got {len(snapshot.records)}."
+        )
+    _validate_u32(int(snapshot.availability_flags), "availability_flags")
+    _validate_u32(snapshot.snapshot_sequence, "snapshot_sequence")
+    header = struct.pack(
+        INVENTORY_HEADER_FORMAT,
+        snapshot.schema_version,
+        INVENTORY_RECORD_COUNT,
+        INVENTORY_RECORD_SIZE,
+        0,
+        int(snapshot.availability_flags),
+        snapshot.snapshot_sequence,
+    )
+    records = bytearray()
+    for record in snapshot.records:
+        _validate_u32(record.amount, "inventory amount")
+        _validate_u32(record.capacity, "inventory capacity")
+        records.extend(struct.pack(INVENTORY_RECORD_FORMAT, record.amount, record.capacity))
+    return header + records
+
+
+def decode_inventory_payload(payload: bytes) -> Prime3WiiInventorySnapshot:
+    if len(payload) != INVENTORY_PAYLOAD_SIZE:
+        raise InvalidPayloadLengthError(
+            f"GET_INVENTORY response payload must be {INVENTORY_PAYLOAD_SIZE} bytes, got {len(payload)}"
+        )
+    schema_version, record_count, record_size, reserved0, availability, sequence = struct.unpack(
+        INVENTORY_HEADER_FORMAT, payload[:INVENTORY_HEADER_SIZE]
+    )
+    if schema_version != INVENTORY_SCHEMA_VERSION:
+        raise UnsupportedInventorySchemaError(
+            f"Unsupported GET_INVENTORY schema {schema_version}; expected {INVENTORY_SCHEMA_VERSION}."
+        )
+    if record_count != INVENTORY_RECORD_COUNT:
+        raise InvalidPayloadLengthError(
+            f"GET_INVENTORY record count must be {INVENTORY_RECORD_COUNT}, got {record_count}."
+        )
+    if record_size != INVENTORY_RECORD_SIZE:
+        raise InvalidPayloadLengthError(
+            f"GET_INVENTORY record size must be {INVENTORY_RECORD_SIZE}, got {record_size}."
+        )
+    if reserved0 != 0:
+        raise InvalidPayloadLengthError("GET_INVENTORY reserved field must be zero.")
+    known_flags = 0
+    for flag in Prime3WiiInventoryAvailability:
+        known_flags |= int(flag)
+    if availability & ~known_flags:
+        raise InvalidPayloadLengthError(f"GET_INVENTORY contains unknown availability bits 0x{availability:x}.")
+    records = tuple(
+        Prime3WiiInventoryRecord(*struct.unpack_from(INVENTORY_RECORD_FORMAT, payload, offset))
+        for offset in range(INVENTORY_HEADER_SIZE, INVENTORY_PAYLOAD_SIZE, INVENTORY_RECORD_SIZE)
+    )
+    flags = Prime3WiiInventoryAvailability(availability)
+    if flags & Prime3WiiInventoryAvailability.SNAPSHOT_AVAILABLE:
+        required = (
+            Prime3WiiInventoryAvailability.EXECUTABLE_RECOGNIZED
+            | Prime3WiiInventoryAvailability.GAME_STATE_POINTER_VALID
+            | Prime3WiiInventoryAvailability.INVENTORY_ROOT_VALID
+            | Prime3WiiInventoryAvailability.RANGE_VALID
+            | Prime3WiiInventoryAvailability.CONSISTENCY_CHECK_PASSED
+        )
+        if flags & required != required or flags & Prime3WiiInventoryAvailability.TEMPORARILY_UNAVAILABLE:
+            raise InvalidPayloadLengthError("GET_INVENTORY available snapshot has inconsistent availability flags.")
+    elif any(record.amount or record.capacity for record in records):
+        raise InvalidPayloadLengthError("GET_INVENTORY unavailable snapshot records must be zero.")
+    return Prime3WiiInventorySnapshot(
+        schema_version=schema_version,
+        availability_flags=flags,
+        snapshot_sequence=sequence,
+        records=records,
     )
 
 

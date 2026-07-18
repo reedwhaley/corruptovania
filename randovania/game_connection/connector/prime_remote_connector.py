@@ -20,6 +20,8 @@ from randovania.game_connection.executor.memory_operation import (
     MemoryOperationException,
     MemoryOperationExecutor,
 )
+from randovania.game_connection.executor.prime3_wii_executor import Prime3WiiExecutor
+from randovania.game_connection.executor.prime3_wii_protocol import INVENTORY_ITEM_IDS, Prime3WiiCapability
 from randovania.game_description import default_database
 from randovania.game_description.resources.inventory import Inventory, InventoryItem
 from randovania.game_description.resources.pickup_index import PickupIndex
@@ -91,6 +93,12 @@ class PrimeRemoteConnector(RemoteConnector):
         if not self.supports_writes:
             raise RuntimeError(f"{type(self).__name__} does not support {action} with a read-only executor.")
 
+    @property
+    def _uses_cp3w_inventory(self) -> bool:
+        return isinstance(self.executor, Prime3WiiExecutor) and bool(
+            self.executor.accepted_capabilities & Prime3WiiCapability.INVENTORY_STATE
+        )
+
     async def check_for_world_uid(self) -> bool:
         """Returns True if the accessible memory matches the version of this connector."""
         operation = MemoryOperation(self.version.build_string_address, read_byte_count=len(self.version.build_string))
@@ -158,19 +166,35 @@ class PrimeRemoteConnector(RemoteConnector):
 
     async def get_inventory(self) -> Inventory:
         """Fetches the inventory represented by the given game memory."""
-        multiworld_magic_item = self.multiworld_magic_item
+        items = [item for item in self.game.resource_database.item if item.extra["item_id"] < 1000]
+        if self._uses_cp3w_inventory:
+            if not self.executor.identity_validated:
+                await self.executor.ensure_game_identity()
+            snapshot = await self.executor.get_inventory_snapshot()
+            if not snapshot.is_available:
+                return self.last_inventory
+            records_by_id = dict(zip(INVENTORY_ITEM_IDS, snapshot.records, strict=True))
+            raw_values = {
+                item: (records_by_id[item.extra["item_id"]].amount, records_by_id[item.extra["item_id"]].capacity)
+                for item in items
+            }
+            return self._inventory_from_raw_values(raw_values)
 
-        memory_ops = await self._memory_op_for_items(
-            [item for item in self.game.resource_database.item if item.extra["item_id"] < 1000]
-        )
+        memory_ops = await self._memory_op_for_items(items)
         ops_result = await self.executor.perform_memory_operations(memory_ops)
+        raw_values = {
+            item: struct.unpack(">II", ops_result[memory_op]) for item, memory_op in zip(items, memory_ops, strict=True)
+        }
+        return self._inventory_from_raw_values(raw_values)
 
+    def _inventory_from_raw_values(self, raw_values: dict[ItemResourceInfo, tuple[int, int]]) -> Inventory:
+        multiworld_magic_item = self.multiworld_magic_item
         inventory = {}
-        for item, memory_op in zip(self.game.resource_database.item, memory_ops):
-            inv = InventoryItem(*struct.unpack(">II", ops_result[memory_op]))
-            if (
-                inv.amount > inv.capacity or inv.capacity > item.max_capacity
-            ) and (multiworld_magic_item is None or item != multiworld_magic_item):
+        for item, values in raw_values.items():
+            inv = InventoryItem(*values)
+            if (inv.amount > inv.capacity or inv.capacity > item.max_capacity) and (
+                multiworld_magic_item is None or item != multiworld_magic_item
+            ):
                 raise MemoryOperationException(f"Received {inv} for {item.long_name}, which is an invalid state.")
             inventory[item] = inv
 
@@ -347,7 +371,7 @@ class PrimeRemoteConnector(RemoteConnector):
                 self.PlayerLocationChanged.emit(PlayerLocationEvent(region, None))
             self._last_emitted_region = region
 
-            if region is not None:
+            if region is not None or self._uses_cp3w_inventory:
                 await self.update_current_inventory()
                 if self.supports_writes and not has_pending_op:
                     self.message_cooldown = max(self.message_cooldown - self._dt, 0.0)

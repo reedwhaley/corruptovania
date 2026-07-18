@@ -1177,8 +1177,8 @@ def test_observe_probe_reports_contradictory_diagnostic_counters() -> None:
 
 def test_observe_probe_reports_terminal_ip_open_state() -> None:
     module = _load_module()
-    runtime_blob_first = bytearray(b"R" * 0x2F0)
-    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    runtime_blob_first = bytearray(b"R" * 0x360)
+    runtime_blob_second = bytearray(b"R" * 0x360)
     for runtime_blob, poll_value in ((runtime_blob_first, 7), (runtime_blob_second, 11)):
         _write_u32(runtime_blob, 0x38, 0x434F5059)
         _write_u32(runtime_blob, 0x3C, 0x52554E21)
@@ -1345,8 +1345,8 @@ def test_observe_probe_reports_terminal_ip_open_state() -> None:
 
 def test_observe_probe_reports_terminal_so_started_state() -> None:
     module = _load_module()
-    runtime_blob_first = bytearray(b"R" * 0x2F0)
-    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    runtime_blob_first = bytearray(b"R" * 0x360)
+    runtime_blob_second = bytearray(b"R" * 0x360)
     for runtime_blob, poll_value in ((runtime_blob_first, 7), (runtime_blob_second, 11)):
         _write_u32(runtime_blob, 0x38, 0x434F5059)
         _write_u32(runtime_blob, 0x3C, 0x52554E21)
@@ -1521,8 +1521,8 @@ def test_observe_probe_reports_terminal_so_started_state() -> None:
 
 def test_observe_probe_reports_host_id_ready_for_high_bit_ipv4() -> None:
     module = _load_module()
-    runtime_blob_first = bytearray(b"R" * 0x2F0)
-    runtime_blob_second = bytearray(b"R" * 0x2F0)
+    runtime_blob_first = bytearray(b"R" * 0x360)
+    runtime_blob_second = bytearray(b"R" * 0x360)
     for runtime_blob, poll_value in ((runtime_blob_first, 7), (runtime_blob_second, 11)):
         _write_u32(runtime_blob, 0x38, 0x434F5059)
         _write_u32(runtime_blob, 0x3C, 0x52554E21)
@@ -3071,6 +3071,292 @@ def test_observe_probe_reports_cp3w_ping_pong_transport_fields() -> None:
     assert result["relocated_runtime"]["transport"]["cp3w_last_response_status"] == 1
     assert result["relocated_runtime"]["transport"]["cp3w_last_ping_payload_length"] == 0
     assert result["relocated_runtime"]["transport"]["cp3w_last_dispatch_result"] == 1
+
+
+def test_observe_probe_reports_cp3w_hello_session_transport_fields() -> None:
+    module = _load_module()
+    runtime_blob_first = bytearray(b"R" * 0x360)
+    runtime_blob_second = bytearray(b"R" * 0x360)
+    for runtime_blob, poll_value in ((runtime_blob_first, 25), (runtime_blob_second, 45)):
+        _write_u32(runtime_blob, 0x38, 0x434F5059)
+        _write_u32(runtime_blob, 0x3C, 0x52554E21)
+        _write_u32(runtime_blob, 0x40, 1)
+        _write_u32(runtime_blob, 0x44, 0x52544F4B)
+        _write_u32(runtime_blob, 0x48, 0x4252544E)
+        _write_u32(runtime_blob, 0x4C, poll_value)
+        _write_u32(runtime_blob, 0x50, poll_value)
+        _write_u32(runtime_blob, 0x54, poll_value)
+        _install_transport_state(
+            runtime_blob,
+            phase=69,
+            open_kd_submit_count=1,
+            open_kd_callback_count=1,
+            nwc24_submit_count=1,
+            nwc24_callback_count=1,
+            open_ip_submit_count=1,
+            open_ip_callback_count=1,
+            kd_close_submit_count=1,
+            kd_close_callback_count=1,
+            startup_submit_count=1,
+            startup_callback_count=1,
+            get_host_id_submit_count=1,
+            get_host_id_callback_count=1,
+            socket_submit_count=1,
+            socket_callback_count=1,
+            bind_submit_count=1,
+            bind_callback_count=1,
+            receive_submit_count=10,
+            send_submit_count=8,
+            receive_count=10,
+            receive_bytes=330,
+            send_count=8,
+            send_bytes=404,
+            configured_exchange_limit=10,
+            completed_exchange_count=8,
+            current_exchange_index=10,
+            last_completed_exchange_index=8,
+            last_receive_length=33,
+            last_send_length=33,
+            last_peer_ipv4=0x7F000001,
+            last_peer_port=62909,
+            last_peer_family=2,
+            polls_after_loop_complete=poll_value,
+            last_receive_preview_hex=("43" "50" "33" "57" "01" "01" "03" "00" "FF" "FF" "FF" "FF" "00" "00" "00" "0D"),
+            last_send_preview_hex=("43" "50" "33" "57" "01" "02" "03" "00" "FF" "FF" "FF" "FF" "00" "00" "00" "0D"),
+        )
+        _write_u32(runtime_blob, 0x254, 33)
+        _write_u32(runtime_blob, 0x258, 10)
+        _write_u32(runtime_blob, 0x25C, 8)
+        _write_u32(runtime_blob, 0x260, 2)
+        _write_u32(runtime_blob, 0x264, 0)
+        _write_u32(runtime_blob, 0x268, 1)
+        _write_u32(runtime_blob, 0x26C, 0)
+        _write_u32(runtime_blob, 0x270, 0)
+        _write_u32(runtime_blob, 0x274, 0)
+        _write_u32(runtime_blob, 0x278, 0)
+        _write_u32(runtime_blob, 0x27C, 0)
+        _write_u32(runtime_blob, 0x280, 0)
+        _write_u32(runtime_blob, 0x284, 1)
+        _write_u32(runtime_blob, 0x288, 4)
+        _write_u32(runtime_blob, 0x28C, 4)
+        _write_u32(runtime_blob, 0x290, 0xFFFFFFFF)
+        _write_u32(runtime_blob, 0x294, 0xFFFFFFFF)
+        _write_u32(runtime_blob, 0x298, 1)
+        _write_u32(runtime_blob, 0x29C, 13)
+        _write_u32(runtime_blob, 0x2A0, 13)
+        _write_u32(runtime_blob, 0x2A4, 1)
+        _write_u32(runtime_blob, 0x2A8, 10)
+        _write_u32(runtime_blob, 0x2AC, 8)
+        _write_u32(runtime_blob, 0x2B0, 2)
+        _write_u32(runtime_blob, 0x2B4, 2)
+        _write_u32(runtime_blob, 0x30C, 0x50335731)
+        _write_u32(runtime_blob, 0x310, 0x99B67873)
+        _write_u32(runtime_blob, 0x314, 0x0F)
+        _write_u32(runtime_blob, 0x318, 0x0F)
+        _write_u32(runtime_blob, 0x31C, 0x1F)
+        _write_u32(runtime_blob, 0x320, 0x43503357)
+        _write_u32(runtime_blob, 0x324, 1)
+        _write_u32(runtime_blob, 0x328, 1)
+        _write_u32(runtime_blob, 0x32C, 1)
+        _write_u32(runtime_blob, 0x330, 1)
+        _write_u32(runtime_blob, 0x334, 1)
+        _write_u32(runtime_blob, 0x338, 1)
+        _write_u32(runtime_blob, 0x33C, 1)
+        _write_u32(runtime_blob, 0x340, 4)
+        _write_u32(runtime_blob, 0x344, 4)
+        _write_u32(runtime_blob, 0x348, 1)
+        _write_u32(runtime_blob, 0x34C, 1)
+        _write_u32(runtime_blob, 0x350, 4)
+        _install_diagnostics(
+            runtime_blob,
+            hook_wrapper_entry_count=poll_value,
+            hook_wrapper_before_poll_count=poll_value,
+            runtime_poll_entry_count=poll_value,
+            runtime_poll_exit_count=poll_value,
+            state_machine_entry_count=poll_value,
+            state_machine_exit_count=poll_value,
+            ios_submit_attempt_count=26,
+            ios_submit_return_count=26,
+            ios_submit_return_value=0,
+            callback_entry_count=26,
+            callback_exit_count=26,
+            hook_wrapper_after_poll_count=poll_value,
+            hook_wrapper_exit_count=poll_value,
+            last_execution_marker=0xC0DE0011,
+            last_transport_phase_before_step=69,
+            last_transport_phase_after_step=69,
+            callback_result=33,
+        )
+    payload_bytes = b"\x00" * 0x10 + b"CANARY-CANARY-16" + bytes(runtime_blob_first)
+    raw = _relocated_manifest(payload_bytes).to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    relocated["embedded_runtime_blob_size"] = len(runtime_blob_first)
+    relocated["embedded_runtime_blob_sha256"] = __import__("hashlib").sha256(bytes(runtime_blob_first)).hexdigest()
+    relocated["cache_range_size"] = 0x360
+    relocated["runtime_state_end"] = 0x817E1360
+    diagnostics = dict(relocated["diagnostics"])
+    diagnostics["mode"] = "cp3w_hello_session"
+    relocated["diagnostics"] = diagnostics
+    transport = dict(relocated["transport"])
+    transport["mode"] = "cp3w_hello_session"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 69
+    transport["terminal_phase_name"] = "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+    transport["cp3w_magic_hex"] = "43503357"
+    transport["cp3w_protocol_version"] = 1
+    transport["cp3w_header_size"] = 16
+    transport["cp3w_crc_size"] = 4
+    transport["cp3w_crc_initial_value"] = 0xFFFFFFFF
+    transport["cp3w_crc_final_xor_value"] = 0xFFFFFFFF
+    transport["cp3w_crc_polynomial"] = 0xEDB88320
+    transport["cp3w_crc_reflected"] = True
+    transport["cp3w_packet_kind_request"] = 1
+    transport["cp3w_packet_kind_response"] = 2
+    transport["cp3w_response_status_error"] = 1
+    transport["cp3w_command_ping"] = 3
+    transport["cp3w_pong_command"] = 3
+    transport["cp3w_pong_uses_ping_command"] = True
+    transport["cp3w_command_reserved_mailbox"] = 127
+    transport["cp3w_error_code_unknown_command"] = 4
+    transport["cp3w_packet_kind_offset"] = 5
+    transport["cp3w_command_offset"] = 6
+    transport["cp3w_response_status_offset"] = 7
+    transport["cp3w_request_id_offset"] = 8
+    transport["cp3w_payload_length_offset"] = 12
+    transport["cp3w_ping_max_payload_length"] = 44
+    transport["cp3w_unsupported_message_ascii"] = "Command is unsupported"
+    transport["prepared_send_length_address"] = 0x817E1254
+    transport["prepared_send_length_size"] = 4
+    transport["cp3w_datagrams_processed_address"] = 0x817E1258
+    transport["cp3w_datagrams_processed_size"] = 4
+    transport["cp3w_frames_valid_address"] = 0x817E125C
+    transport["cp3w_frames_valid_size"] = 4
+    transport["cp3w_frames_invalid_address"] = 0x817E1260
+    transport["cp3w_frames_invalid_size"] = 4
+    transport["cp3w_frames_invalid_magic_address"] = 0x817E1268
+    transport["cp3w_frames_invalid_magic_size"] = 4
+    transport["cp3w_frames_invalid_payload_address"] = 0x817E1280
+    transport["cp3w_frames_invalid_payload_size"] = 4
+    transport["cp3w_frames_malformed_address"] = 0x817E1284
+    transport["cp3w_frames_malformed_size"] = 4
+    transport["cp3w_last_request_id_address"] = 0x817E1290
+    transport["cp3w_last_request_id_size"] = 4
+    transport["cp3w_last_response_id_address"] = 0x817E1294
+    transport["cp3w_last_response_id_size"] = 4
+    transport["cp3w_last_message_type_address"] = 0x817E1298
+    transport["cp3w_last_message_type_size"] = 4
+    transport["cp3w_last_declared_payload_length_address"] = 0x817E129C
+    transport["cp3w_last_declared_payload_length_size"] = 4
+    transport["cp3w_last_actual_payload_length_address"] = 0x817E12A0
+    transport["cp3w_last_actual_payload_length_size"] = 4
+    transport["cp3w_last_frame_result_address"] = 0x817E12A4
+    transport["cp3w_last_frame_result_size"] = 4
+    transport["cp3w_final_datagram_index_address"] = 0x817E12A8
+    transport["cp3w_final_datagram_index_size"] = 4
+    transport["cp3w_requests_dispatched_address"] = 0x817E12AC
+    transport["cp3w_requests_dispatched_size"] = 4
+    transport["cp3w_ping_requests_received_address"] = 0x817E12B0
+    transport["cp3w_ping_requests_received_size"] = 4
+    transport["cp3w_pong_responses_submitted_address"] = 0x817E12B4
+    transport["cp3w_pong_responses_submitted_size"] = 4
+    transport["cp3w_pong_responses_completed_address"] = 0x817E12B8
+    transport["cp3w_pong_responses_completed_size"] = 4
+    transport["cp3w_unsupported_commands_received_address"] = 0x817E12BC
+    transport["cp3w_unsupported_commands_received_size"] = 4
+    transport["cp3w_unsupported_responses_submitted_address"] = 0x817E12C0
+    transport["cp3w_unsupported_responses_submitted_size"] = 4
+    transport["cp3w_unsupported_responses_completed_address"] = 0x817E12C4
+    transport["cp3w_unsupported_responses_completed_size"] = 4
+    transport["cp3w_last_command_address"] = 0x817E12C8
+    transport["cp3w_last_command_size"] = 4
+    transport["cp3w_last_response_status_address"] = 0x817E12CC
+    transport["cp3w_last_response_status_size"] = 4
+    transport["cp3w_last_ping_payload_length_address"] = 0x817E12D0
+    transport["cp3w_last_ping_payload_length_size"] = 4
+    transport["cp3w_last_dispatch_result_address"] = 0x817E12D4
+    transport["cp3w_last_dispatch_result_size"] = 4
+    transport["cp3w_hello_requests_received_address"] = 0x817E1350
+    transport["cp3w_hello_requests_received_size"] = 4
+    transport["cp3w_hello_successes_address"] = 0x817E134C
+    transport["cp3w_hello_successes_size"] = 4
+    transport["cp3w_hello_version_rejections_address"] = 0x817E1348
+    transport["cp3w_hello_version_rejections_size"] = 4
+    transport["cp3w_hello_responses_submitted_address"] = 0x817E1344
+    transport["cp3w_hello_responses_submitted_size"] = 4
+    transport["cp3w_hello_responses_completed_address"] = 0x817E1340
+    transport["cp3w_hello_responses_completed_size"] = 4
+    transport["cp3w_hello_duplicate_requests_address"] = 0x817E133C
+    transport["cp3w_hello_duplicate_requests_size"] = 4
+    transport["cp3w_hello_renegotiation_rejections_address"] = 0x817E1338
+    transport["cp3w_hello_renegotiation_rejections_size"] = 4
+    transport["cp3w_pre_hello_gated_commands_address"] = 0x817E1334
+    transport["cp3w_pre_hello_gated_commands_size"] = 4
+    transport["cp3w_not_negotiated_responses_submitted_address"] = 0x817E1330
+    transport["cp3w_not_negotiated_responses_submitted_size"] = 4
+    transport["cp3w_not_negotiated_responses_completed_address"] = 0x817E132C
+    transport["cp3w_not_negotiated_responses_completed_size"] = 4
+    transport["cp3w_negotiated_flag_address"] = 0x817E1328
+    transport["cp3w_negotiated_flag_size"] = 4
+    transport["cp3w_selected_protocol_version_address"] = 0x817E1324
+    transport["cp3w_selected_protocol_version_size"] = 4
+    transport["cp3w_client_nonce_address"] = 0x817E1320
+    transport["cp3w_client_nonce_size"] = 4
+    transport["cp3w_client_capabilities_address"] = 0x817E131C
+    transport["cp3w_client_capabilities_size"] = 4
+    transport["cp3w_runtime_capabilities_address"] = 0x817E1318
+    transport["cp3w_runtime_capabilities_size"] = 4
+    transport["cp3w_accepted_capabilities_address"] = 0x817E1314
+    transport["cp3w_accepted_capabilities_size"] = 4
+    transport["cp3w_session_id_address"] = 0x817E1310
+    transport["cp3w_session_id_size"] = 4
+    transport["cp3w_runtime_build_id_address"] = 0x817E130C
+    transport["cp3w_runtime_build_id_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+    manifest = Prime3RuntimePayloadManifest.from_json_dict(raw)
+    config = module.ProbeObservationConfig(
+        checkpoint_name="entry",
+        halt_address=0x80006320,
+        expected_halt_word=0x48000000,
+        expected_game_id=b"RM3E01",
+        payload_address=0x806843C0,
+        payload_bytes=payload_bytes,
+        manifest=manifest,
+        startup_words=(module.StartupWordExpectation(address=0x80006320, expected_word=0x48000000),),
+        repeat_delay_seconds=0.5,
+    )
+    first_memory = _memory_for_config(module, config)
+    second_memory = _memory_for_config(module, config)
+    for memory, runtime_blob in ((first_memory, runtime_blob_first), (second_memory, runtime_blob_second)):
+        _install_bootstrap_diagnostic(memory)
+        memory[0x817E1000] = bytes(runtime_blob)
+    backend = FakeBackend([first_memory, second_memory])
+
+    result = module.observe_probe_memory(backend, config)
+
+    assert result["probable_stop_boundary"] == "recurring_execution_continues"
+    assert result["poll_counter_delta"] == 20
+    assert result["relocated_runtime"]["transport"]["phase_name"] == "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_requests_received"] == 4
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_successes"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_version_rejections"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_responses_submitted"] == 4
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_responses_completed"] == 4
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_duplicate_requests"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_hello_renegotiation_rejections"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_pre_hello_gated_commands"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_not_negotiated_responses_submitted"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_not_negotiated_responses_completed"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_negotiated_flag"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_selected_protocol_version"] == 1
+    assert result["relocated_runtime"]["transport"]["cp3w_client_nonce"] == 0x43503357
+    assert result["relocated_runtime"]["transport"]["cp3w_client_capabilities"] == 0x1F
+    assert result["relocated_runtime"]["transport"]["cp3w_runtime_capabilities"] == 0x0F
+    assert result["relocated_runtime"]["transport"]["cp3w_accepted_capabilities"] == 0x0F
+    assert result["relocated_runtime"]["transport"]["cp3w_session_id"] == 0x99B67873
+    assert result["relocated_runtime"]["transport"]["cp3w_runtime_build_id"] == 0x50335731
 
 
 def test_observe_probe_main_rejects_poll_ms_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -7,14 +7,26 @@ import pytest
 from randovania.game_connection.executor.memory_operation import MemoryOperation, MemoryOperationException
 from randovania.game_connection.executor.prime3_wii_executor import Prime3WiiExecutor
 from randovania.game_connection.executor.prime3_wii_protocol import (
-    HelloPayload,
+    DEFAULT_RUNTIME_BUILD_ID,
+    HELLO_METADATA_VERSION,
+    HELLO_RUNTIME_CAPABILITIES,
+    INVALID_STATE_MESSAGE,
+    NOT_NEGOTIATED_MESSAGE,
+    UNSUPPORTED_VERSION_MESSAGE,
+    HelloRequestPayload,
+    HelloResponsePayload,
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
+    Prime3WiiErrorResponse,
+    Prime3WiiRequest,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
+    compute_accepted_capabilities,
+    decode_response,
     encode_error_response,
-    encode_hello_payload,
+    encode_hello_request_payload,
+    encode_hello_response_payload,
     encode_response,
 )
 from test.game_connection.executor.prime3_wii_fake_server import Prime3WiiFakeServer
@@ -71,11 +83,15 @@ async def test_connect_unsupported_protocol_version(executor: Prime3WiiExecutor,
                 Prime3WiiCommand.HELLO,
                 1,
                 Prime3WiiResponseStatus.OK,
-                encode_hello_payload(
-                    HelloPayload(
-                        protocol_version=2,
-                        max_read_size=32,
-                        capabilities=Prime3WiiCapability.READ_MEMORY,
+                encode_hello_response_payload(
+                    HelloResponsePayload(
+                        selected_protocol_version=2,
+                        runtime_capabilities=HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY,
+                        accepted_client_capabilities=Prime3WiiCapability.READ_MEMORY,
+                        session_id=1,
+                        runtime_build_id=DEFAULT_RUNTIME_BUILD_ID,
+                        runtime_mode=19,
+                        runtime_metadata_version=HELLO_METADATA_VERSION,
                     )
                 ),
             )
@@ -94,6 +110,39 @@ async def test_connect_missing_required_capability(executor: Prime3WiiExecutor, 
     message = await executor.connect()
 
     assert message == "Server does not advertise read-memory support."
+    assert not executor.is_connected()
+
+
+async def test_connect_unexpected_accepted_capability_mask(executor: Prime3WiiExecutor, server: Prime3WiiFakeServer):
+    accepted = compute_accepted_capabilities(
+        Prime3WiiCapability.PING | Prime3WiiCapability.READ_MEMORY,
+        HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY,
+    )
+    server.inject_malformed_next(
+        Prime3WiiCommand.HELLO,
+        encode_response(
+            Prime3WiiResponse(
+                Prime3WiiCommand.HELLO,
+                1,
+                Prime3WiiResponseStatus.OK,
+                encode_hello_response_payload(
+                    HelloResponsePayload(
+                        selected_protocol_version=1,
+                        runtime_capabilities=HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY,
+                        accepted_client_capabilities=accepted | Prime3WiiCapability.RECONNECT,
+                        session_id=1,
+                        runtime_build_id=DEFAULT_RUNTIME_BUILD_ID,
+                        runtime_mode=19,
+                    )
+                ),
+            )
+        ),
+    )
+
+    message = await executor.connect()
+
+    assert message is not None
+    assert "unexpected accepted capability mask" in message
     assert not executor.is_connected()
 
 
@@ -150,7 +199,7 @@ async def test_address_overflow_rejected(executor: Prime3WiiExecutor, server: Pr
 async def test_oversized_read_rejected(executor: Prime3WiiExecutor):
     await executor.connect()
 
-    with pytest.raises(MemoryOperationException, match="exceeds the server maximum"):
+    with pytest.raises(MemoryOperationException, match="INVALID_PAYLOAD_LENGTH"):
         await executor.perform_single_memory_operation(MemoryOperation(0x80000020, read_byte_count=64))
 
 
@@ -272,3 +321,105 @@ async def test_reconnect_after_disconnect(executor: Prime3WiiExecutor):
 
     assert await executor.connect() is None
     assert executor.is_connected()
+
+
+def test_fake_server_rejects_ping_before_hello() -> None:
+    server = Prime3WiiFakeServer()
+
+    response = decode_response(
+        server._build_response(Prime3WiiRequest(Prime3WiiCommand.PING, 1, b"before")),
+        expected_request_id=1,
+    )
+
+    assert isinstance(response, Prime3WiiErrorResponse)
+    assert response.command is Prime3WiiCommand.PING
+    assert response.error_code is Prime3WiiErrorCode.NOT_NEGOTIATED
+    assert response.message == NOT_NEGOTIATED_MESSAGE
+    assert server.negotiated_request is None
+    assert server.negotiated_response is None
+
+
+def test_fake_server_repeats_identical_hello_session() -> None:
+    server = Prime3WiiFakeServer()
+    hello = HelloRequestPayload(
+        min_protocol_version=1,
+        max_protocol_version=1,
+        capabilities=Prime3WiiCapability.PING | Prime3WiiCapability.READ_MEMORY,
+        client_nonce=0x43503357,
+        client_name="randovania",
+    )
+    first = decode_response(
+        server._build_response(
+            Prime3WiiRequest(Prime3WiiCommand.HELLO, 1, encode_hello_request_payload(hello))
+        ),
+        expected_request_id=1,
+    )
+    second = decode_response(
+        server._build_response(
+            Prime3WiiRequest(Prime3WiiCommand.HELLO, 2, encode_hello_request_payload(hello))
+        ),
+        expected_request_id=2,
+    )
+
+    assert isinstance(first, Prime3WiiResponse)
+    assert isinstance(second, Prime3WiiResponse)
+    assert first.command is Prime3WiiCommand.HELLO
+    assert second.command is Prime3WiiCommand.HELLO
+    assert first.payload == second.payload
+
+
+def test_fake_server_rejects_changed_hello_after_negotiation() -> None:
+    server = Prime3WiiFakeServer()
+    initial = HelloRequestPayload(
+        min_protocol_version=1,
+        max_protocol_version=1,
+        capabilities=Prime3WiiCapability.PING,
+        client_nonce=1,
+        client_name="randovania",
+    )
+    changed = HelloRequestPayload(
+        min_protocol_version=1,
+        max_protocol_version=1,
+        capabilities=Prime3WiiCapability.PING,
+        client_nonce=2,
+        client_name="randovania",
+    )
+
+    _ = server._build_response(Prime3WiiRequest(Prime3WiiCommand.HELLO, 1, encode_hello_request_payload(initial)))
+    response = decode_response(
+        server._build_response(Prime3WiiRequest(Prime3WiiCommand.HELLO, 2, encode_hello_request_payload(changed))),
+        expected_request_id=2,
+    )
+
+    assert isinstance(response, Prime3WiiErrorResponse)
+    assert response.command is Prime3WiiCommand.HELLO
+    assert response.error_code is Prime3WiiErrorCode.INVALID_STATE
+    assert response.message == INVALID_STATE_MESSAGE
+
+
+def test_fake_server_rejects_unsupported_hello_version_without_negotiating() -> None:
+    server = Prime3WiiFakeServer()
+    response = decode_response(
+        server._build_response(
+            Prime3WiiRequest(
+                Prime3WiiCommand.HELLO,
+                1,
+                encode_hello_request_payload(
+                    HelloRequestPayload(
+                        min_protocol_version=2,
+                        max_protocol_version=3,
+                        capabilities=Prime3WiiCapability.PING,
+                        client_nonce=1,
+                    )
+                ),
+            )
+        ),
+        expected_request_id=1,
+    )
+
+    assert isinstance(response, Prime3WiiErrorResponse)
+    assert response.command is Prime3WiiCommand.HELLO
+    assert response.error_code is Prime3WiiErrorCode.UNSUPPORTED_VERSION
+    assert response.message == UNSUPPORTED_VERSION_MESSAGE
+    assert server.negotiated_request is None
+    assert server.negotiated_response is None

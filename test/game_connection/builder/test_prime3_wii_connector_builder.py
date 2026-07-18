@@ -14,12 +14,15 @@ from randovania.game_connection.connector.corruption_remote_connector import Cor
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
 from randovania.game_connection.executor.prime3_wii_executor import DEFAULT_PRIME3_WII_PORT, Prime3WiiExecutor
 from randovania.game_connection.executor.prime3_wii_protocol import (
-    HelloPayload,
+    DEFAULT_RUNTIME_BUILD_ID,
+    HELLO_METADATA_VERSION,
+    HELLO_RUNTIME_CAPABILITIES,
+    HelloResponsePayload,
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
-    encode_hello_payload,
+    encode_hello_response_payload,
     encode_response,
 )
 from randovania.games.prime3.exporter.dol_patcher import patch_prime3_corruption_dol
@@ -229,7 +232,17 @@ async def test_unsupported_protocol_returns_useful_status(
                 Prime3WiiCommand.HELLO,
                 1,
                 Prime3WiiResponseStatus.OK,
-                encode_hello_payload(HelloPayload(2, 64, Prime3WiiCapability.READ_MEMORY)),
+                encode_hello_response_payload(
+                    HelloResponsePayload(
+                        selected_protocol_version=2,
+                        runtime_capabilities=HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY,
+                        accepted_client_capabilities=Prime3WiiCapability.READ_MEMORY,
+                        session_id=1,
+                        runtime_build_id=DEFAULT_RUNTIME_BUILD_ID,
+                        runtime_mode=19,
+                        runtime_metadata_version=HELLO_METADATA_VERSION,
+                    )
+                ),
             )
         ),
     )

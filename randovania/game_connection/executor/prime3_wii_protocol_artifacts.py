@@ -8,15 +8,24 @@ from typing import Any, Literal
 from randovania.game_connection.executor import prime3_wii_protocol
 from randovania.game_connection.executor.prime3_wii_protocol import (
     CRC_SIZE,
+    DEFAULT_RUNTIME_BUILD_ID,
+    DEFAULT_RUNTIME_NAME,
     ERROR_HEADER_FORMAT,
     HEADER_FORMAT,
     HEADER_SIZE,
-    HELLO_PAYLOAD_FORMAT,
+    HELLO_MAX_NAME_LENGTH,
+    HELLO_METADATA_VERSION,
+    HELLO_REQUEST_FIXED_FORMAT,
+    HELLO_REQUEST_FIXED_SIZE,
+    HELLO_RESPONSE_FIXED_FORMAT,
+    HELLO_RESPONSE_FIXED_SIZE,
+    HELLO_RUNTIME_CAPABILITIES,
     PROTOCOL_MAGIC,
     PROTOCOL_VERSION,
     READ_MEMORY_PAYLOAD_FORMAT,
     CorruptedChecksumError,
-    HelloPayload,
+    HelloRequestPayload,
+    HelloResponsePayload,
     InvalidPayloadLengthError,
     Prime3WiiCapability,
     Prime3WiiCommand,
@@ -25,8 +34,13 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
     ReadMemoryPayload,
+    compute_accepted_capabilities,
+    decode_hello_request_payload,
+    decode_hello_response_payload,
+    derive_session_id,
     encode_error_response,
-    encode_hello_payload,
+    encode_hello_request_payload,
+    encode_hello_response_payload,
     encode_read_memory_payload,
     encode_request,
     encode_response,
@@ -51,7 +65,17 @@ def _normalized_request(request: Prime3WiiRequest) -> dict[str, Any]:
         "request_id": request.request_id,
         "payload_hex": _hex_bytes(request.payload),
     }
-    if request.command is Prime3WiiCommand.READ_MEMORY:
+    if request.command is Prime3WiiCommand.HELLO:
+        payload = decode_hello_request_payload(request.payload)
+        result["payload"] = {
+            "min_protocol_version": payload.min_protocol_version,
+            "max_protocol_version": payload.max_protocol_version,
+            "capabilities": int(payload.capabilities),
+            "capability_names": [item.name for item in Prime3WiiCapability if item in payload.capabilities],
+            "client_nonce": payload.client_nonce,
+            "client_name": payload.client_name,
+        }
+    elif request.command is Prime3WiiCommand.READ_MEMORY:
         payload = prime3_wii_protocol.decode_read_memory_payload(request.payload)
         result["payload"] = {
             "address": f"0x{payload.address:08X}",
@@ -69,12 +93,22 @@ def _normalized_response(response: Prime3WiiResponse | prime3_wii_protocol.Prime
         result["status"] = response.status.name
         result["payload_hex"] = _hex_bytes(response.payload)
         if response.command is Prime3WiiCommand.HELLO:
-            hello = prime3_wii_protocol.decode_hello_payload(response.payload)
+            hello = decode_hello_response_payload(response.payload)
             result["payload"] = {
-                "protocol_version": hello.protocol_version,
-                "max_read_size": hello.max_read_size,
-                "capabilities": int(hello.capabilities),
-                "capability_names": [item.name for item in Prime3WiiCapability if item in hello.capabilities],
+                "selected_protocol_version": hello.selected_protocol_version,
+                "runtime_capabilities": int(hello.runtime_capabilities),
+                "runtime_capability_names": [
+                    item.name for item in Prime3WiiCapability if item in hello.runtime_capabilities
+                ],
+                "accepted_client_capabilities": int(hello.accepted_client_capabilities),
+                "accepted_capability_names": [
+                    item.name for item in Prime3WiiCapability if item in hello.accepted_client_capabilities
+                ],
+                "session_id": hello.session_id,
+                "runtime_build_id": hello.runtime_build_id,
+                "runtime_mode": hello.runtime_mode,
+                "runtime_metadata_version": hello.runtime_metadata_version,
+                "runtime_name": hello.runtime_name,
             }
         return result
 
@@ -103,6 +137,10 @@ def protocol_manifest() -> dict[str, Any]:
         "magic_hex": _hex_bytes(PROTOCOL_MAGIC),
         "protocol_version": PROTOCOL_VERSION,
         "byte_order": "big-endian",
+        "hello_metadata_version": HELLO_METADATA_VERSION,
+        "default_runtime_build_id": DEFAULT_RUNTIME_BUILD_ID,
+        "default_runtime_name": DEFAULT_RUNTIME_NAME,
+        "hello_runtime_capabilities": int(HELLO_RUNTIME_CAPABILITIES),
         "packet_layout": {
             "header_format": HEADER_FORMAT,
             "header_size": HEADER_SIZE,
@@ -131,16 +169,34 @@ def protocol_manifest() -> dict[str, Any]:
         "error_codes": _enum_values(Prime3WiiErrorCode),
         "payload_layouts": {
             "hello_request": {
-                "payload_size": 0,
-                "description": "Client HELLO requests are empty in protocol version 1.",
+                "struct_format": HELLO_REQUEST_FIXED_FORMAT,
+                "fixed_size": HELLO_REQUEST_FIXED_SIZE,
+                "name_length_size": 1,
+                "max_name_length": HELLO_MAX_NAME_LENGTH,
+                "fields": [
+                    {"name": "min_protocol_version", "type": "uint8"},
+                    {"name": "max_protocol_version", "type": "uint8"},
+                    {"name": "client_capabilities", "type": "uint32"},
+                    {"name": "client_nonce", "type": "uint32"},
+                    {"name": "client_name_length", "type": "uint8"},
+                    {"name": "client_name_utf8", "type": "bytes", "size": "client_name_length"},
+                ],
             },
             "hello_response": {
-                "struct_format": HELLO_PAYLOAD_FORMAT,
-                "payload_size": struct.calcsize(HELLO_PAYLOAD_FORMAT),
+                "struct_format": HELLO_RESPONSE_FIXED_FORMAT,
+                "fixed_size": HELLO_RESPONSE_FIXED_SIZE,
+                "name_length_size": 1,
+                "max_name_length": HELLO_MAX_NAME_LENGTH,
                 "fields": [
-                    {"name": "protocol_version", "type": "uint16"},
-                    {"name": "max_read_size", "type": "uint32"},
-                    {"name": "capabilities", "type": "uint32"},
+                    {"name": "selected_protocol_version", "type": "uint8"},
+                    {"name": "runtime_capabilities", "type": "uint32"},
+                    {"name": "accepted_client_capabilities", "type": "uint32"},
+                    {"name": "session_id", "type": "uint32"},
+                    {"name": "runtime_build_id", "type": "uint32"},
+                    {"name": "runtime_mode", "type": "uint8"},
+                    {"name": "runtime_metadata_version", "type": "uint8"},
+                    {"name": "runtime_name_length", "type": "uint8"},
+                    {"name": "runtime_name_utf8", "type": "bytes", "size": "runtime_name_length"},
                 ],
             },
             "read_memory_request": {
@@ -155,8 +211,8 @@ def protocol_manifest() -> dict[str, Any]:
                 "payload_size": "requested size",
                 "description": "READ_MEMORY success payload is the raw memory byte range returned by the server.",
             },
-            "ping_request": {"payload_size": 0},
-            "ping_response": {"payload_size": 0},
+            "ping_request": {"payload_size": "variable"},
+            "ping_response": {"payload_size": "variable"},
             "disconnect_request": {"payload_size": 0},
             "disconnect_response": {"payload_size": 0},
             "reserved_mailbox": {
@@ -175,20 +231,57 @@ def protocol_manifest() -> dict[str, Any]:
                 ],
             },
         },
+        "session_id_derivation": {
+            "algorithm": "crc32",
+            "byte_order": "big-endian",
+            "fields": [
+                "selected_protocol_version:uint8",
+                "client_nonce:uint32",
+                "runtime_build_id:uint32",
+                "runtime_capabilities:uint32",
+                "accepted_client_capabilities:uint32",
+            ],
+        },
     }
 
 
 def protocol_vectors() -> tuple[ProtocolVector, ...]:
-    hello_request = Prime3WiiRequest(Prime3WiiCommand.HELLO, 0x1001)
+    hello_request_payload = HelloRequestPayload(
+        min_protocol_version=1,
+        max_protocol_version=1,
+        capabilities=Prime3WiiCapability.PING | Prime3WiiCapability.READ_MEMORY | Prime3WiiCapability.RECONNECT,
+        client_nonce=0x12345678,
+        client_name="rdv",
+    )
+    runtime_capabilities = HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY
+    accepted_capabilities = compute_accepted_capabilities(hello_request_payload.capabilities, runtime_capabilities)
+    session_id = derive_session_id(
+        selected_protocol_version=PROTOCOL_VERSION,
+        client_nonce=hello_request_payload.client_nonce,
+        runtime_build_id=DEFAULT_RUNTIME_BUILD_ID,
+        runtime_capabilities=runtime_capabilities,
+        accepted_client_capabilities=accepted_capabilities,
+    )
+
+    hello_request = Prime3WiiRequest(
+        Prime3WiiCommand.HELLO,
+        0x1001,
+        encode_hello_request_payload(hello_request_payload),
+    )
     hello_response = Prime3WiiResponse(
         Prime3WiiCommand.HELLO,
         0x1001,
         Prime3WiiResponseStatus.OK,
-        encode_hello_payload(
-            HelloPayload(
-                protocol_version=PROTOCOL_VERSION,
-                max_read_size=64,
-                capabilities=Prime3WiiCapability.READ_MEMORY | Prime3WiiCapability.STRUCTURED_MAILBOX,
+        encode_hello_response_payload(
+            HelloResponsePayload(
+                selected_protocol_version=PROTOCOL_VERSION,
+                runtime_capabilities=runtime_capabilities,
+                accepted_client_capabilities=accepted_capabilities,
+                session_id=session_id,
+                runtime_build_id=DEFAULT_RUNTIME_BUILD_ID,
+                runtime_mode=19,
+                runtime_metadata_version=HELLO_METADATA_VERSION,
+                runtime_name=DEFAULT_RUNTIME_NAME,
             )
         ),
     )
@@ -203,8 +296,8 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
         Prime3WiiResponseStatus.OK,
         b"ABCD",
     )
-    ping_request = Prime3WiiRequest(Prime3WiiCommand.PING, 0x1003)
-    ping_response = Prime3WiiResponse(Prime3WiiCommand.PING, 0x1003, Prime3WiiResponseStatus.OK, b"")
+    ping_request = Prime3WiiRequest(Prime3WiiCommand.PING, 0x1003, b"ping")
+    ping_response = Prime3WiiResponse(Prime3WiiCommand.PING, 0x1003, Prime3WiiResponseStatus.OK, b"ping")
     disconnect_request = Prime3WiiRequest(Prime3WiiCommand.DISCONNECT, 0x1004)
     disconnect_response = Prime3WiiResponse(
         Prime3WiiCommand.DISCONNECT,
@@ -214,11 +307,11 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
     )
     mailbox_request = Prime3WiiRequest(Prime3WiiCommand.RESERVED_MAILBOX, 0x1005)
 
-    invalid_range_response = encode_error_response(
-        Prime3WiiCommand.READ_MEMORY,
+    invalid_state_response = encode_error_response(
+        Prime3WiiCommand.PING,
         0x1006,
-        Prime3WiiErrorCode.INVALID_ADDRESS,
-        "Invalid address range 0x90000000+4",
+        Prime3WiiErrorCode.NOT_NEGOTIATED,
+        "Session negotiation is required before PING.",
     )
 
     corrupted_crc_packet = bytearray(encode_request(ping_request))
@@ -232,7 +325,9 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
             fields={
                 "command": "HELLO",
                 "request_id": 0x1001,
-                "payload_length": 0,
+                "min_protocol_version": 1,
+                "max_protocol_version": 1,
+                "client_nonce": 0x12345678,
             },
             expected=_normalized_request(hello_request),
         ),
@@ -243,9 +338,10 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
             fields={
                 "command": "HELLO",
                 "request_id": 0x1001,
-                "protocol_version": PROTOCOL_VERSION,
-                "max_read_size": 64,
-                "capabilities": ["READ_MEMORY", "STRUCTURED_MAILBOX"],
+                "selected_protocol_version": PROTOCOL_VERSION,
+                "runtime_build_id": DEFAULT_RUNTIME_BUILD_ID,
+                "session_id": session_id,
+                "runtime_mode": 19,
             },
             expected=_normalized_response(hello_response),
         ),
@@ -276,14 +372,14 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
             name="ping_request",
             decode_as="request",
             packet_hex=_hex_bytes(encode_request(ping_request)),
-            fields={"command": "PING", "request_id": 0x1003, "payload_length": 0},
+            fields={"command": "PING", "request_id": 0x1003, "payload_length": 4},
             expected=_normalized_request(ping_request),
         ),
         ProtocolVector(
             name="ping_response",
             decode_as="response",
             packet_hex=_hex_bytes(encode_response(ping_response)),
-            fields={"command": "PING", "request_id": 0x1003, "payload_length": 0},
+            fields={"command": "PING", "request_id": 0x1003, "payload_length": 4},
             expected=_normalized_response(ping_response),
         ),
         ProtocolVector(
@@ -301,21 +397,21 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
             expected=_normalized_response(disconnect_response),
         ),
         ProtocolVector(
-            name="invalid_range_error_response",
+            name="not_negotiated_error_response",
             decode_as="response",
-            packet_hex=_hex_bytes(invalid_range_response),
+            packet_hex=_hex_bytes(invalid_state_response),
             fields={
-                "command": "READ_MEMORY",
+                "command": "PING",
                 "request_id": 0x1006,
-                "error_code": "INVALID_ADDRESS",
-                "message": "Invalid address range 0x90000000+4",
+                "error_code": "NOT_NEGOTIATED",
+                "message": "Session negotiation is required before PING.",
             },
             expected={
-                "command": "READ_MEMORY",
+                "command": "PING",
                 "request_id": 0x1006,
                 "status": "ERROR",
-                "error_code": "INVALID_ADDRESS",
-                "message": "Invalid address range 0x90000000+4",
+                "error_code": "NOT_NEGOTIATED",
+                "message": "Session negotiation is required before PING.",
             },
         ),
         ProtocolVector(

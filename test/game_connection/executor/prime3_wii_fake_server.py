@@ -6,7 +6,16 @@ import dataclasses
 from collections import defaultdict
 
 from randovania.game_connection.executor.prime3_wii_protocol import (
-    HelloPayload,
+    DEFAULT_RUNTIME_BUILD_ID,
+    DEFAULT_RUNTIME_NAME,
+    HELLO_METADATA_VERSION,
+    HELLO_RUNTIME_CAPABILITIES,
+    INVALID_STATE_MESSAGE,
+    NOT_NEGOTIATED_MESSAGE,
+    UNKNOWN_COMMAND_MESSAGE,
+    UNSUPPORTED_VERSION_MESSAGE,
+    HelloRequestPayload,
+    HelloResponsePayload,
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
@@ -14,10 +23,13 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
     ReadMemoryPayload,
+    compute_accepted_capabilities,
+    decode_hello_request_payload,
     decode_read_memory_payload,
     decode_request,
+    derive_session_id,
     encode_error_response,
-    encode_hello_payload,
+    encode_hello_response_payload,
     encode_response,
 )
 
@@ -63,6 +75,11 @@ class Prime3WiiFakeServer:
         self._behaviors: dict[Prime3WiiCommand, PendingBehavior] = defaultdict(PendingBehavior)
         self.disconnect_requests = 0
         self.disconnect_event = asyncio.Event()
+        self.runtime_mode = 19
+        self.runtime_build_id = DEFAULT_RUNTIME_BUILD_ID
+        self.runtime_name = DEFAULT_RUNTIME_NAME
+        self.negotiated_request: HelloRequestPayload | None = None
+        self.negotiated_response: HelloResponsePayload | None = None
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
@@ -138,18 +155,18 @@ class Prime3WiiFakeServer:
 
     def _build_response(self, request: Prime3WiiRequest) -> bytes:
         if request.command is Prime3WiiCommand.HELLO:
-            hello = HelloPayload(
-                protocol_version=1,
-                max_read_size=self.max_read_size,
-                capabilities=self.capabilities,
-            )
-            return encode_response(
-                Prime3WiiResponse(
-                    command=Prime3WiiCommand.HELLO,
-                    request_id=request.request_id,
-                    status=Prime3WiiResponseStatus.OK,
-                    payload=encode_hello_payload(hello),
-                )
+            return self._build_hello_response(request)
+
+        if request.command in {
+            Prime3WiiCommand.PING,
+            Prime3WiiCommand.READ_MEMORY,
+            Prime3WiiCommand.DISCONNECT,
+        } and self.negotiated_request is None:
+            return encode_error_response(
+                request.command,
+                request.request_id,
+                Prime3WiiErrorCode.NOT_NEGOTIATED,
+                NOT_NEGOTIATED_MESSAGE,
             )
 
         if request.command is Prime3WiiCommand.PING:
@@ -158,7 +175,7 @@ class Prime3WiiFakeServer:
                     command=Prime3WiiCommand.PING,
                     request_id=request.request_id,
                     status=Prime3WiiResponseStatus.OK,
-                    payload=b"",
+                    payload=request.payload,
                 )
             )
 
@@ -214,5 +231,58 @@ class Prime3WiiFakeServer:
             request.command,
             request.request_id,
             Prime3WiiErrorCode.UNKNOWN_COMMAND,
-            f"Command {request.command.name} is unsupported",
+            UNKNOWN_COMMAND_MESSAGE,
+        )
+
+    def _build_hello_response(self, request: Prime3WiiRequest) -> bytes:
+        hello_request = decode_hello_request_payload(request.payload)
+        if hello_request.min_protocol_version > 1 or hello_request.max_protocol_version < 1:
+            return encode_error_response(
+                request.command,
+                request.request_id,
+                Prime3WiiErrorCode.UNSUPPORTED_VERSION,
+                UNSUPPORTED_VERSION_MESSAGE,
+            )
+
+        runtime_capabilities = HELLO_RUNTIME_CAPABILITIES | self.capabilities
+        accepted_capabilities = compute_accepted_capabilities(hello_request.capabilities, runtime_capabilities)
+
+        if self.negotiated_request is None:
+            session_id = derive_session_id(
+                selected_protocol_version=1,
+                client_nonce=hello_request.client_nonce,
+                runtime_build_id=self.runtime_build_id,
+                runtime_capabilities=runtime_capabilities,
+                accepted_client_capabilities=accepted_capabilities,
+            )
+            response_payload = HelloResponsePayload(
+                selected_protocol_version=1,
+                runtime_capabilities=runtime_capabilities,
+                accepted_client_capabilities=accepted_capabilities,
+                session_id=session_id,
+                runtime_build_id=self.runtime_build_id,
+                runtime_mode=self.runtime_mode,
+                runtime_metadata_version=HELLO_METADATA_VERSION,
+                runtime_name=self.runtime_name,
+            )
+            self.negotiated_request = hello_request
+            self.negotiated_response = response_payload
+        elif hello_request != self.negotiated_request:
+            return encode_error_response(
+                request.command,
+                request.request_id,
+                Prime3WiiErrorCode.INVALID_STATE,
+                INVALID_STATE_MESSAGE,
+            )
+        else:
+            assert self.negotiated_response is not None
+            response_payload = self.negotiated_response
+
+        return encode_response(
+            Prime3WiiResponse(
+                command=Prime3WiiCommand.HELLO,
+                request_id=request.request_id,
+                status=Prime3WiiResponseStatus.OK,
+                payload=encode_hello_response_payload(response_payload),
+            )
         )

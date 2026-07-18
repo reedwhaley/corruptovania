@@ -128,6 +128,14 @@ enum {
     RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE = 59,
     RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_DISPATCH_RESPONSE = 60,
     RUNTIME_TRANSPORT_PHASE_CP3W_PING_PONG_LOOP_COMPLETE = 61,
+    RUNTIME_TRANSPORT_PHASE_CP3W_PROCESS_HELLO = 62,
+    RUNTIME_TRANSPORT_PHASE_CP3W_NEGOTIATE_HELLO_VERSION = 63,
+    RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_HELLO_SUCCESS = 64,
+    RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_HELLO_REJECTED = 65,
+    RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_DUPLICATE_HELLO = 66,
+    RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_RENEGOTIATION_REJECTED = 67,
+    RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_NOT_NEGOTIATED = 68,
+    RUNTIME_TRANSPORT_PHASE_CP3W_HELLO_SESSION_LOOP_COMPLETE = 69,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -177,6 +185,7 @@ enum {
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_RETAIL_WRAPPER_RECV_SEND_LOOP = 16,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_FRAME_VALIDATION = 17,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_PING_PONG = 18,
+    RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_HELLO_SESSION = 19,
 };
 
 enum {
@@ -236,7 +245,26 @@ enum {
     RUNTIME_CP3W_COMMAND_PING = 3,
     RUNTIME_CP3W_COMMAND_DISCONNECT = 4,
     RUNTIME_CP3W_COMMAND_RESERVED_MAILBOX = 127,
+    RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION = 1,
+    RUNTIME_CP3W_ERROR_CODE_UNSUPPORTED_VERSION = 3,
     RUNTIME_CP3W_ERROR_CODE_UNKNOWN_COMMAND = 4,
+    RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED = 9,
+    RUNTIME_CP3W_ERROR_CODE_INVALID_STATE = 10,
+    RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE = 10,
+    RUNTIME_CP3W_HELLO_RESPONSE_FIXED_SIZE = 19,
+    RUNTIME_CP3W_HELLO_NAME_LENGTH_SIZE = 1,
+    RUNTIME_CP3W_HELLO_MAX_NAME_LENGTH = 31,
+    RUNTIME_CP3W_HELLO_METADATA_VERSION = 1,
+    RUNTIME_CP3W_RUNTIME_BUILD_ID = 0x50335731,
+    RUNTIME_CP3W_CAPABILITY_HELLO_NEGOTIATION = 1,
+    RUNTIME_CP3W_CAPABILITY_PING = 1 << 1,
+    RUNTIME_CP3W_CAPABILITY_STRUCTURED_ERRORS = 1 << 2,
+    RUNTIME_CP3W_CAPABILITY_DETERMINISTIC_SESSION_ID = 1 << 3,
+    RUNTIME_CP3W_CAPABILITY_READ_MEMORY = 1 << 4,
+    RUNTIME_CP3W_RUNTIME_CAPABILITIES = RUNTIME_CP3W_CAPABILITY_HELLO_NEGOTIATION
+        | RUNTIME_CP3W_CAPABILITY_PING
+        | RUNTIME_CP3W_CAPABILITY_STRUCTURED_ERRORS
+        | RUNTIME_CP3W_CAPABILITY_DETERMINISTIC_SESSION_ID,
     RUNTIME_CP3W_ERROR_HEADER_SIZE = 6,
     RUNTIME_CP3W_MAX_PING_PAYLOAD_LENGTH = RUNTIME_UDP_SEND_CAPACITY - RUNTIME_CP3W_HEADER_SIZE - RUNTIME_CP3W_CRC_SIZE,
 };
@@ -248,16 +276,29 @@ static const char runtime_send_payload_ascii[RUNTIME_SEND_PAYLOAD_LENGTH + 1] __
 static const u8 runtime_cp3w_magic[4] __attribute_section_rodata__ = {'C', 'P', '3', 'W'};
 static const char runtime_cp3w_request_payload_ascii[] __attribute_section_rodata__ = "P3_FRAME_TEST_20260717";
 static const char runtime_cp3w_response_payload_ascii[] __attribute_section_rodata__ = "P3_FRAME_ACK_20260717";
+static const char runtime_cp3w_runtime_name_ascii[] __attribute_section_rodata__ = "Prime3 Wii Runtime";
+static const char runtime_cp3w_not_negotiated_message_ascii[] __attribute_section_rodata__ =
+    "Negotiation required before PING.";
+static const char runtime_cp3w_unsupported_version_message_ascii[] __attribute_section_rodata__ =
+    "Unsupported protocol version range.";
+static const char runtime_cp3w_invalid_state_message_ascii[] __attribute_section_rodata__ =
+    "Session is already negotiated.";
 static const char runtime_cp3w_unsupported_message_ascii[] __attribute_section_rodata__ = "Command is unsupported";
 
 enum {
     RUNTIME_CP3W_REQUEST_PAYLOAD_LENGTH = sizeof(runtime_cp3w_request_payload_ascii) - 1,
     RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH = sizeof(runtime_cp3w_response_payload_ascii) - 1,
+    RUNTIME_CP3W_RUNTIME_NAME_LENGTH = sizeof(runtime_cp3w_runtime_name_ascii) - 1,
+    RUNTIME_CP3W_NOT_NEGOTIATED_MESSAGE_LENGTH = sizeof(runtime_cp3w_not_negotiated_message_ascii) - 1,
+    RUNTIME_CP3W_UNSUPPORTED_VERSION_MESSAGE_LENGTH = sizeof(runtime_cp3w_unsupported_version_message_ascii) - 1,
+    RUNTIME_CP3W_INVALID_STATE_MESSAGE_LENGTH = sizeof(runtime_cp3w_invalid_state_message_ascii) - 1,
     RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH = sizeof(runtime_cp3w_unsupported_message_ascii) - 1,
     RUNTIME_CP3W_RESPONSE_PACKET_LENGTH =
         RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_RESPONSE_PAYLOAD_LENGTH + RUNTIME_CP3W_CRC_SIZE,
     RUNTIME_CP3W_ERROR_RESPONSE_PACKET_LENGTH = RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_ERROR_HEADER_SIZE
         + RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH + RUNTIME_CP3W_CRC_SIZE,
+    RUNTIME_CP3W_HELLO_RESPONSE_PAYLOAD_LENGTH = RUNTIME_CP3W_HELLO_RESPONSE_FIXED_SIZE
+        + RUNTIME_CP3W_HELLO_NAME_LENGTH_SIZE + RUNTIME_CP3W_RUNTIME_NAME_LENGTH,
 };
 
 enum {
@@ -647,12 +688,34 @@ volatile u32 runtime_transport_cp3w_last_actual_payload_length __attribute_secti
 volatile u32 runtime_transport_cp3w_last_frame_result __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_final_datagram_index __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_requests_dispatched __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_requests_received __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_successes __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_version_rejections __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_responses_submitted __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_responses_completed __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_duplicate_requests __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_renegotiation_rejections __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_pre_hello_gated_commands __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_not_negotiated_responses_submitted __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_not_negotiated_responses_completed __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_ping_requests_received __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_pong_responses_submitted __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_pong_responses_completed __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_unsupported_commands_received __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_unsupported_responses_submitted __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_unsupported_responses_completed __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_negotiated_flag __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_selected_protocol_version __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_client_nonce __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_client_capabilities __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_runtime_capabilities __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_accepted_capabilities __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_session_id __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_runtime_build_id __attribute_section_state__ __attribute_used__ =
+    RUNTIME_CP3W_RUNTIME_BUILD_ID;
+volatile u32 runtime_transport_cp3w_hello_min_protocol_version __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_max_protocol_version __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cp3w_hello_client_name_length __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_last_command __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_last_response_status __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_cp3w_last_ping_payload_length __attribute_section_state__ __attribute_used__ = 0;
@@ -665,6 +728,8 @@ volatile u8 runtime_transport_send_request_bytes[RUNTIME_SEND_REQUEST_LOGICAL_SI
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_send_destination_bytes[28] __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_send_payload_bytes[RUNTIME_UDP_SEND_CAPACITY]
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u8 runtime_transport_cp3w_hello_client_name_bytes[RUNTIME_CP3W_HELLO_MAX_NAME_LENGTH + 1]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 
 volatile u8 runtime_transport_last_receive_preview[RUNTIME_PREVIEW_SIZE]
@@ -738,6 +803,7 @@ static u32 runtime_transport_is_recv_send_once_mode(void) __attribute_section_co
 static u32 runtime_transport_is_recv_send_loop_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_cp3w_frame_validation_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_cp3w_ping_pong_mode(void) __attribute_section_code__;
+static u32 runtime_transport_is_cp3w_hello_session_mode(void) __attribute_section_code__;
 static u32 runtime_transport_is_cp3w_mode(void) __attribute_section_code__;
 static u32 runtime_transport_uses_receive_mode(void) __attribute_section_code__;
 static u32 runtime_transport_uses_send_mode(void) __attribute_section_code__;
@@ -745,14 +811,28 @@ static u32 runtime_transport_validate_loop_limit(void) __attribute_section_code_
 static void runtime_transport_note_loop_complete(void) __attribute_section_code__;
 static void runtime_transport_note_cp3w_loop_complete(void) __attribute_section_code__;
 static void runtime_transport_note_cp3w_ping_pong_loop_complete(void) __attribute_section_code__;
+static void runtime_transport_note_cp3w_hello_session_loop_complete(void) __attribute_section_code__;
 static void runtime_transport_record_cp3w_frame_result(u32 result) __attribute_section_code__;
 static s32 runtime_transport_validate_cp3w_frame(void) __attribute_section_code__;
 static s32 runtime_transport_validate_cp3w_ping_pong_frame(void) __attribute_section_code__;
+static u32 runtime_transport_cp3w_hello_request_matches_negotiated(u32 payload_length) __attribute_section_code__;
+static void runtime_transport_copy_cp3w_hello_request_state(u32 payload_length) __attribute_section_code__;
+static u32 runtime_transport_compute_cp3w_session_id(u32 client_nonce, u32 accepted_capabilities)
+    __attribute_section_code__;
+static s32 runtime_transport_validate_cp3w_hello_payload(u32 payload_length) __attribute_section_code__;
 static s32 runtime_transport_dispatch_cp3w_ping_pong_request(void) __attribute_section_code__;
+static s32 runtime_transport_dispatch_cp3w_hello_session_request(void) __attribute_section_code__;
 static void runtime_transport_prepare_loop_reply(void) __attribute_section_code__;
 static void runtime_transport_prepare_cp3w_response(u32 request_id) __attribute_section_code__;
 static void runtime_transport_prepare_cp3w_ping_response(u32 request_id, u32 payload_length) __attribute_section_code__;
-static void runtime_transport_prepare_cp3w_error_response(u32 request_id, u32 command) __attribute_section_code__;
+static void runtime_transport_prepare_cp3w_hello_response(u32 request_id) __attribute_section_code__;
+static void runtime_transport_prepare_cp3w_error_response(
+    u32 request_id,
+    u32 command,
+    u32 error_code,
+    const char* message,
+    u32 message_length
+) __attribute_section_code__;
 static void runtime_cache_flush(const volatile void* address, u32 size) __attribute_section_code__;
 static void runtime_cache_invalidate(const volatile void* address, u32 size) __attribute_section_code__;
 extern s32 runtime_call_retail_ios_open_async(
@@ -1165,9 +1245,17 @@ static u32 runtime_transport_is_cp3w_ping_pong_mode(void)
         && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_PING_PONG;
 }
 
+static u32 runtime_transport_is_cp3w_hello_session_mode(void)
+{
+    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_HELLO_SESSION;
+}
+
 static u32 runtime_transport_is_cp3w_mode(void)
 {
-    return runtime_transport_is_cp3w_frame_validation_mode() || runtime_transport_is_cp3w_ping_pong_mode();
+    return runtime_transport_is_cp3w_frame_validation_mode()
+        || runtime_transport_is_cp3w_ping_pong_mode()
+        || runtime_transport_is_cp3w_hello_session_mode();
 }
 
 static u32 runtime_transport_uses_receive_mode(void)
@@ -1208,6 +1296,13 @@ static void runtime_transport_note_cp3w_ping_pong_loop_complete(void)
     runtime_transport_loop_complete_transition_count += 1;
     runtime_transport_cp3w_final_datagram_index = runtime_transport_cp3w_datagrams_processed;
     runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_PING_PONG_LOOP_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+}
+
+static void runtime_transport_note_cp3w_hello_session_loop_complete(void)
+{
+    runtime_transport_loop_complete_transition_count += 1;
+    runtime_transport_cp3w_final_datagram_index = runtime_transport_cp3w_datagrams_processed;
+    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_HELLO_SESSION_LOOP_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
 }
 
 static void runtime_transport_record_cp3w_frame_result(u32 result)
@@ -1322,48 +1417,191 @@ static void runtime_transport_prepare_cp3w_ping_response(u32 request_id, u32 pay
     runtime_transport_cp3w_last_response_status = RUNTIME_CP3W_RESPONSE_STATUS_OK;
 }
 
-static void runtime_transport_prepare_cp3w_error_response(u32 request_id, u32 command)
+static void runtime_transport_prepare_cp3w_hello_response(u32 request_id)
 {
     u32 crc = 0;
     runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
     runtime_memcpy(runtime_transport_send_payload_bytes, runtime_cp3w_magic, sizeof(runtime_cp3w_magic));
-    runtime_transport_send_payload_bytes[4] = 1;
+    runtime_transport_send_payload_bytes[4] = RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION;
+    runtime_transport_send_payload_bytes[5] = RUNTIME_CP3W_PACKET_KIND_RESPONSE;
+    runtime_transport_send_payload_bytes[6] = RUNTIME_CP3W_COMMAND_HELLO;
+    runtime_transport_send_payload_bytes[7] = RUNTIME_CP3W_RESPONSE_STATUS_OK;
+    runtime_write_be32(runtime_transport_send_payload_bytes + 8, request_id);
+    runtime_write_be32(runtime_transport_send_payload_bytes + 12, RUNTIME_CP3W_HELLO_RESPONSE_PAYLOAD_LENGTH);
+    runtime_transport_send_payload_bytes[RUNTIME_CP3W_HEADER_SIZE] = (u8)runtime_transport_cp3w_selected_protocol_version;
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 1,
+        runtime_transport_cp3w_runtime_capabilities
+    );
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 5,
+        runtime_transport_cp3w_accepted_capabilities
+    );
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 9,
+        runtime_transport_cp3w_session_id
+    );
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 13,
+        runtime_transport_cp3w_runtime_build_id
+    );
+    runtime_transport_send_payload_bytes[RUNTIME_CP3W_HEADER_SIZE + 17] =
+        RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_HELLO_SESSION;
+    runtime_transport_send_payload_bytes[RUNTIME_CP3W_HEADER_SIZE + 18] = RUNTIME_CP3W_HELLO_METADATA_VERSION;
+    runtime_transport_send_payload_bytes[RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_RESPONSE_FIXED_SIZE] =
+        RUNTIME_CP3W_RUNTIME_NAME_LENGTH;
+    runtime_memcpy(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_RESPONSE_FIXED_SIZE + 1,
+        (const volatile void*)runtime_cp3w_runtime_name_ascii,
+        RUNTIME_CP3W_RUNTIME_NAME_LENGTH
+    );
+    crc = runtime_crc32(
+        runtime_transport_send_payload_bytes,
+        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_RESPONSE_PAYLOAD_LENGTH
+    );
+    runtime_write_be32(
+        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_RESPONSE_PAYLOAD_LENGTH,
+        crc
+    );
+    runtime_transport_prepared_send_length =
+        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_RESPONSE_PAYLOAD_LENGTH + RUNTIME_CP3W_CRC_SIZE;
+    runtime_transport_cp3w_last_response_id = request_id;
+    runtime_transport_cp3w_last_response_status = RUNTIME_CP3W_RESPONSE_STATUS_OK;
+}
+
+static void runtime_transport_prepare_cp3w_error_response(
+    u32 request_id,
+    u32 command,
+    u32 error_code,
+    const char* message,
+    u32 message_length
+)
+{
+    u32 crc = 0;
+    u32 packet_payload_length = RUNTIME_CP3W_ERROR_HEADER_SIZE + message_length;
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
+    runtime_memcpy(runtime_transport_send_payload_bytes, runtime_cp3w_magic, sizeof(runtime_cp3w_magic));
+    runtime_transport_send_payload_bytes[4] = RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION;
     runtime_transport_send_payload_bytes[5] = RUNTIME_CP3W_PACKET_KIND_RESPONSE;
     runtime_transport_send_payload_bytes[6] = (u8)command;
     runtime_transport_send_payload_bytes[7] = RUNTIME_CP3W_RESPONSE_STATUS_ERROR;
     runtime_write_be32(runtime_transport_send_payload_bytes + 8, request_id);
-    runtime_write_be32(
-        runtime_transport_send_payload_bytes + 12,
-        RUNTIME_CP3W_ERROR_HEADER_SIZE + RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH
-    );
-    runtime_write_be16(
-        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE,
-        RUNTIME_CP3W_ERROR_CODE_UNKNOWN_COMMAND
-    );
+    runtime_write_be32(runtime_transport_send_payload_bytes + 12, packet_payload_length);
+    runtime_write_be16(runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE, (u16)error_code);
     runtime_write_be16(runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 2, (u16)command);
-    runtime_write_be16(
-        runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 4,
-        RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH
-    );
+    runtime_write_be16(runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + 4, (u16)message_length);
     runtime_memcpy(
         runtime_transport_send_payload_bytes + RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_ERROR_HEADER_SIZE,
-        (const volatile void*)runtime_cp3w_unsupported_message_ascii,
-        RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH
+        (const volatile void*)message,
+        message_length
     );
     crc = runtime_crc32(
         runtime_transport_send_payload_bytes,
-        RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_ERROR_HEADER_SIZE + RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH
+        RUNTIME_CP3W_HEADER_SIZE + packet_payload_length
     );
     runtime_write_be32(
         runtime_transport_send_payload_bytes
             + RUNTIME_CP3W_HEADER_SIZE
-            + RUNTIME_CP3W_ERROR_HEADER_SIZE
-            + RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH,
+            + packet_payload_length,
         crc
     );
-    runtime_transport_prepared_send_length = RUNTIME_CP3W_ERROR_RESPONSE_PACKET_LENGTH;
+    runtime_transport_prepared_send_length = RUNTIME_CP3W_HEADER_SIZE + packet_payload_length + RUNTIME_CP3W_CRC_SIZE;
     runtime_transport_cp3w_last_response_id = request_id;
     runtime_transport_cp3w_last_response_status = RUNTIME_CP3W_RESPONSE_STATUS_ERROR;
+}
+
+static u32 runtime_transport_cp3w_hello_request_matches_negotiated(u32 payload_length)
+{
+    u32 name_length = 0;
+    u32 index = 0;
+    if (payload_length < RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE + RUNTIME_CP3W_HELLO_NAME_LENGTH_SIZE) {
+        return 0;
+    }
+    name_length = runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE];
+    if (name_length != runtime_transport_cp3w_hello_client_name_length) {
+        return 0;
+    }
+    if ((u32)runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE] != runtime_transport_cp3w_hello_min_protocol_version) {
+        return 0;
+    }
+    if ((u32)runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + 1]
+        != runtime_transport_cp3w_hello_max_protocol_version) {
+        return 0;
+    }
+    if (runtime_read_be32(runtime_transport_receive_payload_buffer + RUNTIME_CP3W_HEADER_SIZE + 2)
+        != runtime_transport_cp3w_client_capabilities) {
+        return 0;
+    }
+    if (runtime_read_be32(runtime_transport_receive_payload_buffer + RUNTIME_CP3W_HEADER_SIZE + 6)
+        != runtime_transport_cp3w_client_nonce) {
+        return 0;
+    }
+    while (index < name_length) {
+        if (
+            runtime_transport_receive_payload_buffer[
+                RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE + 1 + index
+            ] != runtime_transport_cp3w_hello_client_name_bytes[index]
+        ) {
+            return 0;
+        }
+        index += 1;
+    }
+    return 1;
+}
+
+static void runtime_transport_copy_cp3w_hello_request_state(u32 payload_length)
+{
+    u32 name_length = payload_length - RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE - RUNTIME_CP3W_HELLO_NAME_LENGTH_SIZE;
+    u32 index = 0;
+    runtime_transport_cp3w_hello_min_protocol_version = runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE];
+    runtime_transport_cp3w_hello_max_protocol_version = runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + 1];
+    runtime_transport_cp3w_client_capabilities =
+        runtime_read_be32(runtime_transport_receive_payload_buffer + RUNTIME_CP3W_HEADER_SIZE + 2);
+    runtime_transport_cp3w_client_nonce =
+        runtime_read_be32(runtime_transport_receive_payload_buffer + RUNTIME_CP3W_HEADER_SIZE + 6);
+    runtime_transport_cp3w_hello_client_name_length = name_length;
+    runtime_memzero(
+        runtime_transport_cp3w_hello_client_name_bytes,
+        sizeof(runtime_transport_cp3w_hello_client_name_bytes)
+    );
+    while (index < name_length) {
+        runtime_transport_cp3w_hello_client_name_bytes[index] =
+            runtime_transport_receive_payload_buffer[
+                RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE + 1 + index
+            ];
+        index += 1;
+    }
+}
+
+static u32 runtime_transport_compute_cp3w_session_id(u32 client_nonce, u32 accepted_capabilities)
+{
+    u8 canonical[17];
+    runtime_memzero(canonical, sizeof(canonical));
+    canonical[0] = RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION;
+    runtime_write_be32(canonical + 1, client_nonce);
+    runtime_write_be32(canonical + 5, RUNTIME_CP3W_RUNTIME_BUILD_ID);
+    runtime_write_be32(canonical + 9, RUNTIME_CP3W_RUNTIME_CAPABILITIES);
+    runtime_write_be32(canonical + 13, accepted_capabilities);
+    return runtime_crc32(canonical, sizeof(canonical));
+}
+
+static s32 runtime_transport_validate_cp3w_hello_payload(u32 payload_length)
+{
+    u32 name_length = 0;
+    if (payload_length < RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE + RUNTIME_CP3W_HELLO_NAME_LENGTH_SIZE) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD);
+        return -1;
+    }
+    name_length = runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE];
+    if (name_length > RUNTIME_CP3W_HELLO_MAX_NAME_LENGTH) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD);
+        return -1;
+    }
+    if (payload_length != RUNTIME_CP3W_HELLO_REQUEST_FIXED_SIZE + RUNTIME_CP3W_HELLO_NAME_LENGTH_SIZE + name_length) {
+        runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD);
+        return -1;
+    }
+    return 0;
 }
 
 static s32 runtime_transport_validate_cp3w_frame(void)
@@ -1565,9 +1803,132 @@ static s32 runtime_transport_dispatch_cp3w_ping_pong_request(void)
     }
 
     runtime_transport_cp3w_unsupported_commands_received += 1;
-    runtime_transport_prepare_cp3w_error_response(runtime_transport_cp3w_last_request_id, command);
+    runtime_transport_prepare_cp3w_error_response(
+        runtime_transport_cp3w_last_request_id,
+        command,
+        RUNTIME_CP3W_ERROR_CODE_UNKNOWN_COMMAND,
+        runtime_cp3w_unsupported_message_ascii,
+        RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH
+    );
     runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_UNKNOWN_COMMAND;
     return 1;
+}
+
+static s32 runtime_transport_dispatch_cp3w_hello_session_request(void)
+{
+    u32 command = runtime_transport_cp3w_last_command;
+    u32 payload_length = runtime_transport_cp3w_last_declared_payload_length;
+    runtime_transport_cp3w_requests_dispatched += 1;
+    runtime_transport_cp3w_last_dispatch_result = 0;
+    runtime_transport_cp3w_runtime_build_id = RUNTIME_CP3W_RUNTIME_BUILD_ID;
+
+    if (command == RUNTIME_CP3W_COMMAND_HELLO) {
+        u32 selected_version = 0;
+        u32 offered_capabilities = 0;
+        u32 client_nonce = 0;
+        u32 accepted_capabilities = 0;
+        runtime_transport_cp3w_hello_requests_received += 1;
+        if (runtime_transport_validate_cp3w_hello_payload(payload_length) != 0) {
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD;
+            return -1;
+        }
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_PROCESS_HELLO, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        selected_version = RUNTIME_CP3W_SUPPORTED_PROTOCOL_VERSION;
+        offered_capabilities = runtime_read_be32(runtime_transport_receive_payload_buffer + RUNTIME_CP3W_HEADER_SIZE + 2);
+        client_nonce = runtime_read_be32(runtime_transport_receive_payload_buffer + RUNTIME_CP3W_HEADER_SIZE + 6);
+        if (
+            runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE] > selected_version
+            || runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + 1] < selected_version
+            || runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE]
+                > runtime_transport_receive_payload_buffer[RUNTIME_CP3W_HEADER_SIZE + 1]
+        ) {
+            runtime_transport_cp3w_hello_version_rejections += 1;
+            runtime_transport_prepare_cp3w_error_response(
+                runtime_transport_cp3w_last_request_id,
+                command,
+                RUNTIME_CP3W_ERROR_CODE_UNSUPPORTED_VERSION,
+                runtime_cp3w_unsupported_version_message_ascii,
+                RUNTIME_CP3W_UNSUPPORTED_VERSION_MESSAGE_LENGTH
+            );
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_UNSUPPORTED_VERSION;
+            return 2;
+        }
+
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_NEGOTIATE_HELLO_VERSION, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        if (runtime_transport_cp3w_negotiated_flag == 0) {
+            accepted_capabilities = offered_capabilities & RUNTIME_CP3W_RUNTIME_CAPABILITIES;
+            runtime_transport_copy_cp3w_hello_request_state(payload_length);
+            runtime_transport_cp3w_runtime_capabilities = RUNTIME_CP3W_RUNTIME_CAPABILITIES;
+            runtime_transport_cp3w_accepted_capabilities = accepted_capabilities;
+            runtime_transport_cp3w_selected_protocol_version = selected_version;
+            runtime_transport_cp3w_session_id =
+                runtime_transport_compute_cp3w_session_id(client_nonce, accepted_capabilities);
+            runtime_transport_cp3w_negotiated_flag = 1;
+            runtime_transport_cp3w_hello_successes += 1;
+            runtime_transport_prepare_cp3w_hello_response(runtime_transport_cp3w_last_request_id);
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_VALID;
+            return 3;
+        }
+        if (runtime_transport_cp3w_hello_request_matches_negotiated(payload_length) != 0) {
+            runtime_transport_cp3w_hello_duplicate_requests += 1;
+            runtime_transport_prepare_cp3w_hello_response(runtime_transport_cp3w_last_request_id);
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_COMMAND_HELLO;
+            return 4;
+        }
+
+        runtime_transport_cp3w_hello_renegotiation_rejections += 1;
+        runtime_transport_prepare_cp3w_error_response(
+            runtime_transport_cp3w_last_request_id,
+            command,
+            RUNTIME_CP3W_ERROR_CODE_INVALID_STATE,
+            runtime_cp3w_invalid_state_message_ascii,
+            RUNTIME_CP3W_INVALID_STATE_MESSAGE_LENGTH
+        );
+        runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_INVALID_STATE;
+        return 5;
+    }
+
+    if (
+        runtime_transport_cp3w_negotiated_flag == 0
+        && (command == RUNTIME_CP3W_COMMAND_PING
+            || command == RUNTIME_CP3W_COMMAND_READ_MEMORY
+            || command == RUNTIME_CP3W_COMMAND_DISCONNECT)
+    ) {
+        runtime_transport_cp3w_pre_hello_gated_commands += 1;
+        runtime_transport_prepare_cp3w_error_response(
+            runtime_transport_cp3w_last_request_id,
+            command,
+            RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED,
+            runtime_cp3w_not_negotiated_message_ascii,
+            RUNTIME_CP3W_NOT_NEGOTIATED_MESSAGE_LENGTH
+        );
+        runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED;
+        return 6;
+    }
+
+    if (command == RUNTIME_CP3W_COMMAND_PING) {
+        if (payload_length > RUNTIME_CP3W_MAX_PING_PAYLOAD_LENGTH) {
+            runtime_transport_record_cp3w_frame_result(RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD);
+            runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_INVALID_PAYLOAD;
+            return -1;
+        }
+        runtime_transport_cp3w_ping_requests_received += 1;
+        runtime_transport_cp3w_last_ping_payload_length = payload_length;
+        runtime_transport_prepare_cp3w_ping_response(runtime_transport_cp3w_last_request_id, payload_length);
+        runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_VALID;
+        return 1;
+    }
+
+    runtime_transport_cp3w_unsupported_commands_received += 1;
+    runtime_transport_prepare_cp3w_error_response(
+        runtime_transport_cp3w_last_request_id,
+        command,
+        RUNTIME_CP3W_ERROR_CODE_UNKNOWN_COMMAND,
+        runtime_cp3w_unsupported_message_ascii,
+        RUNTIME_CP3W_UNSUPPORTED_MESSAGE_LENGTH
+    );
+    runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_ERROR_CODE_UNKNOWN_COMMAND;
+    return 7;
 }
 
 static void runtime_cache_flush(const volatile void* address, u32 size)
@@ -2375,6 +2736,8 @@ static s32 runtime_submit_ioctlv_send(u32 next_phase)
                 ? (runtime_transport_cp3w_frames_valid == 0 || runtime_transport_send_submit_count == 0)
                 : runtime_transport_is_cp3w_ping_pong_mode()
                 ? (runtime_transport_cp3w_requests_dispatched == 0 || runtime_transport_send_submit_count == 0)
+                : runtime_transport_is_cp3w_hello_session_mode()
+                ? (runtime_transport_cp3w_requests_dispatched == 0 || runtime_transport_send_submit_count == 0)
                 : (runtime_transport_receive_count == 0 || runtime_transport_send_submit_count == 0
                     || runtime_transport_send_submit_count != runtime_transport_receive_count))
         || runtime_transport_last_peer_length != RUNTIME_WII_SOCKADDR_IN_SIZE
@@ -2618,6 +2981,8 @@ static s32 runtime_consume_receive_completion(void)
             ? RUNTIME_TRANSPORT_PHASE_CP3W_VALIDATE_FRAME
             : runtime_transport_is_cp3w_ping_pong_mode()
             ? RUNTIME_TRANSPORT_PHASE_CP3W_VALIDATE_FRAME
+            : runtime_transport_is_cp3w_hello_session_mode()
+            ? RUNTIME_TRANSPORT_PHASE_CP3W_VALIDATE_FRAME
             : runtime_transport_uses_send_mode()
             ? RUNTIME_TRANSPORT_PHASE_SUBMIT_SEND_ONCE
             : RUNTIME_TRANSPORT_PHASE_RECEIVED_DATAGRAM,
@@ -2709,6 +3074,27 @@ static s32 runtime_consume_send_completion(void)
         }
         if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
             runtime_transport_note_cp3w_ping_pong_loop_complete();
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
+        }
+        return 0;
+    }
+    if (runtime_transport_is_cp3w_hello_session_mode()) {
+        if (runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_HELLO) {
+            runtime_transport_cp3w_hello_responses_completed += 1;
+        } else if (runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK) {
+            runtime_transport_cp3w_pong_responses_completed += 1;
+        } else if (runtime_transport_cp3w_last_dispatch_result == RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED) {
+            runtime_transport_cp3w_not_negotiated_responses_completed += 1;
+        } else if (runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_ERROR) {
+            runtime_transport_cp3w_unsupported_responses_completed += 1;
+        }
+        if (!runtime_transport_validate_loop_limit()) {
+            runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
+            return -1;
+        }
+        if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+            runtime_transport_note_cp3w_hello_session_loop_complete();
         } else {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
         }
@@ -3299,16 +3685,38 @@ void runtime_entry_impl(void)
     runtime_transport_cp3w_last_frame_result = 0;
     runtime_transport_cp3w_final_datagram_index = 0;
     runtime_transport_cp3w_requests_dispatched = 0;
+    runtime_transport_cp3w_hello_requests_received = 0;
+    runtime_transport_cp3w_hello_successes = 0;
+    runtime_transport_cp3w_hello_version_rejections = 0;
+    runtime_transport_cp3w_hello_responses_submitted = 0;
+    runtime_transport_cp3w_hello_responses_completed = 0;
+    runtime_transport_cp3w_hello_duplicate_requests = 0;
+    runtime_transport_cp3w_hello_renegotiation_rejections = 0;
+    runtime_transport_cp3w_pre_hello_gated_commands = 0;
+    runtime_transport_cp3w_not_negotiated_responses_submitted = 0;
+    runtime_transport_cp3w_not_negotiated_responses_completed = 0;
     runtime_transport_cp3w_ping_requests_received = 0;
     runtime_transport_cp3w_pong_responses_submitted = 0;
     runtime_transport_cp3w_pong_responses_completed = 0;
     runtime_transport_cp3w_unsupported_commands_received = 0;
     runtime_transport_cp3w_unsupported_responses_submitted = 0;
     runtime_transport_cp3w_unsupported_responses_completed = 0;
+    runtime_transport_cp3w_negotiated_flag = 0;
+    runtime_transport_cp3w_selected_protocol_version = 0;
+    runtime_transport_cp3w_client_nonce = 0;
+    runtime_transport_cp3w_client_capabilities = 0;
+    runtime_transport_cp3w_runtime_capabilities = 0;
+    runtime_transport_cp3w_accepted_capabilities = 0;
+    runtime_transport_cp3w_session_id = 0;
+    runtime_transport_cp3w_runtime_build_id = RUNTIME_CP3W_RUNTIME_BUILD_ID;
+    runtime_transport_cp3w_hello_min_protocol_version = 0;
+    runtime_transport_cp3w_hello_max_protocol_version = 0;
+    runtime_transport_cp3w_hello_client_name_length = 0;
     runtime_transport_cp3w_last_command = 0;
     runtime_transport_cp3w_last_response_status = 0;
     runtime_transport_cp3w_last_ping_payload_length = 0;
     runtime_transport_cp3w_last_dispatch_result = 0;
+    runtime_memzero(runtime_transport_cp3w_hello_client_name_bytes, sizeof(runtime_transport_cp3w_hello_client_name_bytes));
     runtime_memzero(runtime_transport_receive_request_bytes, sizeof(runtime_transport_receive_request_bytes));
     runtime_memzero(runtime_transport_receive_source_bytes, sizeof(runtime_transport_receive_source_bytes));
     runtime_memzero(runtime_transport_send_request_bytes, sizeof(runtime_transport_send_request_bytes));
@@ -3386,6 +3794,7 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_PING_PONG_LOOP_COMPLETE
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HELLO_SESSION_LOOP_COMPLETE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_SUBMIT_FAILED
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID
@@ -3397,6 +3806,7 @@ void runtime_poll_entry_impl(void)
             runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_COMPLETE
             || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_LOOP_COMPLETE
             || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_PING_PONG_LOOP_COMPLETE
+            || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HELLO_SESSION_LOOP_COMPLETE
         ) {
             runtime_transport_polls_after_loop_complete = runtime_poll_counter;
         }
@@ -3839,9 +4249,11 @@ void runtime_poll_entry_impl(void)
         if (
             (runtime_transport_is_cp3w_frame_validation_mode() && runtime_transport_validate_cp3w_frame() == 0)
             || (runtime_transport_is_cp3w_ping_pong_mode() && runtime_transport_validate_cp3w_ping_pong_frame() == 0)
+            || (runtime_transport_is_cp3w_hello_session_mode() && runtime_transport_validate_cp3w_ping_pong_frame() == 0)
         ) {
             runtime_set_phase(
                 runtime_transport_is_cp3w_ping_pong_mode()
+                    || runtime_transport_is_cp3w_hello_session_mode()
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_DISPATCH_REQUEST
                     : RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_VALID,
                 RUNTIME_TRANSPORT_POLL_ACTION_WAIT
@@ -3851,6 +4263,8 @@ void runtime_poll_entry_impl(void)
         } else if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
             if (runtime_transport_is_cp3w_ping_pong_mode()) {
                 runtime_transport_note_cp3w_ping_pong_loop_complete();
+            } else if (runtime_transport_is_cp3w_hello_session_mode()) {
+                runtime_transport_note_cp3w_hello_session_loop_complete();
             } else {
                 runtime_transport_note_cp3w_loop_complete();
             }
@@ -3860,15 +4274,36 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_DISPATCH_REQUEST) {
-        s32 dispatch_result = runtime_transport_dispatch_cp3w_ping_pong_request();
+        s32 dispatch_result = runtime_transport_is_cp3w_hello_session_mode()
+            ? runtime_transport_dispatch_cp3w_hello_session_request()
+            : runtime_transport_dispatch_cp3w_ping_pong_request();
         if (dispatch_result == 0) {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_PING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        } else if (runtime_transport_is_cp3w_hello_session_mode() && dispatch_result == 1) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_PING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         } else if (dispatch_result > 0) {
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_UNSUPPORTED_COMMAND, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            runtime_set_phase(
+                dispatch_result == 2
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_HELLO_REJECTED
+                    : dispatch_result == 3
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_HELLO_SUCCESS
+                    : dispatch_result == 4
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_DUPLICATE_HELLO
+                    : dispatch_result == 5
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_RENEGOTIATION_REJECTED
+                    : dispatch_result == 6
+                    ? RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_NOT_NEGOTIATED
+                    : RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_UNSUPPORTED_COMMAND,
+                RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+            );
         } else if (!runtime_transport_validate_loop_limit()) {
             runtime_record_receive_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
         } else if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
-            runtime_transport_note_cp3w_ping_pong_loop_complete();
+            if (runtime_transport_is_cp3w_hello_session_mode()) {
+                runtime_transport_note_cp3w_hello_session_loop_complete();
+            } else {
+                runtime_transport_note_cp3w_ping_pong_loop_complete();
+            }
         } else {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_FRAME_REJECTED, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         }
@@ -3883,6 +4318,26 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_UNSUPPORTED_COMMAND) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_HELLO_SUCCESS) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_HELLO_REJECTED) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_DUPLICATE_HELLO) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_RENEGOTIATION_REJECTED) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_HANDLE_NOT_NEGOTIATED) {
         runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
         goto runtime_poll_exit;
     }
@@ -3913,8 +4368,12 @@ void runtime_poll_entry_impl(void)
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_SUBMIT_DISPATCH_RESPONSE) {
         runtime_transport_polls_before_send = runtime_poll_counter;
         runtime_transport_send_submit_count += 1;
-        if (runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK) {
+        if (runtime_transport_cp3w_last_command == RUNTIME_CP3W_COMMAND_HELLO) {
+            runtime_transport_cp3w_hello_responses_submitted += 1;
+        } else if (runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_OK) {
             runtime_transport_cp3w_pong_responses_submitted += 1;
+        } else if (runtime_transport_cp3w_last_dispatch_result == RUNTIME_CP3W_ERROR_CODE_NOT_NEGOTIATED) {
+            runtime_transport_cp3w_not_negotiated_responses_submitted += 1;
         } else if (runtime_transport_cp3w_last_response_status == RUNTIME_CP3W_RESPONSE_STATUS_ERROR) {
             runtime_transport_cp3w_unsupported_responses_submitted += 1;
         }

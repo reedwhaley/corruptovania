@@ -15,6 +15,8 @@ from randovania.game_connection.executor.memory_operation import (
     MemoryOperationExecutor,
 )
 from randovania.game_connection.executor.prime3_wii_protocol import (
+    DEFAULT_RUNTIME_BUILD_ID,
+    HelloRequestPayload,
     MismatchedRequestIdError,
     Prime3WiiCapability,
     Prime3WiiCommand,
@@ -24,8 +26,10 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiResponseStatus,
     ReadMemoryPayload,
     ServerSideProtocolError,
-    decode_hello_payload,
+    compute_accepted_capabilities,
+    decode_hello_response_payload,
     decode_response,
+    encode_hello_request_payload,
     encode_read_memory_payload,
     encode_request,
 )
@@ -36,6 +40,15 @@ DEFAULT_RETRY_COUNT = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 0.25
 MEMORY_START = 0x80000000
 MEMORY_END = 0x81800000
+CLIENT_CAPABILITIES = (
+    Prime3WiiCapability.HELLO_NEGOTIATION
+    | Prime3WiiCapability.PING
+    | Prime3WiiCapability.STRUCTURED_ERRORS
+    | Prime3WiiCapability.DETERMINISTIC_SESSION_ID
+    | Prime3WiiCapability.READ_MEMORY
+)
+CLIENT_NONCE = 0x43503357
+CLIENT_NAME = "randovania"
 
 
 class _RequestTimeoutError(MemoryOperationException):
@@ -91,7 +104,6 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
     supports_writes = False
     _transport: asyncio.DatagramTransport | None = None
     _protocol_state: _ProtocolState | None = None
-    _max_read_size: int | None = None
     _request_id: int = 0
     _connected: bool = False
 
@@ -143,34 +155,51 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
 
         self._transport = transport
         self._protocol_state = state
-        self._max_read_size = None
         self._connected = False
 
         try:
+            hello_request_payload = encode_hello_request_payload(
+                HelloRequestPayload(
+                    min_protocol_version=1,
+                    max_protocol_version=1,
+                    capabilities=CLIENT_CAPABILITIES,
+                    client_nonce=CLIENT_NONCE,
+                    client_name=CLIENT_NAME,
+                )
+            )
             hello_response = await self._request(
                 Prime3WiiCommand.HELLO,
-                b"",
+                hello_request_payload,
                 expected_command=Prime3WiiCommand.HELLO,
                 disconnect_on_error=False,
             )
-            hello = decode_hello_payload(hello_response.payload)
+            hello = decode_hello_response_payload(hello_response.payload)
             self.logger.debug(
-                "HELLO negotiation succeeded: protocol=%d max_read_size=%d capabilities=0x%x",
-                hello.protocol_version,
-                hello.max_read_size,
-                int(hello.capabilities),
+                "HELLO negotiation succeeded: protocol=%d accepted=0x%x runtime=0x%x session=0x%08x build=0x%08x",
+                hello.selected_protocol_version,
+                int(hello.accepted_client_capabilities),
+                int(hello.runtime_capabilities),
+                hello.session_id,
+                hello.runtime_build_id,
             )
 
-            if hello.protocol_version != 1:
+            if hello.selected_protocol_version != 1:
                 raise MemoryOperationException(
-                    f"Server reported unsupported protocol version {hello.protocol_version}."
+                    f"Server reported unsupported protocol version {hello.selected_protocol_version}."
                 )
-            if not hello.capabilities & Prime3WiiCapability.READ_MEMORY:
+            if hello.runtime_build_id == 0:
+                raise MemoryOperationException("Server reported an invalid runtime build ID of zero.")
+            if not hello.accepted_client_capabilities & Prime3WiiCapability.READ_MEMORY:
                 raise MemoryOperationException("Server does not advertise read-memory support.")
-            if hello.max_read_size <= 0:
-                raise MemoryOperationException("Server reported an invalid maximum read size.")
+            expected_accept = compute_accepted_capabilities(CLIENT_CAPABILITIES, hello.runtime_capabilities)
+            if hello.accepted_client_capabilities != expected_accept:
+                raise MemoryOperationException(
+                    "Server returned an unexpected accepted capability mask "
+                    f"0x{int(hello.accepted_client_capabilities):x}; expected 0x{int(expected_accept):x}."
+                )
+            if hello.runtime_build_id == DEFAULT_RUNTIME_BUILD_ID and hello.session_id == 0:
+                raise MemoryOperationException("Server reported an uninitialized session identifier.")
 
-            self._max_read_size = hello.max_read_size
             self._connected = True
             return None
         except MemoryOperationException as e:
@@ -191,7 +220,6 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
             self.logger.debug("Ignoring disconnect packet failure: %s", e)
         finally:
             self._connected = False
-            self._max_read_size = None
             self._transport = None
             self._protocol_state = None
             try:
@@ -291,19 +319,10 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
             raise AssertionError("Retry loop exited unexpectedly")
 
     async def ping(self) -> None:
-        response = await self._request(Prime3WiiCommand.PING, b"", expected_command=Prime3WiiCommand.PING)
-        if response.payload:
-            raise MemoryOperationException("PING response must not include a payload.")
+        await self._request(Prime3WiiCommand.PING, b"", expected_command=Prime3WiiCommand.PING)
 
     async def _read_memory_raw(self, address: int, size: int) -> bytes:
         _validate_read(address, size)
-        if self._max_read_size is None:
-            raise MemoryOperationException("Server capabilities are unknown; connect() must complete first.")
-        if size > self._max_read_size:
-            raise MemoryOperationException(
-                f"Requested read of {size} bytes exceeds the server maximum of {self._max_read_size}."
-            )
-
         response = await self._request(
             Prime3WiiCommand.READ_MEMORY,
             encode_read_memory_payload(ReadMemoryPayload(address=address, size=size)),

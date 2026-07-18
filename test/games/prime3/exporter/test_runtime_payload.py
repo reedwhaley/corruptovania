@@ -1310,6 +1310,107 @@ def test_runtime_payload_manifest_rejects_cp3w_ping_pong_wrong_terminal_phase() 
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
 
+def test_runtime_payload_manifest_accepts_cp3w_hello_session_transport() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    relocated["embedded_runtime_blob_size"] = 0x360
+    relocated["cache_range_size"] = 0x360
+    relocated["runtime_state_end"] = 0x817E1360
+    transport = dict(relocated["transport"])
+    transport["mode"] = "cp3w_hello_session"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 69
+    transport["terminal_phase_name"] = "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+    transport["cp3w_magic_hex"] = "43503357"
+    transport["cp3w_protocol_version"] = 1
+    transport["cp3w_header_size"] = 16
+    transport["cp3w_crc_size"] = 4
+    transport["cp3w_crc_initial_value"] = 0xFFFFFFFF
+    transport["cp3w_crc_final_xor_value"] = 0xFFFFFFFF
+    transport["cp3w_crc_polynomial"] = 0xEDB88320
+    transport["cp3w_crc_reflected"] = True
+    transport["cp3w_packet_kind_request"] = 1
+    transport["cp3w_packet_kind_response"] = 2
+    transport["cp3w_response_status_error"] = 1
+    transport["cp3w_command_ping"] = 3
+    transport["cp3w_pong_command"] = 3
+    transport["cp3w_pong_uses_ping_command"] = True
+    transport["cp3w_command_reserved_mailbox"] = 127
+    transport["cp3w_error_code_unknown_command"] = 4
+    transport["cp3w_packet_kind_offset"] = 5
+    transport["cp3w_command_offset"] = 6
+    transport["cp3w_response_status_offset"] = 7
+    transport["cp3w_request_id_offset"] = 8
+    transport["cp3w_payload_length_offset"] = 12
+    transport["cp3w_ping_max_payload_length"] = 44
+    transport["cp3w_unsupported_message_ascii"] = "Command is unsupported"
+    transport["cp3w_hello_requests_received_address"] = 0x817E1350
+    transport["cp3w_hello_requests_received_size"] = 4
+    transport["cp3w_hello_successes_address"] = 0x817E134C
+    transport["cp3w_hello_successes_size"] = 4
+    transport["cp3w_hello_version_rejections_address"] = 0x817E1348
+    transport["cp3w_hello_version_rejections_size"] = 4
+    transport["cp3w_hello_responses_submitted_address"] = 0x817E1344
+    transport["cp3w_hello_responses_submitted_size"] = 4
+    transport["cp3w_hello_responses_completed_address"] = 0x817E1340
+    transport["cp3w_hello_responses_completed_size"] = 4
+    transport["cp3w_hello_duplicate_requests_address"] = 0x817E133C
+    transport["cp3w_hello_duplicate_requests_size"] = 4
+    transport["cp3w_hello_renegotiation_rejections_address"] = 0x817E1338
+    transport["cp3w_hello_renegotiation_rejections_size"] = 4
+    transport["cp3w_pre_hello_gated_commands_address"] = 0x817E1334
+    transport["cp3w_pre_hello_gated_commands_size"] = 4
+    transport["cp3w_not_negotiated_responses_submitted_address"] = 0x817E1330
+    transport["cp3w_not_negotiated_responses_submitted_size"] = 4
+    transport["cp3w_not_negotiated_responses_completed_address"] = 0x817E132C
+    transport["cp3w_not_negotiated_responses_completed_size"] = 4
+    transport["cp3w_negotiated_flag_address"] = 0x817E1328
+    transport["cp3w_negotiated_flag_size"] = 4
+    transport["cp3w_selected_protocol_version_address"] = 0x817E1324
+    transport["cp3w_selected_protocol_version_size"] = 4
+    transport["cp3w_client_nonce_address"] = 0x817E1320
+    transport["cp3w_client_nonce_size"] = 4
+    transport["cp3w_client_capabilities_address"] = 0x817E131C
+    transport["cp3w_client_capabilities_size"] = 4
+    transport["cp3w_runtime_capabilities_address"] = 0x817E1318
+    transport["cp3w_runtime_capabilities_size"] = 4
+    transport["cp3w_accepted_capabilities_address"] = 0x817E1314
+    transport["cp3w_accepted_capabilities_size"] = 4
+    transport["cp3w_session_id_address"] = 0x817E1310
+    transport["cp3w_session_id_size"] = 4
+    transport["cp3w_runtime_build_id_address"] = 0x817E130C
+    transport["cp3w_runtime_build_id_size"] = 4
+    relocated["transport"] = transport
+    relocated["abi_probe"] = None
+    raw["relocated_runtime"] = relocated
+
+    parsed = runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+    assert parsed.relocated_runtime is not None
+    assert parsed.relocated_runtime.transport is not None
+    assert parsed.relocated_runtime.transport.mode == "cp3w_hello_session"
+    assert parsed.relocated_runtime.transport.terminal_phase_name == "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+    assert parsed.relocated_runtime.transport.cp3w_hello_requests_received_address == 0x817E1350
+    assert parsed.relocated_runtime.transport.cp3w_runtime_build_id_address == 0x817E130C
+
+
+def test_runtime_payload_manifest_rejects_cp3w_hello_session_wrong_terminal_phase() -> None:
+    manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
+    raw = manifest.to_json_dict()
+    relocated = dict(raw["relocated_runtime"])
+    transport = dict(relocated["transport"])
+    transport["mode"] = "cp3w_hello_session"
+    transport["receive_enabled"] = True
+    transport["send_enabled"] = True
+    transport["terminal_phase_value"] = 61
+    transport["terminal_phase_name"] = "CP3W_PING_PONG_LOOP_COMPLETE"
+    relocated["transport"] = transport
+    raw["relocated_runtime"] = relocated
+
+    with pytest.raises(Prime3DolPatchError, match="CP3W_HELLO_SESSION_LOOP_COMPLETE"):
+        runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

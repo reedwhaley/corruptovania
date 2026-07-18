@@ -1,10 +1,9 @@
 """
-Version 1 UDP protocol used by Corruptovania to read Metroid Prime 3 Wii memory.
+Version 1 UDP protocol used by Corruptovania to communicate with Metroid Prime 3 Wii.
 
-Version 1 is intentionally read-only. It supports HELLO negotiation, PING,
-READ_MEMORY, and DISCONNECT, and reserves a future structured mailbox command
-for bidirectional gameplay communication. Arbitrary memory writes are not part
-of this protocol.
+Version 1 preserves a fixed CP3W packet framing layer and currently defines
+deterministic HELLO negotiation, PING, READ_MEMORY, and DISCONNECT command
+families. Arbitrary memory writes and gameplay mailbox traffic remain deferred.
 
 Packet format, big-endian:
 
@@ -31,9 +30,22 @@ PROTOCOL_VERSION = 1
 HEADER_FORMAT = ">4sBBBBII"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 CRC_SIZE = 4
-HELLO_PAYLOAD_FORMAT = ">HII"
+HELLO_REQUEST_FIXED_FORMAT = ">BBII"
+HELLO_RESPONSE_FIXED_FORMAT = ">BIIIIBB"
 READ_MEMORY_PAYLOAD_FORMAT = ">II"
 ERROR_HEADER_FORMAT = ">HHH"
+HELLO_NAME_LENGTH_FORMAT = ">B"
+HELLO_REQUEST_FIXED_SIZE = struct.calcsize(HELLO_REQUEST_FIXED_FORMAT)
+HELLO_RESPONSE_FIXED_SIZE = struct.calcsize(HELLO_RESPONSE_FIXED_FORMAT)
+HELLO_NAME_LENGTH_SIZE = struct.calcsize(HELLO_NAME_LENGTH_FORMAT)
+HELLO_MAX_NAME_LENGTH = 31
+HELLO_METADATA_VERSION = 1
+DEFAULT_RUNTIME_NAME = "Prime3 Wii Runtime"
+DEFAULT_RUNTIME_BUILD_ID = 0x50335731
+NOT_NEGOTIATED_MESSAGE = "Negotiation required before PING."
+UNSUPPORTED_VERSION_MESSAGE = "Unsupported protocol version range."
+INVALID_STATE_MESSAGE = "Session is already negotiated."
+UNKNOWN_COMMAND_MESSAGE = "Command is unsupported"
 
 
 class Prime3WiiProtocolError(Exception):
@@ -95,8 +107,27 @@ class Prime3WiiResponseStatus(enum.IntEnum):
 
 
 class Prime3WiiCapability(enum.IntFlag):
-    READ_MEMORY = 1 << 0
-    STRUCTURED_MAILBOX = 1 << 1
+    HELLO_NEGOTIATION = 1 << 0
+    PING = 1 << 1
+    STRUCTURED_ERRORS = 1 << 2
+    DETERMINISTIC_SESSION_ID = 1 << 3
+    READ_MEMORY = 1 << 4
+    STRUCTURED_MAILBOX = 1 << 5
+    MEMORY_WRITE = 1 << 6
+    GAMEPLAY_MAILBOX = 1 << 7
+    EVENT_STREAMING = 1 << 8
+    RECONNECT = 1 << 9
+    AUTHENTICATION = 1 << 10
+
+
+HELLO_RUNTIME_CAPABILITIES = (
+    Prime3WiiCapability.HELLO_NEGOTIATION
+    | Prime3WiiCapability.PING
+    | Prime3WiiCapability.STRUCTURED_ERRORS
+    | Prime3WiiCapability.DETERMINISTIC_SESSION_ID
+)
+
+READ_ONLY_RUNTIME_CAPABILITIES = HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY
 
 
 class Prime3WiiErrorCode(enum.IntEnum):
@@ -108,13 +139,32 @@ class Prime3WiiErrorCode(enum.IntEnum):
     CHECKSUM_MISMATCH = 6
     INVALID_ADDRESS = 7
     SERVER_ERROR = 8
+    NOT_NEGOTIATED = 9
+    INVALID_STATE = 10
 
 
 @dataclasses.dataclass(frozen=True)
-class HelloPayload:
-    protocol_version: int
-    max_read_size: int
+class HelloRequestPayload:
+    min_protocol_version: int
+    max_protocol_version: int
     capabilities: Prime3WiiCapability
+    client_nonce: int
+    client_name: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
+class HelloResponsePayload:
+    selected_protocol_version: int
+    runtime_capabilities: Prime3WiiCapability
+    accepted_client_capabilities: Prime3WiiCapability
+    session_id: int
+    runtime_build_id: int
+    runtime_mode: int
+    runtime_metadata_version: int = HELLO_METADATA_VERSION
+    runtime_name: str = DEFAULT_RUNTIME_NAME
+
+
+HelloPayload = HelloResponsePayload
 
 
 @dataclasses.dataclass(frozen=True)
@@ -146,6 +196,87 @@ class Prime3WiiErrorResponse:
     message: str
 
 
+def crc32_bytes(data: bytes) -> int:
+    return zlib.crc32(data) & 0xFFFFFFFF
+
+
+def _validate_u8(value: int, label: str) -> None:
+    if value < 0 or value > 0xFF:
+        raise InvalidPayloadLengthError(f"{label} must fit in uint8, got {value}.")
+
+
+def _validate_u32(value: int, label: str) -> None:
+    if value < 0 or value > 0xFFFFFFFF:
+        raise InvalidPayloadLengthError(f"{label} must fit in uint32, got {value}.")
+
+
+def _encode_bounded_name(name: str, *, field_name: str) -> bytes:
+    encoded = name.encode("utf-8")
+    if len(encoded) > HELLO_MAX_NAME_LENGTH:
+        raise InvalidPayloadLengthError(
+            f"{field_name} must be at most {HELLO_MAX_NAME_LENGTH} UTF-8 bytes, got {len(encoded)}."
+        )
+    return struct.pack(HELLO_NAME_LENGTH_FORMAT, len(encoded)) + encoded
+
+
+def _decode_bounded_name(payload: bytes, *, offset: int, field_name: str) -> tuple[str, int]:
+    if len(payload) < offset + HELLO_NAME_LENGTH_SIZE:
+        raise InvalidPayloadLengthError(f"{field_name} payload is missing the name-length field.")
+    (name_length,) = struct.unpack(HELLO_NAME_LENGTH_FORMAT, payload[offset : offset + HELLO_NAME_LENGTH_SIZE])
+    start = offset + HELLO_NAME_LENGTH_SIZE
+    end = start + name_length
+    if end != len(payload):
+        raise InvalidPayloadLengthError(
+            f"{field_name} payload length mismatch: expected trailing name bytes {name_length}, "
+            f"got {len(payload) - start}."
+        )
+    if name_length > HELLO_MAX_NAME_LENGTH:
+        raise InvalidPayloadLengthError(
+            f"{field_name} name must be at most {HELLO_MAX_NAME_LENGTH} bytes, got {name_length}."
+        )
+    try:
+        return payload[start:end].decode("utf-8"), name_length
+    except UnicodeDecodeError as exc:
+        raise InvalidPayloadLengthError(f"{field_name} name is not valid UTF-8.") from exc
+
+
+def negotiate_protocol_version(payload: HelloRequestPayload) -> int | None:
+    if payload.min_protocol_version > payload.max_protocol_version:
+        return None
+    if payload.min_protocol_version <= PROTOCOL_VERSION <= payload.max_protocol_version:
+        return PROTOCOL_VERSION
+    return None
+
+
+def compute_accepted_capabilities(
+    client_capabilities: Prime3WiiCapability,
+    runtime_capabilities: Prime3WiiCapability,
+) -> Prime3WiiCapability:
+    return Prime3WiiCapability(int(client_capabilities) & int(runtime_capabilities))
+
+
+def derive_session_id(
+    *,
+    selected_protocol_version: int,
+    client_nonce: int,
+    runtime_build_id: int,
+    runtime_capabilities: Prime3WiiCapability,
+    accepted_client_capabilities: Prime3WiiCapability,
+) -> int:
+    _validate_u8(selected_protocol_version, "selected_protocol_version")
+    _validate_u32(client_nonce, "client_nonce")
+    _validate_u32(runtime_build_id, "runtime_build_id")
+    canonical = struct.pack(
+        ">BIIII",
+        selected_protocol_version,
+        client_nonce,
+        int(runtime_build_id),
+        int(runtime_capabilities),
+        int(accepted_client_capabilities),
+    )
+    return crc32_bytes(canonical)
+
+
 def _encode_packet(
     packet_kind: Prime3WiiPacketKind,
     command: Prime3WiiCommand,
@@ -164,7 +295,7 @@ def _encode_packet(
         len(payload),
     )
     body = header + payload
-    checksum = zlib.crc32(body) & 0xFFFFFFFF
+    checksum = crc32_bytes(body)
     return body + struct.pack(">I", checksum)
 
 
@@ -176,7 +307,7 @@ def _decode_packet(
 
     payload_end = len(packet) - CRC_SIZE
     body = packet[:payload_end]
-    actual_crc = zlib.crc32(body) & 0xFFFFFFFF
+    actual_crc = crc32_bytes(body)
     expected_crc = struct.unpack(">I", packet[payload_end:])[0]
     if actual_crc != expected_crc:
         raise CorruptedChecksumError("CRC32 mismatch")
@@ -260,25 +391,98 @@ def decode_response(
     return Prime3WiiResponse(command=command, request_id=request_id, status=response_status, payload=payload)
 
 
-def encode_hello_payload(payload: HelloPayload) -> bytes:
-    return struct.pack(
-        HELLO_PAYLOAD_FORMAT,
-        payload.protocol_version,
-        payload.max_read_size,
-        int(payload.capabilities),
+def encode_hello_request_payload(payload: HelloRequestPayload) -> bytes:
+    _validate_u8(payload.min_protocol_version, "min_protocol_version")
+    _validate_u8(payload.max_protocol_version, "max_protocol_version")
+    _validate_u32(payload.client_nonce, "client_nonce")
+    name_bytes = _encode_bounded_name(payload.client_name, field_name="HELLO request")
+    return (
+        struct.pack(
+            HELLO_REQUEST_FIXED_FORMAT,
+            payload.min_protocol_version,
+            payload.max_protocol_version,
+            int(payload.capabilities),
+            payload.client_nonce,
+        )
+        + name_bytes
     )
+
+
+def decode_hello_request_payload(payload: bytes) -> HelloRequestPayload:
+    if len(payload) < HELLO_REQUEST_FIXED_SIZE + HELLO_NAME_LENGTH_SIZE:
+        raise InvalidPayloadLengthError(
+            f"HELLO request payload must be at least {HELLO_REQUEST_FIXED_SIZE + HELLO_NAME_LENGTH_SIZE} bytes, "
+            f"got {len(payload)}"
+        )
+    min_protocol_version, max_protocol_version, capabilities, client_nonce = struct.unpack(
+        HELLO_REQUEST_FIXED_FORMAT, payload[:HELLO_REQUEST_FIXED_SIZE]
+    )
+    client_name, _ = _decode_bounded_name(payload, offset=HELLO_REQUEST_FIXED_SIZE, field_name="HELLO request")
+    return HelloRequestPayload(
+        min_protocol_version=min_protocol_version,
+        max_protocol_version=max_protocol_version,
+        capabilities=Prime3WiiCapability(capabilities),
+        client_nonce=client_nonce,
+        client_name=client_name,
+    )
+
+
+def encode_hello_response_payload(payload: HelloResponsePayload) -> bytes:
+    _validate_u8(payload.selected_protocol_version, "selected_protocol_version")
+    _validate_u32(payload.session_id, "session_id")
+    _validate_u32(payload.runtime_build_id, "runtime_build_id")
+    _validate_u8(payload.runtime_mode, "runtime_mode")
+    _validate_u8(payload.runtime_metadata_version, "runtime_metadata_version")
+    name_bytes = _encode_bounded_name(payload.runtime_name, field_name="HELLO response")
+    return (
+        struct.pack(
+            HELLO_RESPONSE_FIXED_FORMAT,
+            payload.selected_protocol_version,
+            int(payload.runtime_capabilities),
+            int(payload.accepted_client_capabilities),
+            payload.session_id,
+            payload.runtime_build_id,
+            payload.runtime_mode,
+            payload.runtime_metadata_version,
+        )
+        + name_bytes
+    )
+
+
+def decode_hello_response_payload(payload: bytes) -> HelloResponsePayload:
+    if len(payload) < HELLO_RESPONSE_FIXED_SIZE + HELLO_NAME_LENGTH_SIZE:
+        raise InvalidPayloadLengthError(
+            f"HELLO response payload must be at least {HELLO_RESPONSE_FIXED_SIZE + HELLO_NAME_LENGTH_SIZE} bytes, "
+            f"got {len(payload)}"
+        )
+    (
+        selected_protocol_version,
+        runtime_capabilities,
+        accepted_client_capabilities,
+        session_id,
+        runtime_build_id,
+        runtime_mode,
+        runtime_metadata_version,
+    ) = struct.unpack(HELLO_RESPONSE_FIXED_FORMAT, payload[:HELLO_RESPONSE_FIXED_SIZE])
+    runtime_name, _ = _decode_bounded_name(payload, offset=HELLO_RESPONSE_FIXED_SIZE, field_name="HELLO response")
+    return HelloResponsePayload(
+        selected_protocol_version=selected_protocol_version,
+        runtime_capabilities=Prime3WiiCapability(runtime_capabilities),
+        accepted_client_capabilities=Prime3WiiCapability(accepted_client_capabilities),
+        session_id=session_id,
+        runtime_build_id=runtime_build_id,
+        runtime_mode=runtime_mode,
+        runtime_metadata_version=runtime_metadata_version,
+        runtime_name=runtime_name,
+    )
+
+
+def encode_hello_payload(payload: HelloPayload) -> bytes:
+    return encode_hello_response_payload(payload)
 
 
 def decode_hello_payload(payload: bytes) -> HelloPayload:
-    expected_size = struct.calcsize(HELLO_PAYLOAD_FORMAT)
-    if len(payload) != expected_size:
-        raise InvalidPayloadLengthError(f"HELLO payload must be {expected_size} bytes, got {len(payload)}")
-    protocol_version, max_read_size, capabilities = struct.unpack(HELLO_PAYLOAD_FORMAT, payload)
-    return HelloPayload(
-        protocol_version=protocol_version,
-        max_read_size=max_read_size,
-        capabilities=Prime3WiiCapability(capabilities),
-    )
+    return decode_hello_response_payload(payload)
 
 
 def encode_read_memory_payload(payload: ReadMemoryPayload) -> bytes:

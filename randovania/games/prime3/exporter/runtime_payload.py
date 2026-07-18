@@ -370,6 +370,26 @@ class Prime3RuntimeTransportMetadata:
     cp3w_final_datagram_index_size: int | None = None
     cp3w_requests_dispatched_address: int | None = None
     cp3w_requests_dispatched_size: int | None = None
+    cp3w_hello_requests_received_address: int | None = None
+    cp3w_hello_requests_received_size: int | None = None
+    cp3w_hello_successes_address: int | None = None
+    cp3w_hello_successes_size: int | None = None
+    cp3w_hello_version_rejections_address: int | None = None
+    cp3w_hello_version_rejections_size: int | None = None
+    cp3w_hello_responses_submitted_address: int | None = None
+    cp3w_hello_responses_submitted_size: int | None = None
+    cp3w_hello_responses_completed_address: int | None = None
+    cp3w_hello_responses_completed_size: int | None = None
+    cp3w_hello_duplicate_requests_address: int | None = None
+    cp3w_hello_duplicate_requests_size: int | None = None
+    cp3w_hello_renegotiation_rejections_address: int | None = None
+    cp3w_hello_renegotiation_rejections_size: int | None = None
+    cp3w_pre_hello_gated_commands_address: int | None = None
+    cp3w_pre_hello_gated_commands_size: int | None = None
+    cp3w_not_negotiated_responses_submitted_address: int | None = None
+    cp3w_not_negotiated_responses_submitted_size: int | None = None
+    cp3w_not_negotiated_responses_completed_address: int | None = None
+    cp3w_not_negotiated_responses_completed_size: int | None = None
     cp3w_ping_requests_received_address: int | None = None
     cp3w_ping_requests_received_size: int | None = None
     cp3w_pong_responses_submitted_address: int | None = None
@@ -382,6 +402,22 @@ class Prime3RuntimeTransportMetadata:
     cp3w_unsupported_responses_submitted_size: int | None = None
     cp3w_unsupported_responses_completed_address: int | None = None
     cp3w_unsupported_responses_completed_size: int | None = None
+    cp3w_negotiated_flag_address: int | None = None
+    cp3w_negotiated_flag_size: int | None = None
+    cp3w_selected_protocol_version_address: int | None = None
+    cp3w_selected_protocol_version_size: int | None = None
+    cp3w_client_nonce_address: int | None = None
+    cp3w_client_nonce_size: int | None = None
+    cp3w_client_capabilities_address: int | None = None
+    cp3w_client_capabilities_size: int | None = None
+    cp3w_runtime_capabilities_address: int | None = None
+    cp3w_runtime_capabilities_size: int | None = None
+    cp3w_accepted_capabilities_address: int | None = None
+    cp3w_accepted_capabilities_size: int | None = None
+    cp3w_session_id_address: int | None = None
+    cp3w_session_id_size: int | None = None
+    cp3w_runtime_build_id_address: int | None = None
+    cp3w_runtime_build_id_size: int | None = None
     cp3w_last_command_address: int | None = None
     cp3w_last_command_size: int | None = None
     cp3w_last_response_status_address: int | None = None
@@ -711,16 +747,23 @@ class Prime3RuntimeTransportMetadata:
         is_recv_send_loop = self.mode == "retail_wrapper_recv_send_loop"
         is_cp3w_frame_validation = self.mode == "cp3w_frame_validation"
         is_cp3w_ping_pong = self.mode == "cp3w_ping_pong"
+        is_cp3w_hello_session = self.mode == "cp3w_hello_session"
         if self.receive_enabled and not is_recvfrom_once:
             if (
                 not is_recv_send_once
                 and not is_recv_send_loop
                 and not is_cp3w_frame_validation
                 and not is_cp3w_ping_pong
+                and not is_cp3w_hello_session
             ):
                 raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
         if (
-            is_recvfrom_once or is_recv_send_once or is_recv_send_loop or is_cp3w_frame_validation or is_cp3w_ping_pong
+            is_recvfrom_once
+            or is_recv_send_once
+            or is_recv_send_loop
+            or is_cp3w_frame_validation
+            or is_cp3w_ping_pong
+            or is_cp3w_hello_session
         ) and not self.receive_enabled:
             raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
         if (
@@ -729,10 +772,15 @@ class Prime3RuntimeTransportMetadata:
             and not is_recv_send_loop
             and not is_cp3w_frame_validation
             and not is_cp3w_ping_pong
+            and not is_cp3w_hello_session
         ):
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
         if (
-            is_recv_send_once or is_recv_send_loop or is_cp3w_frame_validation or is_cp3w_ping_pong
+            is_recv_send_once
+            or is_recv_send_loop
+            or is_cp3w_frame_validation
+            or is_cp3w_ping_pong
+            or is_cp3w_hello_session
         ) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
@@ -786,6 +834,12 @@ class Prime3RuntimeTransportMetadata:
         ):
             raise Prime3DolPatchError(
                 "CP3W ping/pong metadata must use the CP3W_PING_PONG_LOOP_COMPLETE terminal phase."
+            )
+        if is_cp3w_hello_session and (
+            self.terminal_phase_value != 69 or self.terminal_phase_name != "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+        ):
+            raise Prime3DolPatchError(
+                "CP3W hello/session metadata must use the CP3W_HELLO_SESSION_LOOP_COMPLETE terminal phase."
             )
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
@@ -1863,6 +1917,38 @@ class Prime3RuntimeTransportMetadata:
             cp3w_final_datagram_index_size=_json_optional_int(data, "cp3w_final_datagram_index_size"),
             cp3w_requests_dispatched_address=_json_optional_int(data, "cp3w_requests_dispatched_address"),
             cp3w_requests_dispatched_size=_json_optional_int(data, "cp3w_requests_dispatched_size"),
+            cp3w_hello_requests_received_address=_json_optional_int(data, "cp3w_hello_requests_received_address"),
+            cp3w_hello_requests_received_size=_json_optional_int(data, "cp3w_hello_requests_received_size"),
+            cp3w_hello_successes_address=_json_optional_int(data, "cp3w_hello_successes_address"),
+            cp3w_hello_successes_size=_json_optional_int(data, "cp3w_hello_successes_size"),
+            cp3w_hello_version_rejections_address=_json_optional_int(data, "cp3w_hello_version_rejections_address"),
+            cp3w_hello_version_rejections_size=_json_optional_int(data, "cp3w_hello_version_rejections_size"),
+            cp3w_hello_responses_submitted_address=_json_optional_int(data, "cp3w_hello_responses_submitted_address"),
+            cp3w_hello_responses_submitted_size=_json_optional_int(data, "cp3w_hello_responses_submitted_size"),
+            cp3w_hello_responses_completed_address=_json_optional_int(data, "cp3w_hello_responses_completed_address"),
+            cp3w_hello_responses_completed_size=_json_optional_int(data, "cp3w_hello_responses_completed_size"),
+            cp3w_hello_duplicate_requests_address=_json_optional_int(data, "cp3w_hello_duplicate_requests_address"),
+            cp3w_hello_duplicate_requests_size=_json_optional_int(data, "cp3w_hello_duplicate_requests_size"),
+            cp3w_hello_renegotiation_rejections_address=_json_optional_int(
+                data, "cp3w_hello_renegotiation_rejections_address"
+            ),
+            cp3w_hello_renegotiation_rejections_size=_json_optional_int(
+                data, "cp3w_hello_renegotiation_rejections_size"
+            ),
+            cp3w_pre_hello_gated_commands_address=_json_optional_int(data, "cp3w_pre_hello_gated_commands_address"),
+            cp3w_pre_hello_gated_commands_size=_json_optional_int(data, "cp3w_pre_hello_gated_commands_size"),
+            cp3w_not_negotiated_responses_submitted_address=_json_optional_int(
+                data, "cp3w_not_negotiated_responses_submitted_address"
+            ),
+            cp3w_not_negotiated_responses_submitted_size=_json_optional_int(
+                data, "cp3w_not_negotiated_responses_submitted_size"
+            ),
+            cp3w_not_negotiated_responses_completed_address=_json_optional_int(
+                data, "cp3w_not_negotiated_responses_completed_address"
+            ),
+            cp3w_not_negotiated_responses_completed_size=_json_optional_int(
+                data, "cp3w_not_negotiated_responses_completed_size"
+            ),
             cp3w_ping_requests_received_address=_json_optional_int(data, "cp3w_ping_requests_received_address"),
             cp3w_ping_requests_received_size=_json_optional_int(data, "cp3w_ping_requests_received_size"),
             cp3w_pong_responses_submitted_address=_json_optional_int(data, "cp3w_pong_responses_submitted_address"),
@@ -1887,6 +1973,24 @@ class Prime3RuntimeTransportMetadata:
             cp3w_unsupported_responses_completed_size=_json_optional_int(
                 data, "cp3w_unsupported_responses_completed_size"
             ),
+            cp3w_negotiated_flag_address=_json_optional_int(data, "cp3w_negotiated_flag_address"),
+            cp3w_negotiated_flag_size=_json_optional_int(data, "cp3w_negotiated_flag_size"),
+            cp3w_selected_protocol_version_address=_json_optional_int(
+                data, "cp3w_selected_protocol_version_address"
+            ),
+            cp3w_selected_protocol_version_size=_json_optional_int(data, "cp3w_selected_protocol_version_size"),
+            cp3w_client_nonce_address=_json_optional_int(data, "cp3w_client_nonce_address"),
+            cp3w_client_nonce_size=_json_optional_int(data, "cp3w_client_nonce_size"),
+            cp3w_client_capabilities_address=_json_optional_int(data, "cp3w_client_capabilities_address"),
+            cp3w_client_capabilities_size=_json_optional_int(data, "cp3w_client_capabilities_size"),
+            cp3w_runtime_capabilities_address=_json_optional_int(data, "cp3w_runtime_capabilities_address"),
+            cp3w_runtime_capabilities_size=_json_optional_int(data, "cp3w_runtime_capabilities_size"),
+            cp3w_accepted_capabilities_address=_json_optional_int(data, "cp3w_accepted_capabilities_address"),
+            cp3w_accepted_capabilities_size=_json_optional_int(data, "cp3w_accepted_capabilities_size"),
+            cp3w_session_id_address=_json_optional_int(data, "cp3w_session_id_address"),
+            cp3w_session_id_size=_json_optional_int(data, "cp3w_session_id_size"),
+            cp3w_runtime_build_id_address=_json_optional_int(data, "cp3w_runtime_build_id_address"),
+            cp3w_runtime_build_id_size=_json_optional_int(data, "cp3w_runtime_build_id_size"),
             cp3w_last_command_address=_json_optional_int(data, "cp3w_last_command_address"),
             cp3w_last_command_size=_json_optional_int(data, "cp3w_last_command_size"),
             cp3w_last_response_status_address=_json_optional_int(data, "cp3w_last_response_status_address"),

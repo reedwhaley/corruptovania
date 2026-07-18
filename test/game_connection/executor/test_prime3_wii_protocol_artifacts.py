@@ -7,10 +7,13 @@ import pytest
 from randovania.game_connection.executor import prime3_wii_protocol
 from randovania.game_connection.executor.prime3_wii_protocol import (
     CRC_SIZE,
-    ERROR_HEADER_FORMAT,
+    DEFAULT_RUNTIME_BUILD_ID,
     HEADER_FORMAT,
     HEADER_SIZE,
-    HELLO_PAYLOAD_FORMAT,
+    HELLO_REQUEST_FIXED_FORMAT,
+    HELLO_REQUEST_FIXED_SIZE,
+    HELLO_RESPONSE_FIXED_FORMAT,
+    HELLO_RESPONSE_FIXED_SIZE,
     PROTOCOL_MAGIC,
     PROTOCOL_VERSION,
     READ_MEMORY_PAYLOAD_FORMAT,
@@ -31,18 +34,19 @@ def test_protocol_manifest_matches_python_protocol():
     assert manifest["magic_ascii"] == PROTOCOL_MAGIC.decode("ascii")
     assert manifest["magic_hex"] == PROTOCOL_MAGIC.hex()
     assert manifest["protocol_version"] == PROTOCOL_VERSION
+    assert manifest["default_runtime_build_id"] == DEFAULT_RUNTIME_BUILD_ID
     assert manifest["packet_layout"]["header_format"] == HEADER_FORMAT
     assert manifest["packet_layout"]["header_size"] == HEADER_SIZE
     assert manifest["packet_layout"]["crc_size"] == CRC_SIZE
     assert manifest["packet_layout"]["fixed_packet_overhead"] == HEADER_SIZE + CRC_SIZE
-    assert manifest["payload_layouts"]["hello_response"]["struct_format"] == HELLO_PAYLOAD_FORMAT
-    assert manifest["payload_layouts"]["hello_response"]["payload_size"] == struct.calcsize(HELLO_PAYLOAD_FORMAT)
+    assert manifest["payload_layouts"]["hello_request"]["struct_format"] == HELLO_REQUEST_FIXED_FORMAT
+    assert manifest["payload_layouts"]["hello_request"]["fixed_size"] == HELLO_REQUEST_FIXED_SIZE
+    assert manifest["payload_layouts"]["hello_response"]["struct_format"] == HELLO_RESPONSE_FIXED_FORMAT
+    assert manifest["payload_layouts"]["hello_response"]["fixed_size"] == HELLO_RESPONSE_FIXED_SIZE
     assert manifest["payload_layouts"]["read_memory_request"]["struct_format"] == READ_MEMORY_PAYLOAD_FORMAT
     assert manifest["payload_layouts"]["read_memory_request"]["payload_size"] == struct.calcsize(
         READ_MEMORY_PAYLOAD_FORMAT
     )
-    assert manifest["payload_layouts"]["error_response"]["struct_format"] == ERROR_HEADER_FORMAT
-    assert manifest["payload_layouts"]["error_response"]["fixed_header_size"] == struct.calcsize(ERROR_HEADER_FORMAT)
 
 
 def test_protocol_vectors_are_deterministic_json():
@@ -60,7 +64,7 @@ def test_protocol_vectors_decode_as_declared():
         "ping_response",
         "disconnect_request",
         "disconnect_response",
-        "invalid_range_error_response",
+        "not_negotiated_error_response",
         "corrupted_crc_packet",
         "truncated_packet",
         "reserved_mailbox_command",

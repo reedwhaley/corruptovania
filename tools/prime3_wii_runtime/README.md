@@ -79,6 +79,7 @@ python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-r
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-recv-send-loop --ios-recv-send-loop-count 3 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-cp3w-frame-validation --ios-cp3w-frame-validation-count 6 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-cp3w-ping-pong --ios-cp3w-ping-pong-count 8 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-cp3w-hello-session --ios-cp3w-hello-session-count 10 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 ```
 
 Artifacts are written to `build/prime3_wii_runtime/` or the requested `--output-dir`:
@@ -125,6 +126,53 @@ The current `--ios-recv-send-loop` proof extends that bounded sequence through `
 The current `--ios-cp3w-frame-validation` proof reuses that bounded receive/reply transport but inserts a CP3W parser and framed fixed reply before send submission. `--ios-cp3w-frame-validation-count` defaults to `6`, accepts only `1..100`, rejects `0`, negatives, non-integers, use without the framing flag, and conflicting diagnostic modes. The CP3W-specific runtime phases are `50=CP3W_VALIDATE_FRAME`, `51=CP3W_FRAME_VALID`, `52=CP3W_FRAME_REJECTED`, `53=CP3W_SUBMIT_RESPONSE`, `54=CP3W_WAIT_RESPONSE`, and `55=CP3W_FRAME_LOOP_COMPLETE`.
 
 The current `--ios-cp3w-ping-pong` proof builds directly on that framing runtime and adds bounded command dispatch for canonical CP3W `PING` and structured unsupported-command replies. `--ios-cp3w-ping-pong-count` defaults to `8`, accepts only `1..100`, rejects `0`, negatives, non-integers, use without the ping/pong flag, and conflicting diagnostic modes. The added phases are `56=CP3W_DISPATCH_REQUEST`, `57=CP3W_HANDLE_PING`, `58=CP3W_HANDLE_UNSUPPORTED_COMMAND`, `59=CP3W_SUBMIT_DISPATCH_RESPONSE`, `60=CP3W_WAIT_DISPATCH_RESPONSE`, and `61=CP3W_PING_PONG_LOOP_COMPLETE`.
+
+The current `--ios-cp3w-hello-session` proof builds on the established CP3W framing and ping/pong dispatch path and adds deterministic HELLO/session negotiation before session-required commands may execute. `--ios-cp3w-hello-session-count` defaults to `10`, accepts only `1..100`, rejects `0`, negatives, non-integers, use without the HELLO/session flag, and conflicting diagnostic modes. The added phases are `62=CP3W_PROCESS_HELLO`, `63=CP3W_NEGOTIATE_HELLO_VERSION`, `64=CP3W_HANDLE_HELLO_SUCCESS`, `65=CP3W_HANDLE_HELLO_REJECTED`, `66=CP3W_HANDLE_DUPLICATE_HELLO`, `67=CP3W_HANDLE_RENEGOTIATION_REJECTED`, `68=CP3W_HANDLE_NOT_NEGOTIATED`, and `69=CP3W_HELLO_SESSION_LOOP_COMPLETE`.
+
+HELLO/session protocol behavior:
+
+- supported CP3W protocol version: `1`
+- HELLO command value: `1`
+- PING command value: `3`
+- runtime capability mask: `0x0F`
+- runtime build ID: `0x50335731`
+- response statuses: `0=OK`, `1=ERROR`
+- structured error codes used by this milestone: `3=UNSUPPORTED_VERSION`, `4=UNKNOWN_COMMAND`, `9=NOT_NEGOTIATED`, `10=INVALID_STATE`
+- HELLO request fixed layout: `>BBII` followed by `client_name_length:uint8` and bounded UTF-8 bytes
+- HELLO response fixed layout: `>BIIIIBB` followed by `runtime_name_length:uint8` and bounded UTF-8 bytes
+- accepted capabilities are computed as the bitwise intersection of client capabilities and runtime capabilities
+- Deterministic session-ID derivation uses big-endian CRC32 over `selected_protocol_version:uint8`, `client_nonce:uint32`, `runtime_build_id:uint32`, `runtime_capabilities:uint32`, and `accepted_client_capabilities:uint32`
+- pre-HELLO command gating precedence is: malformed frame `->` no response, HELLO `->` negotiate/reject, known session-required command before HELLO `->` `NOT_NEGOTIATED`, unknown command `->` `UNKNOWN_COMMAND`, known command after HELLO `->` normal dispatch
+- pre-HELLO PING returns exactly one structured `NOT_NEGOTIATED` error with message `Negotiation required before PING.`
+- unsupported-version HELLO returns exactly one structured `UNSUPPORTED_VERSION` error with message `Unsupported protocol version range.` and does not negotiate a session
+- successful HELLO negotiates protocol version `1`, records the client nonce and capability mask, exposes runtime capabilities, returns runtime name `Prime3 Wii Runtime`, returns runtime build ID `0x50335731`, and computes the deterministic session ID exactly once
+- identical duplicate HELLO returns another successful HELLO response with the new request ID but the same negotiated session ID and stored session state
+- changed HELLO after negotiation returns exactly one structured `INVALID_STATE` error with message `Session is already negotiated.`
+- post-HELLO PING executes normally and echoes binary payload bytes exactly, including zero bytes
+- unsupported but well-formed commands return exactly one structured `UNKNOWN_COMMAND` error with message `Command is unsupported`
+- malformed frames such as invalid magic and bad CRC receive no response
+
+Observer expectations for HELLO/session mode:
+
+- `cp3w_hello_requests_received`
+- `cp3w_hello_successes`
+- `cp3w_hello_version_rejections`
+- `cp3w_hello_responses_submitted`
+- `cp3w_hello_responses_completed`
+- `cp3w_hello_duplicate_requests`
+- `cp3w_hello_renegotiation_rejections`
+- `cp3w_pre_hello_gated_commands`
+- `cp3w_not_negotiated_responses_submitted`
+- `cp3w_not_negotiated_responses_completed`
+- `cp3w_negotiated_flag`
+- `cp3w_selected_protocol_version`
+- `cp3w_client_nonce`
+- `cp3w_client_capabilities`
+- `cp3w_runtime_capabilities`
+- `cp3w_accepted_capabilities`
+- `cp3w_session_id`
+- `cp3w_runtime_build_id`
+- terminal phase `CP3W_HELLO_SESSION_LOOP_COMPLETE` with no further receive or send submission after the final reply completes
 
 CP3W packet format:
 
@@ -185,11 +233,22 @@ Live CP3W ping/pong validation procedure:
 5. Use `python host/udp_cp3w_ping_pong_test.py --host 127.0.0.1 --port 43674` to inject one canonical `PING` request and one canonical unsupported `DISCONNECT` request.
 6. Verify that the `PING` request receives an echoed `PING` response, the unsupported request receives a structured `UNKNOWN_COMMAND` error response with message `Command is unsupported`, and the runtime reaches terminal `CP3W_PING_PONG_LOOP_COMPLETE` with stable dispatch counters and no extra replies.
 
+Live CP3W HELLO/session validation procedure:
+
+1. Build the HELLO/session payload with `--ios-cp3w-hello-session --ios-cp3w-hello-session-count 10`.
+2. Patch a copied CDV `main.dol` with `build_probe_dol.py --install-recurring-poll-hook --enable-ios-udp-diagnostic`.
+3. Rebuild the ISO, round-trip extract it, and verify the patched DOL hash matches exactly.
+4. Launch the rebuilt ISO in Dolphin and wait for transport phase `WAIT_RECEIVE`.
+5. Use `python host/udp_cp3w_hello_session_test.py --host 127.0.0.1 --port 43674` to inject the deterministic ten-datagram sequence: pre-HELLO PING, unsupported-version HELLO, valid HELLO, identical duplicate HELLO, changed HELLO, post-HELLO PING, unsupported command, invalid magic, bad CRC, and final zero-byte PING.
+6. Verify that the runtime reaches terminal `CP3W_HELLO_SESSION_LOOP_COMPLETE`, returns no reply for malformed frames, returns exactly one reply for every structurally valid handled request, preserves request IDs, returns the expected structured error messages, derives the deterministic session ID correctly, and remains stable with no extra replies after the terminal hold.
+
 Workspace cleanup behavior:
 
 - validation workspaces should be created under `E:\Temp\p3-ios-*` while `E:` has at least `25 GB` free
 - if `E:` does not have enough space, use `C:\Temp` for the workspace but continue reading the source extraction from `E:\ROMS\CorruptionCDVExtract`
 - after a successful milestone, delete intermediate workspaces and keep only the newest successful validation workspace plus reports
+- screenshots were intentionally skipped by user instruction
+- Dolphin-only validation is currently covered; physical Wii has not yet been validated
 
 Known limitations:
 

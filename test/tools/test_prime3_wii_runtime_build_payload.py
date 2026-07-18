@@ -782,6 +782,71 @@ def test_main_rejects_cp3w_ping_pong_count_without_flag(
         module.main()
 
 
+def test_main_selects_cp3w_hello_session_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_hello_session_mode")
+    captured: dict[str, object] = {}
+
+    def _fake_build(output_dir: Path, **kwargs):
+        captured["output_dir"] = output_dir
+        captured.update(kwargs)
+        raise RuntimeError("stop after argument selection")
+
+    monkeypatch.setattr(module, "build_prime3_runtime_payload", _fake_build)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-hello-session",
+            "--ios-cp3w-hello-session-count",
+            "10",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after argument selection"):
+        module.main()
+
+    assert captured["ios_udp_mode"] == "cp3w_hello_session"
+    assert captured["ios_udp_loop_count"] == 10
+    assert captured["enable_ios_udp_diagnostic"] is True
+    assert captured["payload_mode"] == "relocated_continue"
+
+
+def test_main_rejects_cp3w_hello_session_count_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_hello_session_count_rejected")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-hello-session-count",
+            "10",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="requires --ios-cp3w-hello-session"):
+        module.main()
+
+
 @pytest.mark.parametrize("count", [0, -1, 101])
 def test_main_rejects_out_of_range_cp3w_ping_pong_count(
     monkeypatch: pytest.MonkeyPatch,
@@ -798,6 +863,36 @@ def test_main_rejects_out_of_range_cp3w_ping_pong_count(
             "--enable-ios-udp-diagnostic",
             "--ios-cp3w-ping-pong",
             "--ios-cp3w-ping-pong-count",
+            str(count),
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="must be between 1 and 100"):
+        module.main()
+
+
+@pytest.mark.parametrize("count", [0, -1, 101])
+def test_main_rejects_out_of_range_cp3w_hello_session_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    count: int,
+) -> None:
+    module = _load_build_module(f"prime3_wii_runtime_build_payload_cp3w_hello_session_count_{count}")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-hello-session",
+            "--ios-cp3w-hello-session-count",
             str(count),
             "--reserved-high",
             "0x817E0000",
@@ -870,6 +965,34 @@ def test_main_rejects_non_integer_cp3w_frame_validation_count(
         module.main()
 
 
+def test_main_rejects_non_integer_cp3w_hello_session_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_hello_session_count_non_integer")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-hello-session",
+            "--ios-cp3w-hello-session-count",
+            "abc",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        module.main()
+
+
 def test_main_rejects_conflicting_cp3w_and_loop_modes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -884,6 +1007,33 @@ def test_main_rejects_conflicting_cp3w_and_loop_modes(
             "--enable-ios-udp-diagnostic",
             "--ios-recv-send-loop",
             "--ios-cp3w-frame-validation",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="at most one IOS UDP diagnostic sub-mode flag"):
+        module.main()
+
+
+def test_main_rejects_conflicting_cp3w_ping_pong_and_hello_session_modes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_ping_pong_hello_conflict")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-ping-pong",
+            "--ios-cp3w-hello-session",
             "--reserved-high",
             "0x817E0000",
             "--diagnostic-address",
@@ -1042,6 +1192,57 @@ def test_build_prime3_runtime_payload_relocated_continue_cp3w_ping_pong_manifest
     assert transport.cp3w_last_response_status_address is not None
     assert transport.cp3w_last_ping_payload_length_address is not None
     assert transport.cp3w_last_dispatch_result_address is not None
+
+
+def test_build_prime3_runtime_payload_relocated_continue_cp3w_hello_session_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_hello_session_manifest_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="cp3w_hello_session",
+        ios_udp_loop_count=10,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "cp3w_hello_session"
+    assert transport.receive_enabled is True
+    assert transport.send_enabled is True
+    assert transport.terminal_phase_value == 69
+    assert transport.terminal_phase_name == "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+    assert transport.cp3w_response_status_error == 1
+    assert transport.cp3w_command_ping == 3
+    assert transport.cp3w_pong_command == 3
+    assert transport.cp3w_pong_uses_ping_command is True
+    assert transport.cp3w_error_code_unknown_command == 4
+    assert transport.cp3w_ping_max_payload_length is not None
+    assert transport.cp3w_unsupported_message_ascii == "Command is unsupported"
+    assert transport.cp3w_hello_requests_received_address is not None
+    assert transport.cp3w_hello_successes_address is not None
+    assert transport.cp3w_hello_version_rejections_address is not None
+    assert transport.cp3w_hello_responses_submitted_address is not None
+    assert transport.cp3w_hello_responses_completed_address is not None
+    assert transport.cp3w_hello_duplicate_requests_address is not None
+    assert transport.cp3w_hello_renegotiation_rejections_address is not None
+    assert transport.cp3w_pre_hello_gated_commands_address is not None
+    assert transport.cp3w_not_negotiated_responses_submitted_address is not None
+    assert transport.cp3w_not_negotiated_responses_completed_address is not None
+    assert transport.cp3w_negotiated_flag_address is not None
+    assert transport.cp3w_selected_protocol_version_address is not None
+    assert transport.cp3w_client_nonce_address is not None
+    assert transport.cp3w_client_capabilities_address is not None
+    assert transport.cp3w_runtime_capabilities_address is not None
+    assert transport.cp3w_accepted_capabilities_address is not None
+    assert transport.cp3w_session_id_address is not None
+    assert transport.cp3w_runtime_build_id_address is not None
 
 
 def test_validate_retail_call_veneer_instructions_accepts_balanced_lr_restore() -> None:

@@ -103,6 +103,14 @@ TRANSPORT_PHASE_NAMES = {
     59: "CP3W_SUBMIT_DISPATCH_RESPONSE",
     60: "CP3W_WAIT_DISPATCH_RESPONSE",
     61: "CP3W_PING_PONG_LOOP_COMPLETE",
+    62: "CP3W_PROCESS_HELLO",
+    63: "CP3W_NEGOTIATE_HELLO_VERSION",
+    64: "CP3W_HANDLE_HELLO_SUCCESS",
+    65: "CP3W_HANDLE_HELLO_REJECTED",
+    66: "CP3W_HANDLE_DUPLICATE_HELLO",
+    67: "CP3W_HANDLE_RENEGOTIATION_REJECTED",
+    68: "CP3W_HANDLE_NOT_NEGOTIATED",
+    69: "CP3W_HELLO_SESSION_LOOP_COMPLETE",
     21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
     22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
     23: "BIND_FAILED_CLEANED",
@@ -947,6 +955,32 @@ def _read_probe_state(  # noqa: C901
                 "cp3w_last_frame_result": optional_u32(transport.cp3w_last_frame_result_address),
                 "cp3w_final_datagram_index": optional_u32(transport.cp3w_final_datagram_index_address),
                 "cp3w_requests_dispatched": optional_u32(transport.cp3w_requests_dispatched_address),
+                "cp3w_hello_requests_received": optional_u32(transport.cp3w_hello_requests_received_address),
+                "cp3w_hello_successes": optional_u32(transport.cp3w_hello_successes_address),
+                "cp3w_hello_version_rejections": optional_u32(
+                    transport.cp3w_hello_version_rejections_address
+                ),
+                "cp3w_hello_responses_submitted": optional_u32(
+                    transport.cp3w_hello_responses_submitted_address
+                ),
+                "cp3w_hello_responses_completed": optional_u32(
+                    transport.cp3w_hello_responses_completed_address
+                ),
+                "cp3w_hello_duplicate_requests": optional_u32(
+                    transport.cp3w_hello_duplicate_requests_address
+                ),
+                "cp3w_hello_renegotiation_rejections": optional_u32(
+                    transport.cp3w_hello_renegotiation_rejections_address
+                ),
+                "cp3w_pre_hello_gated_commands": optional_u32(
+                    transport.cp3w_pre_hello_gated_commands_address
+                ),
+                "cp3w_not_negotiated_responses_submitted": optional_u32(
+                    transport.cp3w_not_negotiated_responses_submitted_address
+                ),
+                "cp3w_not_negotiated_responses_completed": optional_u32(
+                    transport.cp3w_not_negotiated_responses_completed_address
+                ),
                 "cp3w_ping_requests_received": optional_u32(transport.cp3w_ping_requests_received_address),
                 "cp3w_pong_responses_submitted": optional_u32(transport.cp3w_pong_responses_submitted_address),
                 "cp3w_pong_responses_completed": optional_u32(transport.cp3w_pong_responses_completed_address),
@@ -959,6 +993,16 @@ def _read_probe_state(  # noqa: C901
                 "cp3w_unsupported_responses_completed": optional_u32(
                     transport.cp3w_unsupported_responses_completed_address
                 ),
+                "cp3w_negotiated_flag": optional_u32(transport.cp3w_negotiated_flag_address),
+                "cp3w_selected_protocol_version": optional_u32(
+                    transport.cp3w_selected_protocol_version_address
+                ),
+                "cp3w_client_nonce": optional_u32(transport.cp3w_client_nonce_address),
+                "cp3w_client_capabilities": optional_u32(transport.cp3w_client_capabilities_address),
+                "cp3w_runtime_capabilities": optional_u32(transport.cp3w_runtime_capabilities_address),
+                "cp3w_accepted_capabilities": optional_u32(transport.cp3w_accepted_capabilities_address),
+                "cp3w_session_id": optional_u32(transport.cp3w_session_id_address),
+                "cp3w_runtime_build_id": optional_u32(transport.cp3w_runtime_build_id_address),
                 "cp3w_last_command": optional_u32(transport.cp3w_last_command_address),
                 "cp3w_last_response_status": optional_u32(transport.cp3w_last_response_status_address),
                 "cp3w_last_ping_payload_length": optional_u32(transport.cp3w_last_ping_payload_length_address),

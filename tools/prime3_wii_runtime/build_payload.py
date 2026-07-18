@@ -428,12 +428,36 @@ RUNTIME_TRANSPORT_CP3W_LAST_ACTUAL_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_cp
 RUNTIME_TRANSPORT_CP3W_LAST_FRAME_RESULT_SYMBOL = "runtime_transport_cp3w_last_frame_result"
 RUNTIME_TRANSPORT_CP3W_FINAL_DATAGRAM_INDEX_SYMBOL = "runtime_transport_cp3w_final_datagram_index"
 RUNTIME_TRANSPORT_CP3W_REQUESTS_DISPATCHED_SYMBOL = "runtime_transport_cp3w_requests_dispatched"
+RUNTIME_TRANSPORT_CP3W_HELLO_REQUESTS_RECEIVED_SYMBOL = "runtime_transport_cp3w_hello_requests_received"
+RUNTIME_TRANSPORT_CP3W_HELLO_SUCCESSES_SYMBOL = "runtime_transport_cp3w_hello_successes"
+RUNTIME_TRANSPORT_CP3W_HELLO_VERSION_REJECTIONS_SYMBOL = "runtime_transport_cp3w_hello_version_rejections"
+RUNTIME_TRANSPORT_CP3W_HELLO_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_hello_responses_submitted"
+RUNTIME_TRANSPORT_CP3W_HELLO_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_hello_responses_completed"
+RUNTIME_TRANSPORT_CP3W_HELLO_DUPLICATE_REQUESTS_SYMBOL = "runtime_transport_cp3w_hello_duplicate_requests"
+RUNTIME_TRANSPORT_CP3W_HELLO_RENEGOTIATION_REJECTIONS_SYMBOL = (
+    "runtime_transport_cp3w_hello_renegotiation_rejections"
+)
+RUNTIME_TRANSPORT_CP3W_PRE_HELLO_GATED_COMMANDS_SYMBOL = "runtime_transport_cp3w_pre_hello_gated_commands"
+RUNTIME_TRANSPORT_CP3W_NOT_NEGOTIATED_RESPONSES_SUBMITTED_SYMBOL = (
+    "runtime_transport_cp3w_not_negotiated_responses_submitted"
+)
+RUNTIME_TRANSPORT_CP3W_NOT_NEGOTIATED_RESPONSES_COMPLETED_SYMBOL = (
+    "runtime_transport_cp3w_not_negotiated_responses_completed"
+)
 RUNTIME_TRANSPORT_CP3W_PING_REQUESTS_RECEIVED_SYMBOL = "runtime_transport_cp3w_ping_requests_received"
 RUNTIME_TRANSPORT_CP3W_PONG_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_pong_responses_submitted"
 RUNTIME_TRANSPORT_CP3W_PONG_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_pong_responses_completed"
 RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_COMMANDS_RECEIVED_SYMBOL = "runtime_transport_cp3w_unsupported_commands_received"
 RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_unsupported_responses_submitted"
 RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_unsupported_responses_completed"
+RUNTIME_TRANSPORT_CP3W_NEGOTIATED_FLAG_SYMBOL = "runtime_transport_cp3w_negotiated_flag"
+RUNTIME_TRANSPORT_CP3W_SELECTED_PROTOCOL_VERSION_SYMBOL = "runtime_transport_cp3w_selected_protocol_version"
+RUNTIME_TRANSPORT_CP3W_CLIENT_NONCE_SYMBOL = "runtime_transport_cp3w_client_nonce"
+RUNTIME_TRANSPORT_CP3W_CLIENT_CAPABILITIES_SYMBOL = "runtime_transport_cp3w_client_capabilities"
+RUNTIME_TRANSPORT_CP3W_RUNTIME_CAPABILITIES_SYMBOL = "runtime_transport_cp3w_runtime_capabilities"
+RUNTIME_TRANSPORT_CP3W_ACCEPTED_CAPABILITIES_SYMBOL = "runtime_transport_cp3w_accepted_capabilities"
+RUNTIME_TRANSPORT_CP3W_SESSION_ID_SYMBOL = "runtime_transport_cp3w_session_id"
+RUNTIME_TRANSPORT_CP3W_RUNTIME_BUILD_ID_SYMBOL = "runtime_transport_cp3w_runtime_build_id"
 RUNTIME_TRANSPORT_CP3W_LAST_COMMAND_SYMBOL = "runtime_transport_cp3w_last_command"
 RUNTIME_TRANSPORT_CP3W_LAST_RESPONSE_STATUS_SYMBOL = "runtime_transport_cp3w_last_response_status"
 RUNTIME_TRANSPORT_CP3W_LAST_PING_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_cp3w_last_ping_payload_length"
@@ -601,12 +625,30 @@ class RelocatedRuntimeBuildResult:
     transport_cp3w_last_frame_result_address: int
     transport_cp3w_final_datagram_index_address: int
     transport_cp3w_requests_dispatched_address: int
+    transport_cp3w_hello_requests_received_address: int
+    transport_cp3w_hello_successes_address: int
+    transport_cp3w_hello_version_rejections_address: int
+    transport_cp3w_hello_responses_submitted_address: int
+    transport_cp3w_hello_responses_completed_address: int
+    transport_cp3w_hello_duplicate_requests_address: int
+    transport_cp3w_hello_renegotiation_rejections_address: int
+    transport_cp3w_pre_hello_gated_commands_address: int
+    transport_cp3w_not_negotiated_responses_submitted_address: int
+    transport_cp3w_not_negotiated_responses_completed_address: int
     transport_cp3w_ping_requests_received_address: int
     transport_cp3w_pong_responses_submitted_address: int
     transport_cp3w_pong_responses_completed_address: int
     transport_cp3w_unsupported_commands_received_address: int
     transport_cp3w_unsupported_responses_submitted_address: int
     transport_cp3w_unsupported_responses_completed_address: int
+    transport_cp3w_negotiated_flag_address: int
+    transport_cp3w_selected_protocol_version_address: int
+    transport_cp3w_client_nonce_address: int
+    transport_cp3w_client_capabilities_address: int
+    transport_cp3w_runtime_capabilities_address: int
+    transport_cp3w_accepted_capabilities_address: int
+    transport_cp3w_session_id_address: int
+    transport_cp3w_runtime_build_id_address: int
     transport_cp3w_last_command_address: int
     transport_cp3w_last_response_status_address: int
     transport_cp3w_last_ping_payload_length_address: int
@@ -793,12 +835,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-cp3w-frame-validation-count", type=int, default=6)
     parser.add_argument("--ios-cp3w-ping-pong", action="store_true")
     parser.add_argument("--ios-cp3w-ping-pong-count", type=int, default=8)
+    parser.add_argument("--ios-cp3w-hello-session", action="store_true")
+    parser.add_argument("--ios-cp3w-hello-session-count", type=int, default=10)
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
     parser.add_argument("--diagnostic-address")
     parser.add_argument("--runtime-destination")
     return parser.parse_args()
+
+
+def _argument_was_supplied(option: str) -> bool:
+    return any(arg == option or arg.startswith(f"{option}=") for arg in sys.argv[1:])
 
 
 def _prime3_ntsc_retail_ios_wrapper_metadata() -> Prime3RetailIosWrapperMetadata:
@@ -927,6 +975,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_recv_send_loop",
         "cp3w_frame_validation",
         "cp3w_ping_pong",
+        "cp3w_hello_session",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1297,13 +1346,25 @@ def build_prime3_runtime_payload(  # noqa: C901
             recv_send_loop = ios_udp_mode == "retail_wrapper_recv_send_loop"
             cp3w_frame_validation = ios_udp_mode == "cp3w_frame_validation"
             cp3w_ping_pong = ios_udp_mode == "cp3w_ping_pong"
+            cp3w_hello_session = ios_udp_mode == "cp3w_hello_session"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
                 receive_enabled=(
-                    recvfrom_once or recv_send_once or recv_send_loop or cp3w_frame_validation or cp3w_ping_pong
+                    recvfrom_once
+                    or recv_send_once
+                    or recv_send_loop
+                    or cp3w_frame_validation
+                    or cp3w_ping_pong
+                    or cp3w_hello_session
                 ),
-                send_enabled=recv_send_once or recv_send_loop or cp3w_frame_validation or cp3w_ping_pong,
+                send_enabled=(
+                    recv_send_once
+                    or recv_send_loop
+                    or cp3w_frame_validation
+                    or cp3w_ping_pong
+                    or cp3w_hello_session
+                ),
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
@@ -1321,6 +1382,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if recvfrom_once
                     else 61
                     if cp3w_ping_pong
+                    else 69
+                    if cp3w_hello_session
                     else 55
                     if cp3w_frame_validation
                     else 45
@@ -1346,6 +1409,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if recvfrom_once
                     else "CP3W_PING_PONG_LOOP_COMPLETE"
                     if cp3w_ping_pong
+                    else "CP3W_HELLO_SESSION_LOOP_COMPLETE"
+                    if cp3w_hello_session
                     else "CP3W_FRAME_LOOP_COMPLETE"
                     if cp3w_frame_validation
                     else "LOOP_COMPLETE"
@@ -1526,6 +1591,42 @@ def build_prime3_runtime_payload(  # noqa: C901
                 cp3w_final_datagram_index_size=4,
                 cp3w_requests_dispatched_address=relocated_runtime.transport_cp3w_requests_dispatched_address,
                 cp3w_requests_dispatched_size=4,
+                cp3w_hello_requests_received_address=relocated_runtime.transport_cp3w_hello_requests_received_address,
+                cp3w_hello_requests_received_size=4,
+                cp3w_hello_successes_address=relocated_runtime.transport_cp3w_hello_successes_address,
+                cp3w_hello_successes_size=4,
+                cp3w_hello_version_rejections_address=(
+                    relocated_runtime.transport_cp3w_hello_version_rejections_address
+                ),
+                cp3w_hello_version_rejections_size=4,
+                cp3w_hello_responses_submitted_address=(
+                    relocated_runtime.transport_cp3w_hello_responses_submitted_address
+                ),
+                cp3w_hello_responses_submitted_size=4,
+                cp3w_hello_responses_completed_address=(
+                    relocated_runtime.transport_cp3w_hello_responses_completed_address
+                ),
+                cp3w_hello_responses_completed_size=4,
+                cp3w_hello_duplicate_requests_address=(
+                    relocated_runtime.transport_cp3w_hello_duplicate_requests_address
+                ),
+                cp3w_hello_duplicate_requests_size=4,
+                cp3w_hello_renegotiation_rejections_address=(
+                    relocated_runtime.transport_cp3w_hello_renegotiation_rejections_address
+                ),
+                cp3w_hello_renegotiation_rejections_size=4,
+                cp3w_pre_hello_gated_commands_address=(
+                    relocated_runtime.transport_cp3w_pre_hello_gated_commands_address
+                ),
+                cp3w_pre_hello_gated_commands_size=4,
+                cp3w_not_negotiated_responses_submitted_address=(
+                    relocated_runtime.transport_cp3w_not_negotiated_responses_submitted_address
+                ),
+                cp3w_not_negotiated_responses_submitted_size=4,
+                cp3w_not_negotiated_responses_completed_address=(
+                    relocated_runtime.transport_cp3w_not_negotiated_responses_completed_address
+                ),
+                cp3w_not_negotiated_responses_completed_size=4,
                 cp3w_ping_requests_received_address=relocated_runtime.transport_cp3w_ping_requests_received_address,
                 cp3w_ping_requests_received_size=4,
                 cp3w_pong_responses_submitted_address=relocated_runtime.transport_cp3w_pong_responses_submitted_address,
@@ -1544,6 +1645,24 @@ def build_prime3_runtime_payload(  # noqa: C901
                     relocated_runtime.transport_cp3w_unsupported_responses_completed_address
                 ),
                 cp3w_unsupported_responses_completed_size=4,
+                cp3w_negotiated_flag_address=relocated_runtime.transport_cp3w_negotiated_flag_address,
+                cp3w_negotiated_flag_size=4,
+                cp3w_selected_protocol_version_address=(
+                    relocated_runtime.transport_cp3w_selected_protocol_version_address
+                ),
+                cp3w_selected_protocol_version_size=4,
+                cp3w_client_nonce_address=relocated_runtime.transport_cp3w_client_nonce_address,
+                cp3w_client_nonce_size=4,
+                cp3w_client_capabilities_address=relocated_runtime.transport_cp3w_client_capabilities_address,
+                cp3w_client_capabilities_size=4,
+                cp3w_runtime_capabilities_address=relocated_runtime.transport_cp3w_runtime_capabilities_address,
+                cp3w_runtime_capabilities_size=4,
+                cp3w_accepted_capabilities_address=relocated_runtime.transport_cp3w_accepted_capabilities_address,
+                cp3w_accepted_capabilities_size=4,
+                cp3w_session_id_address=relocated_runtime.transport_cp3w_session_id_address,
+                cp3w_session_id_size=4,
+                cp3w_runtime_build_id_address=relocated_runtime.transport_cp3w_runtime_build_id_address,
+                cp3w_runtime_build_id_size=4,
                 cp3w_last_command_address=relocated_runtime.transport_cp3w_last_command_address,
                 cp3w_last_command_size=4,
                 cp3w_last_response_status_address=relocated_runtime.transport_cp3w_last_response_status_address,
@@ -2071,6 +2190,7 @@ def _build_relocated_runtime(
                 "retail_wrapper_recv_send_loop": "16",
                 "cp3w_frame_validation": "17",
                 "cp3w_ping_pong": "18",
+                "cp3w_hello_session": "19",
             }[ios_udp_mode]
         ),
         f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
@@ -2950,6 +3070,36 @@ def _build_relocated_runtime(
     transport_cp3w_requests_dispatched_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_CP3W_REQUESTS_DISPATCHED_SYMBOL
     )
+    transport_cp3w_hello_requests_received_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_REQUESTS_RECEIVED_SYMBOL
+    )
+    transport_cp3w_hello_successes_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_SUCCESSES_SYMBOL
+    )
+    transport_cp3w_hello_version_rejections_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_VERSION_REJECTIONS_SYMBOL
+    )
+    transport_cp3w_hello_responses_submitted_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_RESPONSES_SUBMITTED_SYMBOL
+    )
+    transport_cp3w_hello_responses_completed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_RESPONSES_COMPLETED_SYMBOL
+    )
+    transport_cp3w_hello_duplicate_requests_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_DUPLICATE_REQUESTS_SYMBOL
+    )
+    transport_cp3w_hello_renegotiation_rejections_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_HELLO_RENEGOTIATION_REJECTIONS_SYMBOL
+    )
+    transport_cp3w_pre_hello_gated_commands_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_PRE_HELLO_GATED_COMMANDS_SYMBOL
+    )
+    transport_cp3w_not_negotiated_responses_submitted_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_NOT_NEGOTIATED_RESPONSES_SUBMITTED_SYMBOL
+    )
+    transport_cp3w_not_negotiated_responses_completed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_NOT_NEGOTIATED_RESPONSES_COMPLETED_SYMBOL
+    )
     transport_cp3w_ping_requests_received_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_CP3W_PING_REQUESTS_RECEIVED_SYMBOL
     )
@@ -2967,6 +3117,30 @@ def _build_relocated_runtime(
     )
     transport_cp3w_unsupported_responses_completed_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_COMPLETED_SYMBOL
+    )
+    transport_cp3w_negotiated_flag_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_NEGOTIATED_FLAG_SYMBOL
+    )
+    transport_cp3w_selected_protocol_version_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_SELECTED_PROTOCOL_VERSION_SYMBOL
+    )
+    transport_cp3w_client_nonce_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_CLIENT_NONCE_SYMBOL
+    )
+    transport_cp3w_client_capabilities_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_CLIENT_CAPABILITIES_SYMBOL
+    )
+    transport_cp3w_runtime_capabilities_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_RUNTIME_CAPABILITIES_SYMBOL
+    )
+    transport_cp3w_accepted_capabilities_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_ACCEPTED_CAPABILITIES_SYMBOL
+    )
+    transport_cp3w_session_id_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_SESSION_ID_SYMBOL
+    )
+    transport_cp3w_runtime_build_id_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_RUNTIME_BUILD_ID_SYMBOL
     )
     transport_cp3w_last_command_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_COMMAND_SYMBOL
@@ -3144,12 +3318,36 @@ def _build_relocated_runtime(
         transport_cp3w_last_frame_result_address=transport_cp3w_last_frame_result_address,
         transport_cp3w_final_datagram_index_address=transport_cp3w_final_datagram_index_address,
         transport_cp3w_requests_dispatched_address=transport_cp3w_requests_dispatched_address,
+        transport_cp3w_hello_requests_received_address=transport_cp3w_hello_requests_received_address,
+        transport_cp3w_hello_successes_address=transport_cp3w_hello_successes_address,
+        transport_cp3w_hello_version_rejections_address=transport_cp3w_hello_version_rejections_address,
+        transport_cp3w_hello_responses_submitted_address=transport_cp3w_hello_responses_submitted_address,
+        transport_cp3w_hello_responses_completed_address=transport_cp3w_hello_responses_completed_address,
+        transport_cp3w_hello_duplicate_requests_address=transport_cp3w_hello_duplicate_requests_address,
+        transport_cp3w_hello_renegotiation_rejections_address=(
+            transport_cp3w_hello_renegotiation_rejections_address
+        ),
+        transport_cp3w_pre_hello_gated_commands_address=transport_cp3w_pre_hello_gated_commands_address,
+        transport_cp3w_not_negotiated_responses_submitted_address=(
+            transport_cp3w_not_negotiated_responses_submitted_address
+        ),
+        transport_cp3w_not_negotiated_responses_completed_address=(
+            transport_cp3w_not_negotiated_responses_completed_address
+        ),
         transport_cp3w_ping_requests_received_address=transport_cp3w_ping_requests_received_address,
         transport_cp3w_pong_responses_submitted_address=transport_cp3w_pong_responses_submitted_address,
         transport_cp3w_pong_responses_completed_address=transport_cp3w_pong_responses_completed_address,
         transport_cp3w_unsupported_commands_received_address=transport_cp3w_unsupported_commands_received_address,
         transport_cp3w_unsupported_responses_submitted_address=transport_cp3w_unsupported_responses_submitted_address,
         transport_cp3w_unsupported_responses_completed_address=transport_cp3w_unsupported_responses_completed_address,
+        transport_cp3w_negotiated_flag_address=transport_cp3w_negotiated_flag_address,
+        transport_cp3w_selected_protocol_version_address=transport_cp3w_selected_protocol_version_address,
+        transport_cp3w_client_nonce_address=transport_cp3w_client_nonce_address,
+        transport_cp3w_client_capabilities_address=transport_cp3w_client_capabilities_address,
+        transport_cp3w_runtime_capabilities_address=transport_cp3w_runtime_capabilities_address,
+        transport_cp3w_accepted_capabilities_address=transport_cp3w_accepted_capabilities_address,
+        transport_cp3w_session_id_address=transport_cp3w_session_id_address,
+        transport_cp3w_runtime_build_id_address=transport_cp3w_runtime_build_id_address,
         transport_cp3w_last_command_address=transport_cp3w_last_command_address,
         transport_cp3w_last_response_status_address=transport_cp3w_last_response_status_address,
         transport_cp3w_last_ping_payload_length_address=transport_cp3w_last_ping_payload_length_address,
@@ -3665,6 +3863,7 @@ def main() -> None:  # noqa: C901
             args.ios_recv_send_loop,
             args.ios_cp3w_frame_validation,
             args.ios_cp3w_ping_pong,
+            args.ios_cp3w_hello_session,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
@@ -3673,16 +3872,20 @@ def main() -> None:  # noqa: C901
         raise RuntimeError("Use at most one IOS UDP diagnostic sub-mode flag at a time.")
     if args.ios_recv_send_loop_count < 1 or args.ios_recv_send_loop_count > 100:
         raise RuntimeError("--ios-recv-send-loop-count must be between 1 and 100.")
-    if args.ios_recv_send_loop_count != 3 and not args.ios_recv_send_loop:
+    if _argument_was_supplied("--ios-recv-send-loop-count") and not args.ios_recv_send_loop:
         raise RuntimeError("--ios-recv-send-loop-count requires --ios-recv-send-loop.")
     if args.ios_cp3w_frame_validation_count < 1 or args.ios_cp3w_frame_validation_count > 100:
         raise RuntimeError("--ios-cp3w-frame-validation-count must be between 1 and 100.")
-    if args.ios_cp3w_frame_validation_count != 6 and not args.ios_cp3w_frame_validation:
+    if _argument_was_supplied("--ios-cp3w-frame-validation-count") and not args.ios_cp3w_frame_validation:
         raise RuntimeError("--ios-cp3w-frame-validation-count requires --ios-cp3w-frame-validation.")
     if args.ios_cp3w_ping_pong_count < 1 or args.ios_cp3w_ping_pong_count > 100:
         raise RuntimeError("--ios-cp3w-ping-pong-count must be between 1 and 100.")
-    if args.ios_cp3w_ping_pong_count != 8 and not args.ios_cp3w_ping_pong:
+    if _argument_was_supplied("--ios-cp3w-ping-pong-count") and not args.ios_cp3w_ping_pong:
         raise RuntimeError("--ios-cp3w-ping-pong-count requires --ios-cp3w-ping-pong.")
+    if args.ios_cp3w_hello_session_count < 1 or args.ios_cp3w_hello_session_count > 100:
+        raise RuntimeError("--ios-cp3w-hello-session-count must be between 1 and 100.")
+    if _argument_was_supplied("--ios-cp3w-hello-session-count") and not args.ios_cp3w_hello_session:
+        raise RuntimeError("--ios-cp3w-hello-session-count requires --ios-cp3w-hello-session.")
     ios_udp_mode = "normal"
     if args.ios_udp_dry_run:
         ios_udp_mode = "dry_run"
@@ -3712,6 +3915,8 @@ def main() -> None:  # noqa: C901
         ios_udp_mode = "cp3w_frame_validation"
     elif args.ios_cp3w_ping_pong:
         ios_udp_mode = "cp3w_ping_pong"
+    elif args.ios_cp3w_hello_session:
+        ios_udp_mode = "cp3w_hello_session"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:
@@ -3741,6 +3946,8 @@ def main() -> None:  # noqa: C901
             if args.ios_cp3w_frame_validation
             else args.ios_cp3w_ping_pong_count
             if args.ios_cp3w_ping_pong
+            else args.ios_cp3w_hello_session_count
+            if args.ios_cp3w_hello_session
             else args.ios_recv_send_loop_count
         ),
         reserved_high=reserved_high,

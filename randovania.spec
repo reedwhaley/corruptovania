@@ -117,6 +117,11 @@ a = Analysis(
     binaries=prime3_macos_binaries if platform.system() == "Darwin" else [],
     datas=datas,
     hiddenimports=[
+        "randovania.game_connection.connector.corruption_remote_connector",
+        "randovania.game_connection.connector.echoes_remote_connector",
+        "randovania.game_connection.connector.prime1_remote_connector",
+        "randovania.game_connection.executor.prime3_wii_protocol_artifacts",
+        "randovania.lib.checkpoint_report_analysis",
         "unittest.mock",
     ],
     hookspath=[

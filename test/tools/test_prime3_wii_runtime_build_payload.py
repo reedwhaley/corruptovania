@@ -278,16 +278,12 @@ def test_importing_module_does_not_insert_duplicate_repo_root_entries(monkeypatc
 
 
 def test_direct_invocation_without_toolchain_reports_normal_toolchain_error(tmp_path: Path) -> None:
-    script = (
-        "import os, runpy; "
-        "os.environ['DEVKITPRO'] = r'C:\\\\missing-devkitpro'; "
-        "os.environ['DEVKITPPC'] = r'C:\\\\missing-devkitpro\\\\devkitPPC'; "
-        f"runpy.run_path(r'{SCRIPT_PATH}', run_name='__main__')"
-    )
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
+    env.pop("DEVKITPRO", None)
+    env.pop("DEVKITPPC", None)
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, os.fspath(SCRIPT_PATH)],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -297,7 +293,7 @@ def test_direct_invocation_without_toolchain_reports_normal_toolchain_error(tmp_
 
     assert result.returncode != 0
     assert "Prime3DolPatchError" in result.stderr
-    assert "Missing devkitPro installation metadata" in result.stderr
+    assert "DEVKITPRO and DEVKITPPC must be set" in result.stderr
     assert "ModuleNotFoundError" not in result.stderr
 
 

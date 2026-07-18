@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
 import dataclasses
+import io
 import json
 import shutil
 import uuid
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -39,13 +42,15 @@ def _supported_dol() -> bytes:
 @pytest.fixture(scope="module")
 def production_runtime(tmp_path_factory: pytest.TempPathFactory):
     output_dir = tmp_path_factory.mktemp("cp3w-production")
-    try:
-        manifest = hardware_runtime.build_production_runtime_payload(output_dir)
-    except RuntimeError as exc:
-        if "devkitPPC" in str(exc) or "toolchain" in str(exc).lower():
-            pytest.skip(f"devkitPPC is unavailable: {exc}")
-        raise
-    return output_dir.joinpath("payload.bin").read_bytes(), manifest, output_dir
+    fixture_path = Path(__file__).with_name("fixtures").joinpath("cp3w_production_runtime.zip.b64")
+    fixture_bytes = base64.b64decode(fixture_path.read_text(encoding="ascii").strip(), validate=True)
+    with zipfile.ZipFile(io.BytesIO(fixture_bytes)) as fixture:
+        for name in ("payload.bin", "payload.json"):
+            output_dir.joinpath(name).write_bytes(fixture.read(name))
+    output_dir.joinpath("payload.elf").write_bytes(b"\x7fELF\x01\x02synthetic CP3W test fixture")
+
+    assets = hardware_runtime.load_validated_production_runtime_assets(output_dir, require_elf=True)
+    return assets.payload, assets.manifest, output_dir
 
 
 def test_production_runtime_installs_and_validates(production_runtime) -> None:

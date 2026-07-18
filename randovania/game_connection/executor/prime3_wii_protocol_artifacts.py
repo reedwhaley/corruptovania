@@ -94,20 +94,20 @@ def _normalized_request(request: Prime3WiiRequest) -> dict[str, Any]:
         "payload_hex": _hex_bytes(request.payload),
     }
     if request.command is Prime3WiiCommand.HELLO:
-        payload = decode_hello_request_payload(request.payload)
+        hello_payload = decode_hello_request_payload(request.payload)
         result["payload"] = {
-            "min_protocol_version": payload.min_protocol_version,
-            "max_protocol_version": payload.max_protocol_version,
-            "capabilities": int(payload.capabilities),
-            "capability_names": [item.name for item in Prime3WiiCapability if item in payload.capabilities],
-            "client_nonce": payload.client_nonce,
-            "client_name": payload.client_name,
+            "min_protocol_version": hello_payload.min_protocol_version,
+            "max_protocol_version": hello_payload.max_protocol_version,
+            "capabilities": int(hello_payload.capabilities),
+            "capability_names": [item.name for item in Prime3WiiCapability if item in hello_payload.capabilities],
+            "client_nonce": hello_payload.client_nonce,
+            "client_name": hello_payload.client_name,
         }
     elif request.command is Prime3WiiCommand.READ_MEMORY:
-        payload = prime3_wii_protocol.decode_read_memory_payload(request.payload)
+        read_memory_payload = prime3_wii_protocol.decode_read_memory_payload(request.payload)
         result["payload"] = {
-            "address": f"0x{payload.address:08X}",
-            "size": payload.size,
+            "address": f"0x{read_memory_payload.address:08X}",
+            "size": read_memory_payload.size,
         }
     return result
 
@@ -210,8 +210,7 @@ def protocol_manifest() -> dict[str, Any]:
                 {"name": "crc32", "type": "uint32", "size": 4},
             ],
             "crc32_coverage": (
-                "CRC32 is computed over the header and payload bytes only; "
-                "the trailing CRC field is excluded."
+                "CRC32 is computed over the header and payload bytes only; the trailing CRC field is excluded."
             ),
         },
         "packet_kinds": _enum_values(prime3_wii_protocol.Prime3WiiPacketKind),
@@ -411,8 +410,7 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
         encode_game_identity_payload(
             GameIdentityPayload(
                 availability_flags=(
-                    Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
-                    | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+                    Prime3WiiAvailability.EXECUTABLE_RECOGNIZED | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
                 )
             )
         ),

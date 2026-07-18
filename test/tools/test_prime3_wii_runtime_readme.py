@@ -4,8 +4,12 @@ from pathlib import Path
 
 
 def test_prime3_wii_runtime_readme_mentions_cp3w_validation_workflow() -> None:
-    readme = Path(__file__).resolve().parents[2].joinpath("tools", "prime3_wii_runtime", "README.md").read_text(
-        encoding="utf-8"
+    readme = (
+        Path(__file__)
+        .resolve()
+        .parents[2]
+        .joinpath("tools", "prime3_wii_runtime", "README.md")
+        .read_text(encoding="utf-8")
     )
 
     required_snippets = (
@@ -35,13 +39,13 @@ def test_prime3_wii_runtime_readme_mentions_cp3w_validation_workflow() -> None:
         "0x50335731",
         "host/udp_cp3w_hello_session_test.py",
         "Deterministic session-ID derivation",
-        "screenshots were intentionally skipped",
-        "physical Wii has not yet been validated",
+        "screenshots are intentionally skipped",
+        "Physical Wii behavior is not validated",
         "host/udp_cp3w_ping_pong_test.py",
         "0xEDB88320",
         "host/udp_cp3w_frame_test.py",
-        "E:\\Temp\\p3-ios-*",
-        "C:\\Temp",
+        "GET_INVENTORY",
+        "No location state, item grants, writes",
     )
 
     for snippet in required_snippets:

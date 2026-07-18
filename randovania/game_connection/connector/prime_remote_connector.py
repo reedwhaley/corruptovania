@@ -33,7 +33,7 @@ from randovania.interface_common.players_configuration import INVALID_UUID
 from randovania.lib.infinite_timer import InfiniteTimer
 
 if TYPE_CHECKING:
-    from ppc_asm import assembler
+    from ppc_asm import assembler  # type: ignore[import-untyped,unused-ignore]
 
     from randovania.game_description.db.region import Region
     from randovania.game_description.game_description import GameDescription

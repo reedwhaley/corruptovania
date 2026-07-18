@@ -1023,20 +1023,6 @@ def build_prime3_runtime_payload(  # noqa: C901
         if payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_NORMAL:
             raise RuntimeError("Use either probe=True or an explicit payload_mode, not both.")
         payload_mode = PRIME3_RUNTIME_PAYLOAD_MODE_PROBE
-    toolchain = resolve_prime3_runtime_toolchain()
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    object_path = output_dir.joinpath("payload.o")
-    elf_path = output_dir.joinpath("payload.elf")
-    binary_path = output_dir.joinpath("payload.bin")
-    map_path = output_dir.joinpath("payload.map")
-    manifest_path = output_dir.joinpath("payload.json")
-
-    relocated_runtime = None
-    extra_link_objects: list[str] = []
-    compiler_defines: list[str] = []
-    linker_defines: list[str] = []
-
     if ios_udp_mode not in {
         "normal",
         "dry_run",
@@ -1072,12 +1058,29 @@ def build_prime3_runtime_payload(  # noqa: C901
         raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
     if ios_udp_mode != "normal" and not enable_ios_udp_diagnostic:
         raise RuntimeError("IOS UDP diagnostic developer modes require enable_ios_udp_diagnostic.")
+    if payload_mode in PRIME3_RUNTIME_RELOCATED_MODES and (reserved_high is None or diagnostic_address is None):
+        raise RuntimeError("Relocated runtime modes require reserved_high and diagnostic_address.")
+    if payload_mode in PRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODES and (reserved_high is None or diagnostic_address is None):
+        raise RuntimeError("Entry bootstrap payload mode requires reserved_high and diagnostic_address.")
+
+    toolchain = resolve_prime3_runtime_toolchain()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    object_path = output_dir.joinpath("payload.o")
+    elf_path = output_dir.joinpath("payload.elf")
+    binary_path = output_dir.joinpath("payload.bin")
+    map_path = output_dir.joinpath("payload.map")
+    manifest_path = output_dir.joinpath("payload.json")
+
+    relocated_runtime = None
+    extra_link_objects: list[str] = []
+    compiler_defines: list[str] = []
+    linker_defines: list[str] = []
 
     if payload_mode == PRIME3_RUNTIME_PAYLOAD_MODE_PROBE:
         compiler_defines.append("-DPRIME3_RUNTIME_PROBE_MODE=1")
     elif payload_mode in PRIME3_RUNTIME_RELOCATED_MODES:
-        if reserved_high is None or diagnostic_address is None:
-            raise RuntimeError("Relocated runtime modes require reserved_high and diagnostic_address.")
+        assert reserved_high is not None
+        assert diagnostic_address is not None
         runtime_destination = RELOCATED_RUNTIME_DESTINATION if runtime_destination is None else runtime_destination
         relocated_runtime = _build_relocated_runtime(
             toolchain=toolchain,
@@ -1122,8 +1125,8 @@ def build_prime3_runtime_payload(  # noqa: C901
         else:
             compiler_defines.append("-DPRIME3_RUNTIME_RELOCATED_CONTINUE=1")
     elif payload_mode in PRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODES:
-        if reserved_high is None or diagnostic_address is None:
-            raise RuntimeError("Entry bootstrap payload mode requires reserved_high and diagnostic_address.")
+        assert reserved_high is not None
+        assert diagnostic_address is not None
         compiler_defines.extend(
             [
                 "-DPRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODE=1",
@@ -2186,7 +2189,9 @@ def build_prime3_runtime_payload(  # noqa: C901
                             "game-state root, CStateManager root, CPlayer vtable, DOL SHA-256 prefix"
                         ),
                         runtime_build_id=DEFAULT_RUNTIME_BUILD_ID,
-                        availability_flags={item.name: int(item) for item in Prime3WiiAvailability},
+                        availability_flags={
+                            item.name: int(item) for item in Prime3WiiAvailability if item.name is not None
+                        },
                         phase_names={
                             "VALIDATE_REQUEST": 70,
                             "VALIDATE_CAPABILITY": 71,
@@ -2218,7 +2223,9 @@ def build_prime3_runtime_payload(  # noqa: C901
                         payload_size=INVENTORY_PAYLOAD_SIZE,
                         frame_size=INVENTORY_FRAME_SIZE,
                         field_offsets=INVENTORY_FIELD_OFFSETS,
-                        availability_flags={item.name: int(item) for item in Prime3WiiInventoryAvailability},
+                        availability_flags={
+                            item.name: int(item) for item in Prime3WiiInventoryAvailability if item.name is not None
+                        },
                         phase_names={
                             "VALIDATE_REQUEST": 80,
                             "VALIDATE_CAPABILITY": 81,

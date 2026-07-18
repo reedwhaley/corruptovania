@@ -89,19 +89,21 @@ def test_protocol_vectors_decode_as_declared():
             continue
 
         if vector.decode_as == "request":
-            decoded = decode_request(packet)
+            decoded_request = decode_request(packet)
             expected = vector.expected
-            assert decoded.command.name == expected["command"]
-            assert decoded.request_id == expected["request_id"]
-            assert decoded.payload.hex() == expected["payload_hex"]
+            assert decoded_request.command.name == expected["command"]
+            assert decoded_request.request_id == expected["request_id"]
+            assert decoded_request.payload.hex() == expected["payload_hex"]
         else:
-            decoded = decode_response(packet, expected_request_id=vector.expected["request_id"])
-            assert decoded.command.name == vector.expected["command"]
-            assert decoded.request_id == vector.expected["request_id"]
-            if hasattr(decoded, "status"):
-                assert decoded.status.name == vector.expected["status"]
+            decoded_response = decode_response(packet, expected_request_id=vector.expected["request_id"])
+            assert decoded_response.command.name == vector.expected["command"]
+            assert decoded_response.request_id == vector.expected["request_id"]
+            if isinstance(decoded_response, prime3_wii_protocol.Prime3WiiResponse):
+                assert decoded_response.status.name == vector.expected["status"]
             if "payload_hex" in vector.expected:
-                assert decoded.payload.hex() == vector.expected["payload_hex"]
+                assert isinstance(decoded_response, prime3_wii_protocol.Prime3WiiResponse)
+                assert decoded_response.payload.hex() == vector.expected["payload_hex"]
             if "error_code" in vector.expected:
-                assert decoded.error_code.name == vector.expected["error_code"]
-                assert decoded.message == vector.expected["message"]
+                assert isinstance(decoded_response, prime3_wii_protocol.Prime3WiiErrorResponse)
+                assert decoded_response.error_code.name == vector.expected["error_code"]
+                assert decoded_response.message == vector.expected["message"]

@@ -30,6 +30,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
+    Prime3WiiErrorResponse,
     Prime3WiiInventoryAvailability,
     Prime3WiiInventoryRecord,
     Prime3WiiInventorySnapshot,
@@ -128,8 +129,7 @@ def test_inventory_payload_rejects_malformed_layout_and_unavailable_data() -> No
 def test_game_identity_payload_round_trip_is_big_endian_and_deterministic() -> None:
     identity = GameIdentityPayload(
         availability_flags=(
-            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
-            | Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID
+            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED | Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID
         )
     )
     encoded = encode_game_identity_payload(identity)
@@ -363,6 +363,7 @@ def test_error_response_round_trip():
 
     decoded = decode_response(packet, expected_request_id=55)
 
+    assert isinstance(decoded, Prime3WiiErrorResponse)
     assert decoded.command is Prime3WiiCommand.READ_MEMORY
     assert decoded.request_id == 55
     assert decoded.error_code is Prime3WiiErrorCode.INVALID_ADDRESS
@@ -379,6 +380,7 @@ def test_not_negotiated_error_response_round_trip():
 
     decoded = decode_response(packet, expected_request_id=99)
 
+    assert isinstance(decoded, Prime3WiiErrorResponse)
     assert decoded.error_code is Prime3WiiErrorCode.NOT_NEGOTIATED
     assert decoded.message == NOT_NEGOTIATED_MESSAGE
 
@@ -393,5 +395,6 @@ def test_invalid_state_error_response_round_trip():
 
     decoded = decode_response(packet, expected_request_id=100)
 
+    assert isinstance(decoded, Prime3WiiErrorResponse)
     assert decoded.error_code is Prime3WiiErrorCode.INVALID_STATE
     assert decoded.message == INVALID_STATE_MESSAGE

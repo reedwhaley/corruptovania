@@ -60,6 +60,8 @@ def test_protocol_vectors_decode_as_declared():
         "hello_success_response",
         "read_memory_request",
         "read_memory_success_response",
+        "game_identity_request",
+        "game_identity_success_response",
         "ping_request",
         "ping_response",
         "disconnect_request",

@@ -177,6 +177,75 @@ class Prime3EntryBootstrapMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3RuntimeGameIdentityMetadata:
+    mode_value: int
+    mode_name: str
+    command_value: int
+    capability_value: int
+    schema_version: int
+    payload_size: int
+    field_offsets: dict[str, int]
+    game_id: int
+    platform_id: int
+    region_id: int
+    revision_id: int
+    profile_id: int
+    profile_fingerprint: int
+    fingerprint_derivation: str
+    runtime_build_id: int
+    availability_flags: dict[str, int]
+    phase_names: dict[str, int]
+    configured_count: int
+    state_addresses: dict[str, int]
+
+    def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
+        if self.mode_value != 20 or self.mode_name != "cp3w_game_identity":
+            raise Prime3DolPatchError("CP3W game identity metadata must use diagnostic mode 20.")
+        if self.command_value != 5 or self.capability_value != 1 << 11:
+            raise Prime3DolPatchError("CP3W game identity command or capability metadata is invalid.")
+        if self.schema_version != 1 or self.payload_size != 28:
+            raise Prime3DolPatchError("CP3W game identity schema metadata is invalid.")
+        if self.configured_count < 1 or self.configured_count > 100:
+            raise Prime3DolPatchError("CP3W game identity configured count must be between 1 and 100.")
+        if self.field_offsets.get("reserved") != 24 or self.phase_names.get("LOOP_COMPLETE") != 79:
+            raise Prime3DolPatchError("CP3W game identity layout or terminal phase metadata is invalid.")
+        ranges = tuple((name, address, 4) for name, address in self.state_addresses.items())
+        for name, address, size in ranges:
+            if not (runtime_state_start <= address < runtime_state_end) or address + size > runtime_state_end:
+                raise Prime3DolPatchError(f"CP3W game identity state field {name} is outside runtime state.")
+        _validate_non_overlapping_ranges(ranges)
+        return ranges
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeGameIdentityMetadata:
+        metadata = cls(
+            mode_value=_json_int(data, "mode_value"),
+            mode_name=_json_string(data, "mode_name"),
+            command_value=_json_int(data, "command_value"),
+            capability_value=_json_int(data, "capability_value"),
+            schema_version=_json_int(data, "schema_version"),
+            payload_size=_json_int(data, "payload_size"),
+            field_offsets=_json_int_dict(data, "field_offsets"),
+            game_id=_json_int(data, "game_id"),
+            platform_id=_json_int(data, "platform_id"),
+            region_id=_json_int(data, "region_id"),
+            revision_id=_json_int(data, "revision_id"),
+            profile_id=_json_int(data, "profile_id"),
+            profile_fingerprint=_json_int(data, "profile_fingerprint"),
+            fingerprint_derivation=_json_string(data, "fingerprint_derivation"),
+            runtime_build_id=_json_int(data, "runtime_build_id"),
+            availability_flags=_json_int_dict(data, "availability_flags"),
+            phase_names=_json_int_dict(data, "phase_names"),
+            configured_count=_json_int(data, "configured_count"),
+            state_addresses=_json_int_dict(data, "state_addresses"),
+        )
+        return metadata
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3RuntimeTransportMetadata:
     mode: str
     initialization_enabled: bool
@@ -734,6 +803,7 @@ class Prime3RuntimeTransportMetadata:
     socket_closed_after_bind_failure_size: int | None = None
     socket_leak_detected_address: int | None = None
     socket_leak_detected_size: int | None = None
+    cp3w_game_identity: Prime3RuntimeGameIdentityMetadata | None = None
 
     def validate(  # noqa: C901
         self, *, runtime_state_start: int, runtime_state_end: int
@@ -748,6 +818,7 @@ class Prime3RuntimeTransportMetadata:
         is_cp3w_frame_validation = self.mode == "cp3w_frame_validation"
         is_cp3w_ping_pong = self.mode == "cp3w_ping_pong"
         is_cp3w_hello_session = self.mode == "cp3w_hello_session"
+        is_cp3w_game_identity = self.mode == "cp3w_game_identity"
         if self.receive_enabled and not is_recvfrom_once:
             if (
                 not is_recv_send_once
@@ -755,6 +826,7 @@ class Prime3RuntimeTransportMetadata:
                 and not is_cp3w_frame_validation
                 and not is_cp3w_ping_pong
                 and not is_cp3w_hello_session
+                and not is_cp3w_game_identity
             ):
                 raise Prime3DolPatchError("Initialization-only transport metadata must not enable receive.")
         if (
@@ -764,6 +836,7 @@ class Prime3RuntimeTransportMetadata:
             or is_cp3w_frame_validation
             or is_cp3w_ping_pong
             or is_cp3w_hello_session
+            or is_cp3w_game_identity
         ) and not self.receive_enabled:
             raise Prime3DolPatchError("Recvfrom-once metadata must enable receive.")
         if (
@@ -773,6 +846,7 @@ class Prime3RuntimeTransportMetadata:
             and not is_cp3w_frame_validation
             and not is_cp3w_ping_pong
             and not is_cp3w_hello_session
+            and not is_cp3w_game_identity
         ):
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
         if (
@@ -781,6 +855,7 @@ class Prime3RuntimeTransportMetadata:
             or is_cp3w_frame_validation
             or is_cp3w_ping_pong
             or is_cp3w_hello_session
+            or is_cp3w_game_identity
         ) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
@@ -841,6 +916,17 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError(
                 "CP3W hello/session metadata must use the CP3W_HELLO_SESSION_LOOP_COMPLETE terminal phase."
             )
+        if is_cp3w_game_identity and (
+            self.terminal_phase_value != 79 or self.terminal_phase_name != "CP3W_GAME_IDENTITY_LOOP_COMPLETE"
+        ):
+            raise Prime3DolPatchError(
+                "CP3W game identity metadata must use the CP3W_GAME_IDENTITY_LOOP_COMPLETE terminal phase."
+            )
+        if is_cp3w_game_identity:
+            if self.cp3w_game_identity is None:
+                raise Prime3DolPatchError("CP3W game identity metadata is missing identity details.")
+        elif self.cp3w_game_identity is not None:
+            raise Prime3DolPatchError("CP3W game identity details require game identity mode.")
         if self.ip_close_on_success:
             raise Prime3DolPatchError(
                 "Initialization-only transport metadata must not close ip descriptors on success."
@@ -1728,6 +1814,11 @@ class Prime3RuntimeTransportMetadata:
             if start is not None and size is not None
         )
         ranges = ranges + validated_optional_ranges
+        if self.cp3w_game_identity is not None:
+            ranges += self.cp3w_game_identity.validate(
+                runtime_state_start=runtime_state_start,
+                runtime_state_end=runtime_state_end,
+            )
         _validate_non_overlapping_ranges(ranges)
         return ranges
 
@@ -2415,6 +2506,7 @@ class Prime3RuntimeTransportMetadata:
             ),
             socket_leak_detected_address=_json_optional_int(data, "socket_leak_detected_address"),
             socket_leak_detected_size=_json_optional_int(data, "socket_leak_detected_size"),
+            cp3w_game_identity=_json_optional_game_identity(data, "cp3w_game_identity"),
         )
 
 
@@ -3454,6 +3546,16 @@ def _json_int_list(data: dict[str, object], key: str) -> list[int]:
     return list(value)
 
 
+def _json_int_dict(data: dict[str, object], key: str) -> dict[str, int]:
+    value = data.get(key)
+    if not isinstance(value, dict) or not all(
+        isinstance(item_key, str) and isinstance(item_value, int)
+        for item_key, item_value in value.items()
+    ):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must map strings to integers.")
+    return dict(value)
+
+
 def _json_string_list(data: dict[str, object], key: str) -> list[str]:
     value = data.get(key)
     if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
@@ -3524,6 +3626,18 @@ def _json_optional_runtime_transport(
     if not isinstance(value, dict):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
     return Prime3RuntimeTransportMetadata.from_json_dict(value)
+
+
+def _json_optional_game_identity(
+    data: dict[str, object],
+    key: str,
+) -> Prime3RuntimeGameIdentityMetadata | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RuntimeGameIdentityMetadata.from_json_dict(value)
 
 
 def _json_optional_runtime_diagnostics(

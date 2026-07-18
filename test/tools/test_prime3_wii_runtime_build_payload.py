@@ -1245,6 +1245,95 @@ def test_build_prime3_runtime_payload_relocated_continue_cp3w_hello_session_mani
     assert transport.cp3w_runtime_build_id_address is not None
 
 
+def test_build_prime3_runtime_payload_relocated_continue_cp3w_game_identity_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_game_identity_manifest_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="cp3w_game_identity",
+        ios_udp_loop_count=12,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "cp3w_game_identity"
+    assert transport.terminal_phase_value == 79
+    assert transport.terminal_phase_name == "CP3W_GAME_IDENTITY_LOOP_COMPLETE"
+    assert transport.cp3w_game_identity is not None
+    identity = transport.cp3w_game_identity
+    assert identity.command_value == 5
+    assert identity.capability_value == 1 << 11
+    assert identity.schema_version == 1
+    assert identity.payload_size == 28
+    assert identity.profile_fingerprint == 0x67B00CE6
+    assert identity.runtime_build_id == 0x50335731
+    assert identity.configured_count == 12
+    assert identity.phase_names["LOOP_COMPLETE"] == 79
+    assert identity.field_offsets["reserved"] == 24
+    assert set(identity.state_addresses) >= {
+        "requests",
+        "successes",
+        "capability_rejections",
+        "invalid_payload_rejections",
+        "last_availability",
+        "game_state_pointer",
+        "player_state_pointer",
+        "inventory_root_pointer",
+    }
+
+
+def test_receive_completion_routes_all_cp3w_modes_to_frame_validation() -> None:
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    receive_completion = source.split("static s32 runtime_consume_receive_completion(void)", 2)[2].split(
+        "static s32 runtime_consume_send_completion(void)", 1
+    )[0]
+
+    assert "runtime_transport_is_cp3w_mode()" in receive_completion
+
+
+def test_identity_error_packets_fit_send_buffer_without_expanding_ping_limit() -> None:
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "RUNTIME_UDP_SEND_CAPACITY = 96" in source
+    assert "RUNTIME_CP3W_MAX_PING_PAYLOAD_LENGTH = 44" in source
+
+
+@pytest.mark.parametrize("count", [0, -1, 101])
+def test_main_rejects_out_of_range_cp3w_game_identity_count(
+    count: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_build_module(f"prime3_wii_runtime_build_payload_cp3w_game_identity_count_{count}")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--ios-cp3w-game-identity",
+            "--ios-cp3w-game-identity-count",
+            str(count),
+        ],
+    )
+    with pytest.raises(RuntimeError, match="between 1 and 100"):
+        module.main()
+
+
+def test_main_rejects_cp3w_game_identity_count_without_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_game_identity_count_without_mode")
+    monkeypatch.setattr(sys, "argv", ["build_payload.py", "--ios-cp3w-game-identity-count", "12"])
+    with pytest.raises(RuntimeError, match="requires --ios-cp3w-game-identity"):
+        module.main()
+
+
 def test_validate_retail_call_veneer_instructions_accepts_balanced_lr_restore() -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_veneer_validator_good")
 

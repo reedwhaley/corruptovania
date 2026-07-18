@@ -11,6 +11,11 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     DEFAULT_RUNTIME_BUILD_ID,
     DEFAULT_RUNTIME_NAME,
     ERROR_HEADER_FORMAT,
+    GAME_IDENTITY_FIELD_OFFSETS,
+    GAME_IDENTITY_PAYLOAD_FORMAT,
+    GAME_IDENTITY_PAYLOAD_SIZE,
+    GAME_IDENTITY_PROFILE_FINGERPRINT_FORMAT,
+    GAME_IDENTITY_SCHEMA_VERSION,
     HEADER_FORMAT,
     HEADER_SIZE,
     HELLO_MAX_NAME_LENGTH,
@@ -24,21 +29,29 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     PROTOCOL_VERSION,
     READ_MEMORY_PAYLOAD_FORMAT,
     CorruptedChecksumError,
+    GameIdentityPayload,
     HelloRequestPayload,
     HelloResponsePayload,
     InvalidPayloadLengthError,
+    Prime3WiiAvailability,
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
+    Prime3WiiGameId,
+    Prime3WiiPlatformId,
+    Prime3WiiRegionId,
     Prime3WiiRequest,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
+    Prime3WiiRevisionId,
     ReadMemoryPayload,
     compute_accepted_capabilities,
+    decode_game_identity_payload,
     decode_hello_request_payload,
     decode_hello_response_payload,
     derive_session_id,
     encode_error_response,
+    encode_game_identity_payload,
     encode_hello_request_payload,
     encode_hello_response_payload,
     encode_read_memory_payload,
@@ -110,6 +123,19 @@ def _normalized_response(response: Prime3WiiResponse | prime3_wii_protocol.Prime
                 "runtime_metadata_version": hello.runtime_metadata_version,
                 "runtime_name": hello.runtime_name,
             }
+        elif response.command is Prime3WiiCommand.GET_GAME_IDENTITY:
+            identity = decode_game_identity_payload(response.payload)
+            result["payload"] = {
+                **dataclasses.asdict(identity),
+                "game_id": identity.game_id.name,
+                "platform_id": identity.platform_id.name,
+                "region_id": identity.region_id.name,
+                "revision_id": identity.revision_id.name,
+                "availability_flags": int(identity.availability_flags),
+                "availability_names": [
+                    item.name for item in Prime3WiiAvailability if item in identity.availability_flags
+                ],
+            }
         return result
 
     result["status"] = "ERROR"
@@ -167,6 +193,11 @@ def protocol_manifest() -> dict[str, Any]:
         "response_status": _enum_values(Prime3WiiResponseStatus),
         "capabilities": _enum_values(Prime3WiiCapability),
         "error_codes": _enum_values(Prime3WiiErrorCode),
+        "game_ids": _enum_values(Prime3WiiGameId),
+        "platform_ids": _enum_values(Prime3WiiPlatformId),
+        "region_ids": _enum_values(Prime3WiiRegionId),
+        "revision_ids": _enum_values(Prime3WiiRevisionId),
+        "availability_flags": _enum_values(Prime3WiiAvailability),
         "payload_layouts": {
             "hello_request": {
                 "struct_format": HELLO_REQUEST_FIXED_FORMAT,
@@ -211,6 +242,27 @@ def protocol_manifest() -> dict[str, Any]:
                 "payload_size": "requested size",
                 "description": "READ_MEMORY success payload is the raw memory byte range returned by the server.",
             },
+            "game_identity_request": {"payload_size": 0},
+            "game_identity_response": {
+                "struct_format": GAME_IDENTITY_PAYLOAD_FORMAT,
+                "payload_size": GAME_IDENTITY_PAYLOAD_SIZE,
+                "schema_version": GAME_IDENTITY_SCHEMA_VERSION,
+                "field_offsets": GAME_IDENTITY_FIELD_OFFSETS,
+                "fields": [
+                    {"name": "schema_version", "type": "uint8"},
+                    {"name": "game_id", "type": "uint8"},
+                    {"name": "platform_id", "type": "uint8"},
+                    {"name": "region_id", "type": "uint8"},
+                    {"name": "revision_id", "type": "uint16"},
+                    {"name": "protocol_version", "type": "uint8"},
+                    {"name": "runtime_mode", "type": "uint8"},
+                    {"name": "profile_id", "type": "uint32"},
+                    {"name": "profile_fingerprint", "type": "uint32"},
+                    {"name": "runtime_build_id", "type": "uint32"},
+                    {"name": "availability_flags", "type": "uint32"},
+                    {"name": "reserved", "type": "uint32", "required_value": 0},
+                ],
+            },
             "ping_request": {"payload_size": "variable"},
             "ping_response": {"payload_size": "variable"},
             "disconnect_request": {"payload_size": 0},
@@ -241,6 +293,12 @@ def protocol_manifest() -> dict[str, Any]:
                 "runtime_capabilities:uint32",
                 "accepted_client_capabilities:uint32",
             ],
+        },
+        "profile_fingerprint_derivation": {
+            "algorithm": "crc32",
+            "byte_order": "big-endian",
+            "struct_format": GAME_IDENTITY_PROFILE_FINGERPRINT_FORMAT,
+            "description": "CRC32 over canonical compile-time game/profile roots and the expected DOL SHA-256 prefix.",
         },
     }
 
@@ -305,6 +363,20 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
         Prime3WiiResponseStatus.OK,
         b"",
     )
+    identity_request = Prime3WiiRequest(Prime3WiiCommand.GET_GAME_IDENTITY, 0x1007)
+    identity_response = Prime3WiiResponse(
+        Prime3WiiCommand.GET_GAME_IDENTITY,
+        0x1007,
+        Prime3WiiResponseStatus.OK,
+        encode_game_identity_payload(
+            GameIdentityPayload(
+                availability_flags=(
+                    Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
+                    | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+                )
+            )
+        ),
+    )
     mailbox_request = Prime3WiiRequest(Prime3WiiCommand.RESERVED_MAILBOX, 0x1005)
 
     invalid_state_response = encode_error_response(
@@ -367,6 +439,24 @@ def protocol_vectors() -> tuple[ProtocolVector, ...]:
                 "payload_hex": "41424344",
             },
             expected=_normalized_response(read_memory_response),
+        ),
+        ProtocolVector(
+            name="game_identity_request",
+            decode_as="request",
+            packet_hex=_hex_bytes(encode_request(identity_request)),
+            fields={"command": "GET_GAME_IDENTITY", "request_id": 0x1007, "payload_length": 0},
+            expected=_normalized_request(identity_request),
+        ),
+        ProtocolVector(
+            name="game_identity_success_response",
+            decode_as="response",
+            packet_hex=_hex_bytes(encode_response(identity_response)),
+            fields={
+                "command": "GET_GAME_IDENTITY",
+                "request_id": 0x1007,
+                "payload_length": GAME_IDENTITY_PAYLOAD_SIZE,
+            },
+            expected=_normalized_response(identity_response),
         ),
         ProtocolVector(
             name="ping_request",

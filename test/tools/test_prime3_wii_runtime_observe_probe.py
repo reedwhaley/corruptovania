@@ -56,6 +56,13 @@ class FakeBackend:
         self._cycle += 1
 
 
+def test_game_identity_phase_names_are_appended() -> None:
+    module = _load_module()
+    assert module.TRANSPORT_PHASE_NAMES[70] == "CP3W_GAME_IDENTITY_VALIDATE_REQUEST"
+    assert module.TRANSPORT_PHASE_NAMES[77] == "CP3W_GAME_IDENTITY_RESPONSE_COMPLETE"
+    assert module.TRANSPORT_PHASE_NAMES[79] == "CP3W_GAME_IDENTITY_LOOP_COMPLETE"
+
+
 def _manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
     return Prime3RuntimePayloadManifest(
         schema_version=3,

@@ -242,6 +242,36 @@ Live CP3W HELLO/session validation procedure:
 5. Use `python host/udp_cp3w_hello_session_test.py --host 127.0.0.1 --port 43674` to inject the deterministic ten-datagram sequence: pre-HELLO PING, unsupported-version HELLO, valid HELLO, identical duplicate HELLO, changed HELLO, post-HELLO PING, unsupported command, invalid magic, bad CRC, and final zero-byte PING.
 6. Verify that the runtime reaches terminal `CP3W_HELLO_SESSION_LOOP_COMPLETE`, returns no reply for malformed frames, returns exactly one reply for every structurally valid handled request, preserves request IDs, returns the expected structured error messages, derives the deterministic session ID correctly, and remains stable with no extra replies after the terminal hold.
 
+### CP3W GET_GAME_IDENTITY
+
+`GET_GAME_IDENTITY` is the first typed, read-only service after HELLO. It establishes the supported executable/profile and proves whether volatile game, player, and inventory-root pointers are currently safe before any later inventory service is attempted. It does not read the 59 inventory entries, poll locations, write memory, grant items, or start event streaming.
+
+Build mode `20` with a default terminal sequence length of `12`:
+
+```powershell
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-ios-udp-diagnostic --ios-cp3w-game-identity --ios-cp3w-game-identity-count 12 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python host/udp_cp3w_game_identity_test.py --host 127.0.0.1 --port 43674
+```
+
+`--ios-cp3w-game-identity-count` accepts `1..100`; explicit use without `--ios-cp3w-game-identity`, zero, negatives, non-integers, and conflicting diagnostic modes are rejected. Added phases are `70=CP3W_GAME_IDENTITY_VALIDATE_REQUEST`, `71=...VALIDATE_CAPABILITY`, `72=...VALIDATE_EXECUTABLE`, `73=...RESOLVE_GAME_STATE`, `74=...RESOLVE_PLAYER_STATE`, `75=...BUILD_RESPONSE`, `76=...SUBMIT_RESPONSE`, `77=...RESPONSE_COMPLETE`, `78=...HANDLE_ERROR`, and `79=CP3W_GAME_IDENTITY_LOOP_COMPLETE`.
+
+Protocol contract:
+
+- the `GAME_IDENTITY` capability is advertised only by this implemented service mode and must be requested and accepted during HELLO
+- command `5=GET_GAME_IDENTITY`; HELLO capability `0x00000800=GAME_IDENTITY`; request payload is exactly zero bytes
+- identity schema version `1`; response layout `>BBBBHBBIIIII`, fixed at `28` bytes
+- offsets: schema `0`, game `1`, platform `2`, region `3`, revision `4`, protocol `6`, runtime mode `7`, profile ID `8`, profile fingerprint `12`, runtime build ID `16`, availability `20`, reserved `24`
+- static IDs: game `1=METROID_PRIME_3_CORRUPTION`, platform `1=WII`, region `1=NTSC_U`, revision `1=WII_NTSC_3_436`, profile `0x50334E41`, runtime build `0x50335731`
+- profile fingerprint `0x67B00CE6` is CRC32 over big-endian `>BBBHIIIII`: game, platform, region, revision, profile ID, game-state root, CStateManager root, CPlayer vtable, and expected DOL SHA-256 prefix `0x6B550F22`; it is a profile fingerprint, not a full runtime DOL hash
+- availability bits: `0x01=EXECUTABLE_RECOGNIZED`, `0x02=GAME_STATE_POINTER_VALID`, `0x04=PLAYER_STATE_POINTER_VALID`, `0x08=INVENTORY_ROOT_AVAILABLE`, `0x10=WORLD_STATE_AVAILABLE`
+- the final reserved `uint32` is always zero; static fields are deterministic while availability may change during a real game transition
+
+The executable check directly validates the NTSC build marker `!#$M` at `0x805822B0`. Every pointer is non-null, 4-byte aligned, bounded to MEM1 `0x80000000..0x81800000`, and checked for offset overflow before dereference. The game-state root is read from `0x8067DC0C`; the inventory root is validated only through `*(game_state+0x24)` with enough bounded space for the `+0x54` data start. Player validation follows `*(0x805C4F70+0x28)+0x2184` and requires vtable `0x80592C78`. The runtime does not infer save-loaded or loading-state flags. A missing player or inventory root is a successful identity response with those availability bits clear, not a protocol failure.
+
+Processing precedence is malformed frame with no reply, HELLO, pre-HELLO `NOT_NEGOTIATED`, unaccepted capability error `11=CAPABILITY_NOT_NEGOTIATED`, non-empty request error `5=INVALID_PAYLOAD_LENGTH`, unknown command, then one successful dispatch. Rejected requests perform no game-memory reads and do not mutate the session. Observer output includes canonical names and values, decoded availability, validation pointers/results, identity/error counters, request/status fields, transport/callback generations, and terminal state. Terminal completion occurs only after the twelfth datagram's final response callback completes; no receive is rearmed and no extra packet is emitted.
+
+Validation is Dolphin-only; physical Wii behavior is not validated and screenshots are intentionally skipped. Inventory snapshots, location state/deltas, writes, item grants, reconnect reconciliation, authentication, and subscriptions remain explicitly deferred.
+
 Workspace cleanup behavior:
 
 - validation workspaces should be created under `E:\Temp\p3-ios-*` while `E:` has at least `25 GB` free

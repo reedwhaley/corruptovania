@@ -33,6 +33,8 @@ CRC_SIZE = 4
 HELLO_REQUEST_FIXED_FORMAT = ">BBII"
 HELLO_RESPONSE_FIXED_FORMAT = ">BIIIIBB"
 READ_MEMORY_PAYLOAD_FORMAT = ">II"
+GAME_IDENTITY_PAYLOAD_FORMAT = ">BBBBHBBIIIII"
+GAME_IDENTITY_PROFILE_FINGERPRINT_FORMAT = ">BBBHIIIII"
 ERROR_HEADER_FORMAT = ">HHH"
 HELLO_NAME_LENGTH_FORMAT = ">B"
 HELLO_REQUEST_FIXED_SIZE = struct.calcsize(HELLO_REQUEST_FIXED_FORMAT)
@@ -42,7 +44,32 @@ HELLO_MAX_NAME_LENGTH = 31
 HELLO_METADATA_VERSION = 1
 DEFAULT_RUNTIME_NAME = "Prime3 Wii Runtime"
 DEFAULT_RUNTIME_BUILD_ID = 0x50335731
+GAME_IDENTITY_SCHEMA_VERSION = 1
+GAME_IDENTITY_PAYLOAD_SIZE = struct.calcsize(GAME_IDENTITY_PAYLOAD_FORMAT)
+GAME_IDENTITY_FIELD_OFFSETS = {
+    "schema_version": 0,
+    "game_id": 1,
+    "platform_id": 2,
+    "region_id": 3,
+    "revision_id": 4,
+    "protocol_version": 6,
+    "runtime_mode": 7,
+    "profile_id": 8,
+    "profile_fingerprint": 12,
+    "runtime_build_id": 16,
+    "availability_flags": 20,
+    "reserved": 24,
+}
+PRIME3_NTSC_RETAIL_PROFILE_ID = 0x50334E41
+PRIME3_NTSC_RETAIL_DOL_SHA256_PREFIX = 0x6B550F22
+PRIME3_NTSC_BUILD_STRING_ADDRESS = 0x805822B0
+PRIME3_NTSC_GAME_STATE_POINTER_ADDRESS = 0x8067DC0C
+PRIME3_NTSC_CSTATE_MANAGER_GLOBAL_ADDRESS = 0x805C4F70
+PRIME3_NTSC_CPLAYER_VTABLE = 0x80592C78
 NOT_NEGOTIATED_MESSAGE = "Negotiation required before PING."
+GAME_IDENTITY_NOT_NEGOTIATED_MESSAGE = "Negotiation required before GET_GAME_IDENTITY."
+GAME_IDENTITY_CAPABILITY_MESSAGE = "GAME_IDENTITY capability was not negotiated."
+GAME_IDENTITY_INVALID_PAYLOAD_MESSAGE = "GET_GAME_IDENTITY request payload must be empty."
 UNSUPPORTED_VERSION_MESSAGE = "Unsupported protocol version range."
 INVALID_STATE_MESSAGE = "Session is already negotiated."
 UNKNOWN_COMMAND_MESSAGE = "Command is unsupported"
@@ -80,6 +107,10 @@ class MismatchedRequestIdError(Prime3WiiProtocolError):
     pass
 
 
+class UnsupportedIdentitySchemaError(Prime3WiiProtocolError):
+    pass
+
+
 class ServerSideProtocolError(Prime3WiiProtocolError):
     def __init__(self, error_code: Prime3WiiErrorCode, message: str, command: Prime3WiiCommand):
         super().__init__(f"{error_code.name} for {command.name}: {message}")
@@ -98,6 +129,7 @@ class Prime3WiiCommand(enum.IntEnum):
     READ_MEMORY = 2
     PING = 3
     DISCONNECT = 4
+    GET_GAME_IDENTITY = 5
     RESERVED_MAILBOX = 127
 
 
@@ -118,6 +150,7 @@ class Prime3WiiCapability(enum.IntFlag):
     EVENT_STREAMING = 1 << 8
     RECONNECT = 1 << 9
     AUTHENTICATION = 1 << 10
+    GAME_IDENTITY = 1 << 11
 
 
 HELLO_RUNTIME_CAPABILITIES = (
@@ -128,6 +161,7 @@ HELLO_RUNTIME_CAPABILITIES = (
 )
 
 READ_ONLY_RUNTIME_CAPABILITIES = HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.READ_MEMORY
+GAME_IDENTITY_RUNTIME_CAPABILITIES = HELLO_RUNTIME_CAPABILITIES | Prime3WiiCapability.GAME_IDENTITY
 
 
 class Prime3WiiErrorCode(enum.IntEnum):
@@ -141,6 +175,75 @@ class Prime3WiiErrorCode(enum.IntEnum):
     SERVER_ERROR = 8
     NOT_NEGOTIATED = 9
     INVALID_STATE = 10
+    CAPABILITY_NOT_NEGOTIATED = 11
+
+
+class Prime3WiiGameId(enum.IntEnum):
+    METROID_PRIME_3_CORRUPTION = 1
+
+
+class Prime3WiiPlatformId(enum.IntEnum):
+    WII = 1
+
+
+class Prime3WiiRegionId(enum.IntEnum):
+    NTSC_U = 1
+    PAL = 2
+    NTSC_J = 3
+
+
+class Prime3WiiRevisionId(enum.IntEnum):
+    WII_NTSC_3_436 = 1
+    WII_PAL_3_453 = 2
+    WII_NTSC_J_3_495 = 3
+
+
+class Prime3WiiAvailability(enum.IntFlag):
+    EXECUTABLE_RECOGNIZED = 1 << 0
+    GAME_STATE_POINTER_VALID = 1 << 1
+    PLAYER_STATE_POINTER_VALID = 1 << 2
+    INVENTORY_ROOT_AVAILABLE = 1 << 3
+    WORLD_STATE_AVAILABLE = 1 << 4
+
+
+def derive_profile_fingerprint(
+    *,
+    game_id: Prime3WiiGameId,
+    platform_id: Prime3WiiPlatformId,
+    region_id: Prime3WiiRegionId,
+    revision_id: Prime3WiiRevisionId,
+    profile_id: int,
+    game_state_pointer_address: int,
+    cstate_manager_global_address: int,
+    cplayer_vtable: int,
+    dol_sha256_prefix: int,
+) -> int:
+    canonical = struct.pack(
+        GAME_IDENTITY_PROFILE_FINGERPRINT_FORMAT,
+        game_id,
+        platform_id,
+        region_id,
+        revision_id,
+        profile_id,
+        game_state_pointer_address,
+        cstate_manager_global_address,
+        cplayer_vtable,
+        dol_sha256_prefix,
+    )
+    return zlib.crc32(canonical) & 0xFFFFFFFF
+
+
+PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT = derive_profile_fingerprint(
+    game_id=Prime3WiiGameId.METROID_PRIME_3_CORRUPTION,
+    platform_id=Prime3WiiPlatformId.WII,
+    region_id=Prime3WiiRegionId.NTSC_U,
+    revision_id=Prime3WiiRevisionId.WII_NTSC_3_436,
+    profile_id=PRIME3_NTSC_RETAIL_PROFILE_ID,
+    game_state_pointer_address=PRIME3_NTSC_GAME_STATE_POINTER_ADDRESS,
+    cstate_manager_global_address=PRIME3_NTSC_CSTATE_MANAGER_GLOBAL_ADDRESS,
+    cplayer_vtable=PRIME3_NTSC_CPLAYER_VTABLE,
+    dol_sha256_prefix=PRIME3_NTSC_RETAIL_DOL_SHA256_PREFIX,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -171,6 +274,22 @@ HelloPayload = HelloResponsePayload
 class ReadMemoryPayload:
     address: int
     size: int
+
+
+@dataclasses.dataclass(frozen=True)
+class GameIdentityPayload:
+    schema_version: int = GAME_IDENTITY_SCHEMA_VERSION
+    game_id: Prime3WiiGameId = Prime3WiiGameId.METROID_PRIME_3_CORRUPTION
+    platform_id: Prime3WiiPlatformId = Prime3WiiPlatformId.WII
+    region_id: Prime3WiiRegionId = Prime3WiiRegionId.NTSC_U
+    revision_id: Prime3WiiRevisionId = Prime3WiiRevisionId.WII_NTSC_3_436
+    protocol_version: int = PROTOCOL_VERSION
+    runtime_mode: int = 20
+    profile_id: int = PRIME3_NTSC_RETAIL_PROFILE_ID
+    profile_fingerprint: int = PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT
+    runtime_build_id: int = DEFAULT_RUNTIME_BUILD_ID
+    availability_flags: Prime3WiiAvailability = Prime3WiiAvailability(0)
+    reserved: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -495,6 +614,87 @@ def decode_read_memory_payload(payload: bytes) -> ReadMemoryPayload:
         raise InvalidPayloadLengthError(f"READ_MEMORY payload must be {expected_size} bytes, got {len(payload)}")
     address, size = struct.unpack(READ_MEMORY_PAYLOAD_FORMAT, payload)
     return ReadMemoryPayload(address=address, size=size)
+
+
+def encode_game_identity_payload(payload: GameIdentityPayload) -> bytes:
+    _validate_u8(payload.schema_version, "schema_version")
+    _validate_u8(payload.game_id, "game_id")
+    _validate_u8(payload.platform_id, "platform_id")
+    _validate_u8(payload.region_id, "region_id")
+    if payload.revision_id < 0 or payload.revision_id > 0xFFFF:
+        raise InvalidPayloadLengthError(f"revision_id must fit in uint16, got {payload.revision_id}.")
+    _validate_u8(payload.protocol_version, "protocol_version")
+    _validate_u8(payload.runtime_mode, "runtime_mode")
+    _validate_u32(payload.profile_id, "profile_id")
+    _validate_u32(payload.profile_fingerprint, "profile_fingerprint")
+    _validate_u32(payload.runtime_build_id, "runtime_build_id")
+    _validate_u32(payload.availability_flags, "availability_flags")
+    _validate_u32(payload.reserved, "reserved")
+    if payload.reserved != 0:
+        raise InvalidPayloadLengthError("GET_GAME_IDENTITY reserved field must be zero.")
+    return struct.pack(
+        GAME_IDENTITY_PAYLOAD_FORMAT,
+        payload.schema_version,
+        payload.game_id,
+        payload.platform_id,
+        payload.region_id,
+        payload.revision_id,
+        payload.protocol_version,
+        payload.runtime_mode,
+        payload.profile_id,
+        payload.profile_fingerprint,
+        payload.runtime_build_id,
+        int(payload.availability_flags),
+        payload.reserved,
+    )
+
+
+def decode_game_identity_payload(payload: bytes) -> GameIdentityPayload:
+    if len(payload) != GAME_IDENTITY_PAYLOAD_SIZE:
+        raise InvalidPayloadLengthError(
+            f"GET_GAME_IDENTITY response payload must be {GAME_IDENTITY_PAYLOAD_SIZE} bytes, got {len(payload)}"
+        )
+    (
+        schema_version,
+        game_id,
+        platform_id,
+        region_id,
+        revision_id,
+        protocol_version,
+        runtime_mode,
+        profile_id,
+        profile_fingerprint,
+        runtime_build_id,
+        availability_flags,
+        reserved,
+    ) = struct.unpack(GAME_IDENTITY_PAYLOAD_FORMAT, payload)
+    if schema_version != GAME_IDENTITY_SCHEMA_VERSION:
+        raise UnsupportedIdentitySchemaError(
+            f"Unsupported GET_GAME_IDENTITY schema {schema_version}; expected {GAME_IDENTITY_SCHEMA_VERSION}."
+        )
+    if reserved != 0:
+        raise InvalidPayloadLengthError("GET_GAME_IDENTITY reserved field must be zero.")
+    try:
+        decoded_game_id = Prime3WiiGameId(game_id)
+        decoded_platform_id = Prime3WiiPlatformId(platform_id)
+        decoded_region_id = Prime3WiiRegionId(region_id)
+        decoded_revision_id = Prime3WiiRevisionId(revision_id)
+    except ValueError as exc:
+        raise InvalidPayloadLengthError(f"GET_GAME_IDENTITY contains an unknown identity enum: {exc}") from exc
+    return GameIdentityPayload(
+        schema_version=schema_version,
+        game_id=decoded_game_id,
+        platform_id=decoded_platform_id,
+        region_id=decoded_region_id,
+        revision_id=decoded_revision_id,
+        protocol_version=protocol_version,
+        runtime_mode=runtime_mode,
+        profile_id=profile_id,
+        profile_fingerprint=profile_fingerprint,
+        runtime_build_id=runtime_build_id,
+        availability_flags=Prime3WiiAvailability(availability_flags),
+        reserved=reserved,
+    )
 
 
 def encode_error_response(

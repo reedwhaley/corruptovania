@@ -15,6 +15,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     UNSUPPORTED_VERSION_MESSAGE,
     HelloRequestPayload,
     HelloResponsePayload,
+    Prime3WiiAvailability,
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
@@ -44,7 +45,14 @@ def sleep_spy_fixture():
 
 @pytest.fixture(name="server")
 async def fake_server():
-    server = Prime3WiiFakeServer(max_read_size=32)
+    server = Prime3WiiFakeServer(
+        max_read_size=32,
+        capabilities=Prime3WiiCapability.READ_MEMORY | Prime3WiiCapability.GAME_IDENTITY,
+        identity_availability=(
+            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
+            | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+        ),
+    )
     server.load_bytes(0x80000020, b"ABCD")
     server.load_bytes(0x80000040, b"EFGH")
     server.store_pointer(0x80000080, 0x800000A0)
@@ -73,6 +81,33 @@ async def test_connect_hello_success(executor: Prime3WiiExecutor):
     assert await executor.connect() is None
     assert executor.is_connected()
     assert executor.supports_writes is False
+    assert executor.accepted_capabilities & Prime3WiiCapability.GAME_IDENTITY
+
+
+async def test_get_game_identity_returns_typed_availability(executor: Prime3WiiExecutor) -> None:
+    assert await executor.connect() is None
+    identity = await executor.get_game_identity()
+    assert identity.availability_flags & Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
+    assert identity.availability_flags & Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+    assert not identity.availability_flags & Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID
+
+
+async def test_get_game_identity_rejects_omitted_capability(
+    server: Prime3WiiFakeServer,
+    sleep_spy,
+) -> None:
+    server.capabilities = Prime3WiiCapability.READ_MEMORY
+    _, sleep = sleep_spy
+    executor = Prime3WiiExecutor(
+        "127.0.0.1",
+        port=server.port,
+        timeout=0.05,
+        retry_count=0,
+        sleep=sleep,
+    )
+    assert await executor.connect() is None
+    with pytest.raises(MemoryOperationException, match="did not negotiate GAME_IDENTITY"):
+        await executor.get_game_identity()
 
 
 async def test_connect_unsupported_protocol_version(executor: Prime3WiiExecutor, server: Prime3WiiFakeServer):

@@ -7,15 +7,20 @@ import pytest
 from randovania.game_connection.executor.prime3_wii_protocol import (
     DEFAULT_RUNTIME_BUILD_ID,
     DEFAULT_RUNTIME_NAME,
+    GAME_IDENTITY_FIELD_OFFSETS,
+    GAME_IDENTITY_PAYLOAD_SIZE,
     HELLO_METADATA_VERSION,
     HELLO_RUNTIME_CAPABILITIES,
     INVALID_STATE_MESSAGE,
     NOT_NEGOTIATED_MESSAGE,
+    PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT,
     BadMagicError,
     CorruptedChecksumError,
+    GameIdentityPayload,
     HelloRequestPayload,
     HelloResponsePayload,
     InvalidPayloadLengthError,
+    Prime3WiiAvailability,
     Prime3WiiCapability,
     Prime3WiiCommand,
     Prime3WiiErrorCode,
@@ -23,15 +28,18 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
     UnknownCommandError,
+    UnsupportedIdentitySchemaError,
     UnsupportedProtocolVersionError,
     compute_accepted_capabilities,
     crc32_bytes,
+    decode_game_identity_payload,
     decode_hello_request_payload,
     decode_hello_response_payload,
     decode_request,
     decode_response,
     derive_session_id,
     encode_error_response,
+    encode_game_identity_payload,
     encode_hello_request_payload,
     encode_hello_response_payload,
     encode_request,
@@ -41,6 +49,44 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
 
 def _with_crc(body: bytes) -> bytes:
     return body + struct.pack(">I", crc32_bytes(body))
+
+
+def test_game_identity_protocol_values_and_layout_are_stable() -> None:
+    assert Prime3WiiCommand.GET_GAME_IDENTITY == 5
+    assert Prime3WiiCapability.GAME_IDENTITY == 1 << 11
+    assert Prime3WiiErrorCode.CAPABILITY_NOT_NEGOTIATED == 11
+    assert GAME_IDENTITY_PAYLOAD_SIZE == 28
+    assert GAME_IDENTITY_FIELD_OFFSETS["revision_id"] == 4
+    assert GAME_IDENTITY_FIELD_OFFSETS["reserved"] == 24
+    assert PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT == 0x67B00CE6
+
+
+def test_game_identity_payload_round_trip_is_big_endian_and_deterministic() -> None:
+    identity = GameIdentityPayload(
+        availability_flags=(
+            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
+            | Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID
+        )
+    )
+    encoded = encode_game_identity_payload(identity)
+    assert encoded == encode_game_identity_payload(identity)
+    assert encoded[4:6] == b"\x00\x01"
+    assert encoded[12:16] == PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT.to_bytes(4, "big")
+    assert encoded[24:28] == b"\0\0\0\0"
+    assert decode_game_identity_payload(encoded) == identity
+
+
+def test_game_identity_payload_rejects_wrong_size_schema_and_reserved() -> None:
+    encoded = bytearray(encode_game_identity_payload(GameIdentityPayload()))
+    with pytest.raises(InvalidPayloadLengthError):
+        decode_game_identity_payload(bytes(encoded[:-1]))
+    encoded[0] = 2
+    with pytest.raises(UnsupportedIdentitySchemaError):
+        decode_game_identity_payload(bytes(encoded))
+    encoded[0] = 1
+    encoded[-1] = 1
+    with pytest.raises(InvalidPayloadLengthError, match="reserved"):
+        decode_game_identity_payload(bytes(encoded))
 
 
 def test_request_round_trip():

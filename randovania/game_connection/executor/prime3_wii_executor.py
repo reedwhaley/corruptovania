@@ -16,17 +16,26 @@ from randovania.game_connection.executor.memory_operation import (
 )
 from randovania.game_connection.executor.prime3_wii_protocol import (
     DEFAULT_RUNTIME_BUILD_ID,
+    GAME_IDENTITY_SCHEMA_VERSION,
+    PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT,
+    PRIME3_NTSC_RETAIL_PROFILE_ID,
+    GameIdentityPayload,
     HelloRequestPayload,
     MismatchedRequestIdError,
     Prime3WiiCapability,
     Prime3WiiCommand,
+    Prime3WiiGameId,
+    Prime3WiiPlatformId,
     Prime3WiiProtocolError,
+    Prime3WiiRegionId,
     Prime3WiiRequest,
     Prime3WiiResponse,
     Prime3WiiResponseStatus,
+    Prime3WiiRevisionId,
     ReadMemoryPayload,
     ServerSideProtocolError,
     compute_accepted_capabilities,
+    decode_game_identity_payload,
     decode_hello_response_payload,
     decode_response,
     encode_hello_request_payload,
@@ -46,6 +55,7 @@ CLIENT_CAPABILITIES = (
     | Prime3WiiCapability.STRUCTURED_ERRORS
     | Prime3WiiCapability.DETERMINISTIC_SESSION_ID
     | Prime3WiiCapability.READ_MEMORY
+    | Prime3WiiCapability.GAME_IDENTITY
 )
 CLIENT_NONCE = 0x43503357
 CLIENT_NAME = "randovania"
@@ -125,6 +135,9 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
         self._retry_backoff = retry_backoff
         self._sleep = sleep or asyncio.sleep
         self._request_lock = asyncio.Lock()
+        self._accepted_capabilities = Prime3WiiCapability(0)
+        self._runtime_build_id: int | None = None
+        self._runtime_mode: int | None = None
 
     @property
     def ip(self) -> str:
@@ -201,6 +214,9 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
                 raise MemoryOperationException("Server reported an uninitialized session identifier.")
 
             self._connected = True
+            self._accepted_capabilities = hello.accepted_client_capabilities
+            self._runtime_build_id = hello.runtime_build_id
+            self._runtime_mode = hello.runtime_mode
             return None
         except MemoryOperationException as e:
             self.logger.debug("HELLO negotiation failed: %s", e)
@@ -220,6 +236,9 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
             self.logger.debug("Ignoring disconnect packet failure: %s", e)
         finally:
             self._connected = False
+            self._accepted_capabilities = Prime3WiiCapability(0)
+            self._runtime_build_id = None
+            self._runtime_mode = None
             self._transport = None
             self._protocol_state = None
             try:
@@ -320,6 +339,45 @@ class Prime3WiiExecutor(MemoryOperationExecutor):
 
     async def ping(self) -> None:
         await self._request(Prime3WiiCommand.PING, b"", expected_command=Prime3WiiCommand.PING)
+
+    @property
+    def accepted_capabilities(self) -> Prime3WiiCapability:
+        return self._accepted_capabilities
+
+    async def get_game_identity(self) -> GameIdentityPayload:
+        if not self.is_connected():
+            raise MemoryOperationException("Not connected")
+        if not self._accepted_capabilities & Prime3WiiCapability.GAME_IDENTITY:
+            raise MemoryOperationException("Server did not negotiate GAME_IDENTITY capability.")
+        response = await self._request(
+            Prime3WiiCommand.GET_GAME_IDENTITY,
+            b"",
+            expected_command=Prime3WiiCommand.GET_GAME_IDENTITY,
+        )
+        try:
+            identity = decode_game_identity_payload(response.payload)
+        except Prime3WiiProtocolError as exc:
+            raise MemoryOperationException(f"Malformed GET_GAME_IDENTITY response: {exc}") from exc
+        expected = {
+            "schema_version": (identity.schema_version, GAME_IDENTITY_SCHEMA_VERSION),
+            "game_id": (identity.game_id, Prime3WiiGameId.METROID_PRIME_3_CORRUPTION),
+            "platform_id": (identity.platform_id, Prime3WiiPlatformId.WII),
+            "region_id": (identity.region_id, Prime3WiiRegionId.NTSC_U),
+            "revision_id": (identity.revision_id, Prime3WiiRevisionId.WII_NTSC_3_436),
+            "profile_id": (identity.profile_id, PRIME3_NTSC_RETAIL_PROFILE_ID),
+            "profile_fingerprint": (
+                identity.profile_fingerprint,
+                PRIME3_NTSC_RETAIL_PROFILE_FINGERPRINT,
+            ),
+            "runtime_build_id": (identity.runtime_build_id, self._runtime_build_id),
+            "runtime_mode": (identity.runtime_mode, self._runtime_mode),
+        }
+        for field_name, (actual, wanted) in expected.items():
+            if actual != wanted:
+                raise MemoryOperationException(
+                    f"GET_GAME_IDENTITY {field_name} mismatch: received {actual!r}, expected {wanted!r}."
+                )
+        return identity
 
     async def _read_memory_raw(self, address: int, size: int) -> bytes:
         _validate_read(address, size)

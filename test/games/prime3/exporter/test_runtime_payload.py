@@ -405,6 +405,32 @@ def test_runtime_payload_manifest_json_is_deterministic() -> None:
     assert manifest.to_json_text() == manifest.to_json_text()
 
 
+def test_game_identity_metadata_round_trip_and_validation() -> None:
+    metadata = runtime_payload.Prime3RuntimeGameIdentityMetadata(
+        mode_value=20,
+        mode_name="cp3w_game_identity",
+        command_value=5,
+        capability_value=1 << 11,
+        schema_version=1,
+        payload_size=28,
+        field_offsets={"reserved": 24},
+        game_id=1,
+        platform_id=1,
+        region_id=1,
+        revision_id=1,
+        profile_id=0x50334E41,
+        profile_fingerprint=0x67B00CE6,
+        fingerprint_derivation="test",
+        runtime_build_id=0x50335731,
+        availability_flags={"EXECUTABLE_RECOGNIZED": 1},
+        phase_names={"LOOP_COMPLETE": 79},
+        configured_count=12,
+        state_addresses={"requests": 0x817E1100, "successes": 0x817E1104},
+    )
+    assert metadata.validate(runtime_state_start=0x817E1000, runtime_state_end=0x817E1200)
+    assert runtime_payload.Prime3RuntimeGameIdentityMetadata.from_json_dict(metadata.to_json_dict()) == metadata
+
+
 def test_load_prime3_runtime_payload_artifact(tmp_path: Path) -> None:
     payload_bytes = b"\x4e\x80\x00\x20"
     manifest = _make_manifest(payload_bytes)

@@ -19,6 +19,15 @@ if __package__ in {None, ""}:
 
 import dolphin_memory_engine  # type: ignore[import-untyped]
 
+from randovania.game_connection.executor.prime3_wii_protocol import (
+    Prime3WiiAvailability,
+    Prime3WiiCapability,
+    Prime3WiiCommand,
+    Prime3WiiGameId,
+    Prime3WiiPlatformId,
+    Prime3WiiRegionId,
+    Prime3WiiRevisionId,
+)
 from randovania.games.prime3.exporter.runtime_payload import Prime3RuntimePayloadManifest
 
 GAME_ID_ADDRESS = 0x80000000
@@ -111,6 +120,16 @@ TRANSPORT_PHASE_NAMES = {
     67: "CP3W_HANDLE_RENEGOTIATION_REJECTED",
     68: "CP3W_HANDLE_NOT_NEGOTIATED",
     69: "CP3W_HELLO_SESSION_LOOP_COMPLETE",
+    70: "CP3W_GAME_IDENTITY_VALIDATE_REQUEST",
+    71: "CP3W_GAME_IDENTITY_VALIDATE_CAPABILITY",
+    72: "CP3W_GAME_IDENTITY_VALIDATE_EXECUTABLE",
+    73: "CP3W_GAME_IDENTITY_RESOLVE_GAME_STATE",
+    74: "CP3W_GAME_IDENTITY_RESOLVE_PLAYER_STATE",
+    75: "CP3W_GAME_IDENTITY_BUILD_RESPONSE",
+    76: "CP3W_GAME_IDENTITY_SUBMIT_RESPONSE",
+    77: "CP3W_GAME_IDENTITY_RESPONSE_COMPLETE",
+    78: "CP3W_GAME_IDENTITY_HANDLE_ERROR",
+    79: "CP3W_GAME_IDENTITY_LOOP_COMPLETE",
     21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
     22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
     23: "BIND_FAILED_CLEANED",
@@ -1272,6 +1291,39 @@ def _read_probe_state(  # noqa: C901
                 ),
                 "socket_leak_detected": optional_u32(transport.socket_leak_detected_address),
             }
+                if transport.cp3w_game_identity is not None:
+                    identity = transport.cp3w_game_identity
+                    identity_state = {
+                        name: _runtime_u32(address) for name, address in identity.state_addresses.items()
+                    }
+                    availability = identity_state["last_availability"]
+                    known_availability_mask = sum(identity.availability_flags.values())
+                    command_value = identity.command_value
+                    capability_value = identity.capability_value
+                    relocated_runtime["transport"]["cp3w_game_identity"] = {
+                        **identity.to_json_dict(),
+                        "command_name": Prime3WiiCommand(command_value).name,
+                        "capability_name": Prime3WiiCapability(capability_value).name,
+                        "game_name": Prime3WiiGameId(identity.game_id).name,
+                        "platform_name": Prime3WiiPlatformId(identity.platform_id).name,
+                        "region_name": Prime3WiiRegionId(identity.region_id).name,
+                        "revision_name": Prime3WiiRevisionId(identity.revision_id).name,
+                        "state": identity_state,
+                        "availability_raw": availability,
+                        "availability_names": [
+                            item.name for item in Prime3WiiAvailability if availability & int(item)
+                        ],
+                        "availability_unknown_bits": availability & ~known_availability_mask,
+                        "game_state_pointer_validated": bool(
+                            availability & int(Prime3WiiAvailability.GAME_STATE_POINTER_VALID)
+                        ),
+                        "player_state_pointer_validated": bool(
+                            availability & int(Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID)
+                        ),
+                        "inventory_root_validated": bool(
+                            availability & int(Prime3WiiAvailability.INVENTORY_ROOT_AVAILABLE)
+                        ),
+                    }
 
     boot_info_pointer = low_memory_words["0x800000F4"]
     boot_info_plus_8 = None

@@ -289,14 +289,6 @@ Processing precedence is malformed frame with no reply, HELLO, pre-HELLO `NOT_NE
 
 Validation is Dolphin-only; physical Wii behavior is not validated and screenshots are intentionally skipped. Inventory snapshots, location state/deltas, writes, item grants, reconnect reconciliation, authentication, and subscriptions remain explicitly deferred.
 
-Workspace cleanup behavior:
-
-- validation workspaces should be created under `E:\Temp\p3-ios-*` while `E:` has at least `25 GB` free
-- if `E:` does not have enough space, use `C:\Temp` for the workspace but continue reading the source extraction from `E:\ROMS\CorruptionCDVExtract`
-- after a successful milestone, delete intermediate workspaces and keep only the newest successful validation workspace plus reports
-- screenshots were intentionally skipped by user instruction
-- Dolphin-only validation is currently covered; physical Wii has not yet been validated
-
 Known limitations:
 
 - this remains a developer-only diagnostic transport path

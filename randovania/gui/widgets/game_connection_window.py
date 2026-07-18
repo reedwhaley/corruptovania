@@ -4,7 +4,7 @@ import collections
 import functools
 from typing import TYPE_CHECKING
 
-import wiiload  # type: ignore[import-not-found]
+import wiiload  # type: ignore[import-untyped]
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 from qasync import asyncSlot
@@ -14,7 +14,10 @@ from randovania.game.game_enum import RandovaniaGame
 from randovania.game_connection.builder.connector_builder_option import ConnectorBuilderOption
 from randovania.game_connection.builder.debug_connector_builder import DebugConnectorBuilder
 from randovania.game_connection.builder.nintendont_connector_builder import NintendontConnectorBuilder
-from randovania.game_connection.builder.prime3_wii_connector_builder import Prime3WiiConnectorBuilder
+from randovania.game_connection.builder.prime3_wii_connector_builder import (
+    Prime3WiiConnectorBuilder,
+    validate_wii_ip_address,
+)
 from randovania.game_connection.connector.debug_remote_connector import DebugRemoteConnector
 from randovania.game_connection.connector.remote_connector import ImportantStatusMessage, RemoteConnector
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
@@ -25,7 +28,7 @@ from randovania.games.dread.gui.dialog.dread_connector_prompt_dialog import (
 from randovania.games.samus_returns.gui.dialog.msr_connector_prompt_dialog import MSRConnectorPromptDialog
 from randovania.gui.debug_backend_window import DebugConnectorWindow
 from randovania.gui.dialog.text_prompt_dialog import TextPromptDialog
-from randovania.gui.generated.game_connection_window_ui import Ui_GameConnectionWindow  # type: ignore[import-not-found]
+from randovania.gui.generated.game_connection_window_ui import Ui_GameConnectionWindow
 from randovania.gui.lib import async_dialog, common_qt_lib
 from randovania.gui.lib.qt_network_client import QtNetworkClient, handle_network_errors
 from randovania.interface_common.players_configuration import INVALID_UUID
@@ -116,6 +119,8 @@ class BuilderUi:
             lines.append(msg)
 
         self.open_session_action.setEnabled(has_session)
+        if isinstance(diagnostics := connector.diagnostic_status(), str):
+            lines.extend(["", diagnostics])
         self.status.setText("\n".join(lines))
 
     @asyncSlot()
@@ -244,12 +249,16 @@ class GameConnectionWindow(QtWidgets.QMainWindow, Ui_GameConnectionWindow):
 
         if choice == ConnectorBuilderChoice.PRIME3_WII:
             new_ip = await self._prompt_for_text(
-                "Enter Prime 3 Wii IP",
-                "Enter the IPv4 address shown by the future Prime 3 Wii patch on the game screen.",
+                "Enter Wii / Wii U IP address",
+                "Enter the IPv4 address of the Wii or Wii U in vWii mode. CP3W always uses UDP port 43674.",
             )
             if new_ip is None:
                 return
-            args["ip"] = new_ip
+            try:
+                args["ip"] = validate_wii_ip_address(new_ip)
+            except ValueError as exc:
+                await async_dialog.warning(self, "Invalid Wii IP address", str(exc))
+                return
 
         if choice == ConnectorBuilderChoice.DREAD:
             new_ip = await DreadConnectorPromptDialog.prompt(
@@ -377,10 +386,10 @@ class GameConnectionWindow(QtWidgets.QMainWindow, Ui_GameConnectionWindow):
 
         if isinstance(builder, Prime3WiiConnectorBuilder):
             ui.menu.addSeparator()
-            action = QtGui.QAction(ui.menu)
-            action.setText("Read-only Prime 3 Wii connection")
-            action.setEnabled(False)
-            ui.menu.addAction(action)
+            diagnostic = QtGui.QAction(ui.menu)
+            diagnostic.setText("CP3W UDP port: 43674 (protocol-defined)")
+            diagnostic.setEnabled(False)
+            ui.menu.addAction(diagnostic)
 
         if isinstance(builder, DebugConnectorBuilder):
             ui.menu.addSeparator()

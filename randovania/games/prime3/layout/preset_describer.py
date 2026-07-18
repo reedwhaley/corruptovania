@@ -36,7 +36,7 @@ class CorruptionPresetDescriber(GamePresetDescriber):
                 {
                     "Phaaze skip enabled": configuration.teleporters.skip_final_bosses,
                     "Uses MP3Update": configuration.MP3Update,
-                    "Embeds Prime 3 Wii networking identity": configuration.enable_prime3_wii_networking,
+                    "Includes Wii / Wii U CP3W networking": True,
                 },
             ],
         }

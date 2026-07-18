@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import randovania
 from randovania.exporter.game_exporter import GameExporter, GameExportParams
-from randovania.games.prime3.exporter.dol_patcher import patch_prime3_corruption_dol_file_atomic
+from randovania.games.prime3.exporter.hardware_runtime import patch_prime3_hardware_dol_file_atomic
 from randovania.games.prime3.exporter.toolchain import (
     Prime3Toolchain,
     extract_prime3_disc_image,
@@ -96,21 +96,23 @@ class CorruptionGameExporter(GameExporter):
                     ),
                 )
 
-            if patch_data["enable_prime3_wii_networking"]:
-                progress_update("Embedding Prime 3 Wii identity...", 0.35)
-                main_dol_path = extract_path.joinpath("DATA", "sys", "main.dol")
-                patch_result = patch_prime3_corruption_dol_file_atomic(
-                    main_dol_path,
-                    uuid.UUID(patch_data["layout_uuid"]),
-                )
-                self.logger.info(
-                    "Embedded Prime 3 Wii layout UUID %s into %s at virtual 0x%08x (file offset 0x%08x, changed=%s)",
-                    patch_result.layout_uuid,
-                    patch_result.version_description,
-                    patch_result.build_string_address + 6,
-                    patch_result.build_string_offset,
-                    patch_result.changed,
-                )
+            progress_update("Installing and validating Prime 3 Wii / Wii U networking...", 0.35)
+            main_dol_path = extract_path.joinpath("DATA", "sys", "main.dol")
+            hardware_result = patch_prime3_hardware_dol_file_atomic(
+                main_dol_path,
+                uuid.UUID(patch_data["layout_uuid"]),
+                runtime_build_dir=extract_path.joinpath(".prime3_wii_runtime"),
+            )
+            validation = hardware_result.validation
+            self.logger.info(
+                "Installed CP3W runtime %s for %s at 0x%08x; entry=0x%08x recurring=0x%08x UDP=%d",
+                validation.payload_sha256,
+                validation.version_description,
+                validation.runtime_section_address,
+                validation.entry_hook_target,
+                validation.recurring_hook_target,
+                validation.udp_port,
+            )
 
             if patch_data["mp3_update"]:
                 progress_update("Applying Update...", 0.4)
@@ -193,19 +195,13 @@ def _run_process(command: tuple[str, ...], env: dict[str, str] | None = None) ->
         )
     except subprocess.CalledProcessError as exception:
         diagnostic_parts = [
-            part.strip()
-            for part in (exception.stdout, exception.stderr)
-            if isinstance(part, str) and part.strip()
+            part.strip() for part in (exception.stdout, exception.stderr) if isinstance(part, str) and part.strip()
         ]
         diagnostics = "\n".join(diagnostic_parts)
         if len(diagnostics) > 12000:
             diagnostics = diagnostics[-12000:]
 
-        message = (
-            f"Prime 3 helper failed "
-            f"({Path(command[0]).name}, exit code {exception.returncode}): "
-            f"{command}"
-        )
+        message = f"Prime 3 helper failed ({Path(command[0]).name}, exit code {exception.returncode}): {command}"
         if diagnostics:
             message += f"\n\nHelper output:\n{diagnostics}"
 

@@ -20,7 +20,10 @@ from randovania.game_connection.executor.memory_operation import (
     MemoryOperationException,
     MemoryOperationExecutor,
 )
-from randovania.game_connection.executor.prime3_wii_executor import Prime3WiiExecutor
+from randovania.game_connection.executor.prime3_wii_executor import (
+    Prime3WiiExecutor,
+    Prime3WiiTransientError,
+)
 from randovania.game_connection.executor.prime3_wii_protocol import INVENTORY_ITEM_IDS, Prime3WiiCapability
 from randovania.game_description import default_database
 from randovania.game_description.resources.inventory import Inventory, InventoryItem
@@ -75,6 +78,7 @@ class PrimeRemoteConnector(RemoteConnector):
         self.game = default_database.game_description_for(_RDS_TO_RDV_GAME[version.game])
         self.remote_pickups = ()
         self.pending_messages: list[str] = []
+        self.last_inventory = Inventory.empty()
 
         self._timer = InfiniteTimer(self.update, self._dt)
 
@@ -86,18 +90,46 @@ class PrimeRemoteConnector(RemoteConnector):
     def supports_writes(self) -> bool:
         return bool(getattr(self.executor, "supports_writes", True))
 
-    def description(self) -> str:
-        return f"{self.game_enum.long_name}: {self.version.description}"
-
-    def _ensure_writable(self, action: str) -> None:
-        if not self.supports_writes:
-            raise RuntimeError(f"{type(self).__name__} does not support {action} with a read-only executor.")
-
     @property
     def _uses_cp3w_inventory(self) -> bool:
         return isinstance(self.executor, Prime3WiiExecutor) and bool(
             self.executor.accepted_capabilities & Prime3WiiCapability.INVENTORY_STATE
         )
+
+    def description(self) -> str:
+        return f"{self.game_enum.long_name}: {self.version.description}"
+
+    def can_display_arbitrary_messages(self) -> bool:
+        return self.supports_writes
+
+    def diagnostic_status(self) -> str | None:
+        if not isinstance(self.executor, Prime3WiiExecutor):
+            return None
+        diagnostics = self.executor.diagnostics
+        lines = [
+            diagnostics.connection_state.pretty_text,
+            f"Wii: {diagnostics.configured_ip}; CP3W UDP port: {diagnostics.remote_port}",
+        ]
+        if diagnostics.identity is not None:
+            lines.append(
+                f"Identity: {diagnostics.identity.region_id.name} / {diagnostics.identity.revision_id.name}; "
+                f"profile 0x{diagnostics.identity.profile_id:08X}"
+            )
+        if diagnostics.last_inventory_sequence is not None:
+            freshness = "current" if diagnostics.connection_state.value == "connected" else "stale"
+            lines.append(
+                f"Inventory sequence: {diagnostics.last_inventory_sequence} ({freshness}); "
+                f"availability 0x{int(diagnostics.last_availability_flags):X}"
+            )
+        if diagnostics.last_rtt_ms is not None:
+            lines.append(f"Last RTT: {diagnostics.last_rtt_ms:.1f} ms; timeouts: {diagnostics.timeout_count}")
+        if diagnostics.last_error:
+            lines.append(f"Last error: {diagnostics.last_error}")
+        return "\n".join(lines)
+
+    def _ensure_writable(self, action: str) -> None:
+        if not self.supports_writes:
+            raise RuntimeError(f"{type(self).__name__} does not support {action} with a read-only executor.")
 
     async def check_for_world_uid(self) -> bool:
         """Returns True if the accessible memory matches the version of this connector."""
@@ -168,9 +200,11 @@ class PrimeRemoteConnector(RemoteConnector):
         """Fetches the inventory represented by the given game memory."""
         items = [item for item in self.game.resource_database.item if item.extra["item_id"] < 1000]
         if self._uses_cp3w_inventory:
+            assert isinstance(self.executor, Prime3WiiExecutor)
             if not self.executor.identity_validated:
                 await self.executor.ensure_game_identity()
             snapshot = await self.executor.get_inventory_snapshot()
+            self.StatusUpdated.emit()
             if not snapshot.is_available:
                 return self.last_inventory
             records_by_id = dict(zip(INVENTORY_ITEM_IDS, snapshot.records, strict=True))
@@ -240,8 +274,8 @@ class PrimeRemoteConnector(RemoteConnector):
         remote_pickups: tuple[RemotePickup, ...],
     ) -> bool:
         """Returns true if an operation was sent."""
-        self._ensure_writable("remote pickup delivery")
 
+        self._ensure_writable("remote pickup delivery")
         in_cooldown = self.message_cooldown > 0.0
         multiworld_magic_item = self.multiworld_magic_item
         if multiworld_magic_item is None:
@@ -379,6 +413,9 @@ class PrimeRemoteConnector(RemoteConnector):
                     if not has_pending_op:
                         await self._send_next_pending_message()
 
+        except Prime3WiiTransientError as e:
+            self.logger.warning("Keeping CP3W session after transient inventory failure: %s", e)
+            self.StatusUpdated.emit()
         except MemoryOperationException as e:
             # A memory operation failing is expected only when the socket is lost or dolphin is closed
             # It should automatically disconnect the executor, so fail loudly if that's not the case

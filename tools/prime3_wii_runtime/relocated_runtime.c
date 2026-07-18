@@ -231,6 +231,7 @@ enum {
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_HELLO_SESSION = 19,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_GAME_IDENTITY = 20,
     RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY = 21,
+    RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY_SERVICE = 22,
 };
 
 enum {
@@ -1437,7 +1438,14 @@ static u32 runtime_transport_is_cp3w_game_identity_mode(void)
 static u32 runtime_transport_is_cp3w_inventory_mode(void)
 {
     return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
-        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY;
+        && (PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY
+            || PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY_SERVICE);
+}
+
+static u32 runtime_transport_is_unbounded_cp3w_inventory_service(void)
+{
+    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY_SERVICE;
 }
 
 static u32 runtime_transport_is_cp3w_mode(void)
@@ -1465,8 +1473,15 @@ static u32 runtime_transport_uses_send_mode(void)
 
 static u32 runtime_transport_validate_loop_limit(void)
 {
-    return runtime_transport_configured_exchange_limit > 0
-        && runtime_transport_configured_exchange_limit <= RUNTIME_EXCHANGE_COUNTER_LIMIT_MAX;
+    return runtime_transport_is_unbounded_cp3w_inventory_service()
+        || (runtime_transport_configured_exchange_limit > 0
+            && runtime_transport_configured_exchange_limit <= RUNTIME_EXCHANGE_COUNTER_LIMIT_MAX);
+}
+
+static u32 runtime_transport_exchange_limit_reached(void)
+{
+    return !runtime_transport_is_unbounded_cp3w_inventory_service()
+        && runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit;
 }
 
 static void runtime_transport_note_loop_complete(void)
@@ -2491,6 +2506,17 @@ static s32 runtime_transport_dispatch_cp3w_hello_session_request(void)
         runtime_transport_prepare_cp3w_ping_response(runtime_transport_cp3w_last_request_id, payload_length);
         runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_VALID;
         return 1;
+    }
+
+    if (command == RUNTIME_CP3W_COMMAND_DISCONNECT) {
+        runtime_transport_cp3w_negotiated_flag = 0;
+        runtime_transport_cp3w_accepted_capabilities = 0;
+        runtime_transport_cp3w_selected_protocol_version = 0;
+        runtime_transport_cp3w_session_id = 0;
+        runtime_transport_cp3w_client_nonce = 0;
+        runtime_transport_cp3w_hello_client_name_length = 0;
+        runtime_transport_cp3w_last_dispatch_result = RUNTIME_CP3W_FRAME_RESULT_VALID;
+        return 14;
     }
 
     runtime_transport_cp3w_unsupported_commands_received += 1;
@@ -3710,7 +3736,7 @@ static s32 runtime_consume_send_completion(void)
             runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
             return -1;
         }
-        if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+        if (runtime_transport_exchange_limit_reached()) {
             runtime_transport_note_cp3w_inventory_loop_complete();
         } else {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
@@ -4912,8 +4938,7 @@ void runtime_poll_entry_impl(void)
             || (runtime_transport_is_recv_send_loop_mode()
                 && (runtime_transport_send_count != runtime_transport_completed_exchange_count
                     || runtime_transport_completed_exchange_count >= runtime_transport_configured_exchange_limit))
-            || (runtime_transport_is_cp3w_mode()
-                && runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit)
+            || (runtime_transport_is_cp3w_mode() && runtime_transport_exchange_limit_reached())
         ) {
             runtime_transport_rearm_submission_failure_count += 1;
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
@@ -4976,7 +5001,7 @@ void runtime_poll_entry_impl(void)
             );
         } else if (!runtime_transport_validate_loop_limit()) {
             runtime_record_receive_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
-        } else if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+        } else if (runtime_transport_exchange_limit_reached()) {
             if (runtime_transport_is_cp3w_ping_pong_mode()) {
                 runtime_transport_note_cp3w_ping_pong_loop_complete();
             } else if (runtime_transport_is_cp3w_hello_session_mode()) {
@@ -5024,6 +5049,8 @@ void runtime_poll_entry_impl(void)
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_BUILD_RESPONSE
                     : dispatch_result == 8 || dispatch_result == 9
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_GAME_IDENTITY_HANDLE_ERROR
+                    : dispatch_result == 14
+                    ? RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE
                     : dispatch_result == 13
                     ? RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_BUILD_RESPONSE
                     : dispatch_result == 11 || dispatch_result == 12
@@ -5033,7 +5060,7 @@ void runtime_poll_entry_impl(void)
             );
         } else if (!runtime_transport_validate_loop_limit()) {
             runtime_record_receive_error(RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID, runtime_transport_last_ios_result);
-        } else if (runtime_transport_cp3w_datagrams_processed >= runtime_transport_configured_exchange_limit) {
+        } else if (runtime_transport_exchange_limit_reached()) {
             if (runtime_transport_is_cp3w_hello_session_mode()) {
                 runtime_transport_note_cp3w_hello_session_loop_complete();
             } else if (runtime_transport_is_cp3w_game_identity_mode()) {

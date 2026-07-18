@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import copy_metadata
 
 import randovania
 from randovania.game.game_enum import RandovaniaGame
+from randovania.games.prime3.exporter.hardware_runtime import build_production_runtime_payload
 
 block_cipher = None
 
@@ -21,6 +22,15 @@ game_assets = [
     for game in RandovaniaGame
     if game.data_path.joinpath("assets").exists()
 ]
+
+
+def build_prime3_runtime_assets():
+    output_dir = Path("build/prime3_wii_runtime/production")
+    build_production_runtime_payload(output_dir)
+    return [
+        (os.fspath(output_dir.joinpath("payload.bin")), "data/prime3_wii_runtime"),
+        (os.fspath(output_dir.joinpath("payload.json")), "data/prime3_wii_runtime"),
+    ]
 
 
 def collect_prime3_macos_assets():
@@ -70,6 +80,7 @@ prime3_common_datas = [
     ("randovania/data/gollop_mp3_patcher/nodtool/LICENSE", "data/gollop_mp3_patcher/nodtool"),
 ]
 prime3_macos_datas, prime3_macos_binaries = collect_prime3_macos_assets()
+prime3_runtime_datas = build_prime3_runtime_assets()
 
 datas = [
     ("randovania/data/configuration.json", "data/"),
@@ -81,6 +92,7 @@ datas = [
     *pickup_databases,
     *presets,
     *game_assets,
+    *prime3_runtime_datas,
     ("README.md", "data/"),
 ]
 if platform.system() != "Darwin":

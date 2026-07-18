@@ -205,8 +205,8 @@ class Prime3RuntimeGameIdentityMetadata:
             raise Prime3DolPatchError("CP3W game identity command or capability metadata is invalid.")
         if self.schema_version != 1 or self.payload_size != 28:
             raise Prime3DolPatchError("CP3W game identity schema metadata is invalid.")
-        if self.configured_count < 1 or self.configured_count > 100:
-            raise Prime3DolPatchError("CP3W game identity configured count must be between 1 and 100.")
+        if self.configured_count < 0 or self.configured_count > 100:
+            raise Prime3DolPatchError("CP3W game identity configured count must be between 0 and 100.")
         if self.field_offsets.get("reserved") != 24 or self.phase_names.get("LOOP_COMPLETE") != 79:
             raise Prime3DolPatchError("CP3W game identity layout or terminal phase metadata is invalid.")
         ranges = tuple((name, address, 4) for name, address in self.state_addresses.items())
@@ -266,8 +266,9 @@ class Prime3RuntimeInventoryMetadata:
     state_addresses: dict[str, int]
 
     def validate(self, *, runtime_state_start: int, runtime_state_end: int) -> tuple[tuple[str, int, int], ...]:
-        if self.mode_value != 21 or self.mode_name != "cp3w_inventory":
-            raise Prime3DolPatchError("CP3W inventory metadata must use diagnostic mode 21.")
+        valid_modes = {(21, "cp3w_inventory"), (22, "cp3w_inventory_service")}
+        if (self.mode_value, self.mode_name) not in valid_modes:
+            raise Prime3DolPatchError("CP3W inventory metadata must use mode 21 or production service mode 22.")
         if self.command_value != 6 or self.capability_value != 1 << 12:
             raise Prime3DolPatchError("CP3W inventory command or capability metadata is invalid.")
         if self.schema_version != 1 or len(self.item_ids) != 59 or len(set(self.item_ids)) != 59:
@@ -276,8 +277,10 @@ class Prime3RuntimeInventoryMetadata:
             raise Prime3DolPatchError("CP3W inventory payload sizing metadata is invalid.")
         if self.send_buffer_size < self.frame_size or self.ping_payload_limit != 44:
             raise Prime3DolPatchError("CP3W inventory send capacity or retained PING limit is invalid.")
-        if self.configured_count < 1 or self.configured_count > 100:
-            raise Prime3DolPatchError("CP3W inventory configured count must be between 1 and 100.")
+        if self.mode_value == 22 and self.configured_count != 0:
+            raise Prime3DolPatchError("CP3W inventory service metadata must use an unbounded count of zero.")
+        if self.mode_value == 21 and not 1 <= self.configured_count <= 100:
+            raise Prime3DolPatchError("CP3W inventory diagnostic count must be between 1 and 100.")
         if self.field_offsets.get("records") != 12 or self.phase_names.get("LOOP_COMPLETE") != 93:
             raise Prime3DolPatchError("CP3W inventory layout or terminal phase metadata is invalid.")
         ranges = tuple((name, address, 4) for name, address in self.state_addresses.items())
@@ -316,6 +319,7 @@ class Prime3RuntimeInventoryMetadata:
 @dataclasses.dataclass(frozen=True)
 class Prime3RuntimeTransportMetadata:
     mode: str
+    udp_port: int
     initialization_enabled: bool
     receive_enabled: bool
     send_enabled: bool
@@ -879,6 +883,8 @@ class Prime3RuntimeTransportMetadata:
     ) -> tuple[tuple[str, int, int], ...]:
         if not self.mode:
             raise Prime3DolPatchError("Relocated runtime transport metadata requires a mode.")
+        if self.udp_port != 43674:
+            raise Prime3DolPatchError("Prime 3 CP3W transport must use UDP port 43674.")
         if not self.initialization_enabled:
             raise Prime3DolPatchError("Relocated runtime transport metadata must mark initialization_enabled.")
         is_recvfrom_once = self.mode == "retail_wrapper_recvfrom_once"
@@ -888,7 +894,8 @@ class Prime3RuntimeTransportMetadata:
         is_cp3w_ping_pong = self.mode == "cp3w_ping_pong"
         is_cp3w_hello_session = self.mode == "cp3w_hello_session"
         is_cp3w_game_identity = self.mode == "cp3w_game_identity"
-        is_cp3w_inventory = self.mode == "cp3w_inventory"
+        is_cp3w_inventory_service = self.mode == "cp3w_inventory_service"
+        is_cp3w_inventory = self.mode in {"cp3w_inventory", "cp3w_inventory_service"}
         if self.receive_enabled and not is_recvfrom_once:
             if (
                 not is_recv_send_once
@@ -946,13 +953,9 @@ class Prime3RuntimeTransportMetadata:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must use the terminal diagnostic phase.")
         elif not self.kd_close_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable kd close.")
-        if is_nwc24_close_once and (
-            self.terminal_phase_value != 0xFE or self.terminal_phase_name != "KD_CLOSED"
-        ):
+        if is_nwc24_close_once and (self.terminal_phase_value != 0xFE or self.terminal_phase_name != "KD_CLOSED"):
             raise Prime3DolPatchError("NWC24 close-once metadata must use the KD_CLOSED terminal phase.")
-        if is_nwc24_close_open_ip_once and (
-            self.terminal_phase_value != 0xFE or self.terminal_phase_name != "IP_OPEN"
-        ):
+        if is_nwc24_close_open_ip_once and (self.terminal_phase_value != 0xFE or self.terminal_phase_name != "IP_OPEN"):
             raise Prime3DolPatchError("NWC24 close-open-ip metadata must use the IP_OPEN terminal phase.")
         if is_nwc24_close_open_ip_startup_once and (
             self.terminal_phase_value != 18 or self.terminal_phase_name != "SO_STARTED"
@@ -960,17 +963,11 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("NWC24 close-open-ip-startup metadata must use the SO_STARTED terminal phase.")
         if is_get_host_id_once and (self.terminal_phase_value != 19 or self.terminal_phase_name != "HOST_ID_READY"):
             raise Prime3DolPatchError("GET_HOST_ID metadata must use the HOST_ID_READY terminal phase.")
-        if is_recvfrom_once and (
-            self.terminal_phase_value != 27 or self.terminal_phase_name != "RECEIVED_DATAGRAM"
-        ):
+        if is_recvfrom_once and (self.terminal_phase_value != 27 or self.terminal_phase_name != "RECEIVED_DATAGRAM"):
             raise Prime3DolPatchError("Recvfrom-once metadata must use the RECEIVED_DATAGRAM terminal phase.")
-        if is_recv_send_once and (
-            self.terminal_phase_value != 37 or self.terminal_phase_name != "SENT_DATAGRAM"
-        ):
+        if is_recv_send_once and (self.terminal_phase_value != 37 or self.terminal_phase_name != "SENT_DATAGRAM"):
             raise Prime3DolPatchError("Recv-send metadata must use the SENT_DATAGRAM terminal phase.")
-        if is_recv_send_loop and (
-            self.terminal_phase_value != 45 or self.terminal_phase_name != "LOOP_COMPLETE"
-        ):
+        if is_recv_send_loop and (self.terminal_phase_value != 45 or self.terminal_phase_name != "LOOP_COMPLETE"):
             raise Prime3DolPatchError("Recv-send-loop metadata must use the LOOP_COMPLETE terminal phase.")
         if is_cp3w_frame_validation and (
             self.terminal_phase_value != 55 or self.terminal_phase_name != "CP3W_FRAME_LOOP_COMPLETE"
@@ -1001,10 +998,16 @@ class Prime3RuntimeTransportMetadata:
                 raise Prime3DolPatchError("Structured CP3W metadata is missing game identity details.")
         elif self.cp3w_game_identity is not None:
             raise Prime3DolPatchError("CP3W game identity details require game identity or inventory mode.")
-        if is_cp3w_inventory and (
-            self.terminal_phase_value != 93 or self.terminal_phase_name != "CP3W_INVENTORY_LOOP_COMPLETE"
+        if (
+            is_cp3w_inventory
+            and not is_cp3w_inventory_service
+            and (self.terminal_phase_value != 93 or self.terminal_phase_name != "CP3W_INVENTORY_LOOP_COMPLETE")
         ):
             raise Prime3DolPatchError("CP3W inventory metadata must use the CP3W_INVENTORY_LOOP_COMPLETE phase.")
+        if is_cp3w_inventory_service and (
+            self.terminal_phase_value != 26 or self.terminal_phase_name != "WAIT_RECEIVE"
+        ):
+            raise Prime3DolPatchError("CP3W inventory service metadata must identify WAIT_RECEIVE as steady state.")
         if is_cp3w_inventory:
             if self.cp3w_inventory is None:
                 raise Prime3DolPatchError("CP3W inventory metadata is missing inventory details.")
@@ -1024,9 +1027,10 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("Relocated runtime transport metadata requires a terminal phase name.")
         if self.nwc24_output_buffer_size != 0x20:
             raise Prime3DolPatchError("NWC24 output buffer must be exactly 0x20 bytes.")
-        if self.nwc24_output_buffer_alignment < 0x20 or (
-            self.nwc24_output_buffer_alignment & (self.nwc24_output_buffer_alignment - 1)
-        ) != 0:
+        if (
+            self.nwc24_output_buffer_alignment < 0x20
+            or (self.nwc24_output_buffer_alignment & (self.nwc24_output_buffer_alignment - 1)) != 0
+        ):
             raise Prime3DolPatchError("NWC24 output buffer alignment must be a power of two at least 0x20.")
         if self.nwc24_output_buffer_address % self.nwc24_output_buffer_alignment != 0:
             raise Prime3DolPatchError("NWC24 output buffer address must satisfy its declared alignment.")
@@ -1892,9 +1896,7 @@ class Prime3RuntimeTransportMetadata:
             if optional_start + optional_size > runtime_state_end:
                 raise Prime3DolPatchError(f"Relocated runtime transport field {name} exceeds the runtime state range.")
         validated_optional_ranges: tuple[tuple[str, int, int], ...] = tuple(
-            (name, start, size)
-            for name, start, size in optional_ranges
-            if start is not None and size is not None
+            (name, start, size) for name, start, size in optional_ranges if start is not None and size is not None
         )
         ranges = ranges + validated_optional_ranges
         if self.cp3w_game_identity is not None:
@@ -1917,6 +1919,7 @@ class Prime3RuntimeTransportMetadata:
     def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeTransportMetadata:
         return cls(
             mode=_json_string(data, "mode"),
+            udp_port=_json_int(data, "udp_port") if "udp_port" in data else 43674,
             initialization_enabled=_json_bool(data, "initialization_enabled"),
             receive_enabled=_json_bool(data, "receive_enabled"),
             send_enabled=_json_bool(data, "send_enabled"),
@@ -2137,9 +2140,7 @@ class Prime3RuntimeTransportMetadata:
             cp3w_unsupported_commands_received_address=_json_optional_int(
                 data, "cp3w_unsupported_commands_received_address"
             ),
-            cp3w_unsupported_commands_received_size=_json_optional_int(
-                data, "cp3w_unsupported_commands_received_size"
-            ),
+            cp3w_unsupported_commands_received_size=_json_optional_int(data, "cp3w_unsupported_commands_received_size"),
             cp3w_unsupported_responses_submitted_address=_json_optional_int(
                 data, "cp3w_unsupported_responses_submitted_address"
             ),
@@ -2154,9 +2155,7 @@ class Prime3RuntimeTransportMetadata:
             ),
             cp3w_negotiated_flag_address=_json_optional_int(data, "cp3w_negotiated_flag_address"),
             cp3w_negotiated_flag_size=_json_optional_int(data, "cp3w_negotiated_flag_size"),
-            cp3w_selected_protocol_version_address=_json_optional_int(
-                data, "cp3w_selected_protocol_version_address"
-            ),
+            cp3w_selected_protocol_version_address=_json_optional_int(data, "cp3w_selected_protocol_version_address"),
             cp3w_selected_protocol_version_size=_json_optional_int(data, "cp3w_selected_protocol_version_size"),
             cp3w_client_nonce_address=_json_optional_int(data, "cp3w_client_nonce_address"),
             cp3w_client_nonce_size=_json_optional_int(data, "cp3w_client_nonce_size"),
@@ -2194,13 +2193,9 @@ class Prime3RuntimeTransportMetadata:
             previous_peer_ipv4_size=_json_optional_int(data, "previous_peer_ipv4_size"),
             previous_peer_port_address=_json_optional_int(data, "previous_peer_port_address"),
             previous_peer_port_size=_json_optional_int(data, "previous_peer_port_size"),
-            rearm_submission_failure_count_address=_json_optional_int(
-                data, "rearm_submission_failure_count_address"
-            ),
+            rearm_submission_failure_count_address=_json_optional_int(data, "rearm_submission_failure_count_address"),
             rearm_submission_failure_count_size=_json_optional_int(data, "rearm_submission_failure_count_size"),
-            loop_complete_transition_count_address=_json_optional_int(
-                data, "loop_complete_transition_count_address"
-            ),
+            loop_complete_transition_count_address=_json_optional_int(data, "loop_complete_transition_count_address"),
             loop_complete_transition_count_size=_json_optional_int(data, "loop_complete_transition_count_size"),
             cleanup_deferred_count_address=_json_optional_int(data, "cleanup_deferred_count_address"),
             cleanup_deferred_count_size=_json_optional_int(data, "cleanup_deferred_count_size"),
@@ -2330,9 +2325,7 @@ class Prime3RuntimeTransportMetadata:
             startup_pending_after_completion_size=_json_optional_int(data, "startup_pending_after_completion_size"),
             startup_phase_before_submit_address=_json_optional_int(data, "startup_phase_before_submit_address"),
             startup_phase_before_submit_size=_json_optional_int(data, "startup_phase_before_submit_size"),
-            startup_phase_after_completion_address=_json_optional_int(
-                data, "startup_phase_after_completion_address"
-            ),
+            startup_phase_after_completion_address=_json_optional_int(data, "startup_phase_after_completion_address"),
             startup_phase_after_completion_size=_json_optional_int(data, "startup_phase_after_completion_size"),
             startup_pre_call_args_address=_json_optional_int(data, "startup_pre_call_args_address"),
             startup_pre_call_args_size=_json_optional_int(data, "startup_pre_call_args_size"),
@@ -2342,9 +2335,7 @@ class Prime3RuntimeTransportMetadata:
             get_host_id_callback_result_size=_json_optional_int(data, "get_host_id_callback_result_size"),
             get_host_id_submit_generation_address=_json_optional_int(data, "get_host_id_submit_generation_address"),
             get_host_id_submit_generation_size=_json_optional_int(data, "get_host_id_submit_generation_size"),
-            get_host_id_callback_generation_address=_json_optional_int(
-                data, "get_host_id_callback_generation_address"
-            ),
+            get_host_id_callback_generation_address=_json_optional_int(data, "get_host_id_callback_generation_address"),
             get_host_id_callback_generation_size=_json_optional_int(data, "get_host_id_callback_generation_size"),
             get_host_id_target_address=_json_optional_int(data, "get_host_id_target_address"),
             get_host_id_target_size=_json_optional_int(data, "get_host_id_target_size"),
@@ -2399,9 +2390,7 @@ class Prime3RuntimeTransportMetadata:
             get_host_id_phase_after_completion_address=_json_optional_int(
                 data, "get_host_id_phase_after_completion_address"
             ),
-            get_host_id_phase_after_completion_size=_json_optional_int(
-                data, "get_host_id_phase_after_completion_size"
-            ),
+            get_host_id_phase_after_completion_size=_json_optional_int(data, "get_host_id_phase_after_completion_size"),
             get_host_id_pre_call_args_address=_json_optional_int(data, "get_host_id_pre_call_args_address"),
             get_host_id_pre_call_args_size=_json_optional_int(data, "get_host_id_pre_call_args_size"),
             socket_submit_result_address=_json_optional_int(data, "socket_submit_result_address"),
@@ -2426,9 +2415,7 @@ class Prime3RuntimeTransportMetadata:
             socket_callback_exit_count_size=_json_optional_int(data, "socket_callback_exit_count_size"),
             socket_stale_callback_count_address=_json_optional_int(data, "socket_stale_callback_count_address"),
             socket_stale_callback_count_size=_json_optional_int(data, "socket_stale_callback_count_size"),
-            socket_duplicate_callback_count_address=_json_optional_int(
-                data, "socket_duplicate_callback_count_address"
-            ),
+            socket_duplicate_callback_count_address=_json_optional_int(data, "socket_duplicate_callback_count_address"),
             socket_duplicate_callback_count_size=_json_optional_int(data, "socket_duplicate_callback_count_size"),
             socket_fd_before_submit_address=_json_optional_int(data, "socket_fd_before_submit_address"),
             socket_fd_before_submit_size=_json_optional_int(data, "socket_fd_before_submit_size"),
@@ -2478,9 +2465,7 @@ class Prime3RuntimeTransportMetadata:
             bind_callback_exit_count_size=_json_optional_int(data, "bind_callback_exit_count_size"),
             bind_stale_callback_count_address=_json_optional_int(data, "bind_stale_callback_count_address"),
             bind_stale_callback_count_size=_json_optional_int(data, "bind_stale_callback_count_size"),
-            bind_duplicate_callback_count_address=_json_optional_int(
-                data, "bind_duplicate_callback_count_address"
-            ),
+            bind_duplicate_callback_count_address=_json_optional_int(data, "bind_duplicate_callback_count_address"),
             bind_duplicate_callback_count_size=_json_optional_int(data, "bind_duplicate_callback_count_size"),
             bind_request_address_address=_json_optional_int(data, "bind_request_address_address"),
             bind_request_address_size=_json_optional_int(data, "bind_request_address_size"),
@@ -2502,80 +2487,54 @@ class Prime3RuntimeTransportMetadata:
             bind_request_bytes_size=_json_optional_int(data, "bind_request_bytes_size"),
             bind_pre_call_args_address=_json_optional_int(data, "bind_pre_call_args_address"),
             bind_pre_call_args_size=_json_optional_int(data, "bind_pre_call_args_size"),
-            cleanup_close_callback_count_address=_json_optional_int(
-                data, "cleanup_close_callback_count_address"
-            ),
+            cleanup_close_callback_count_address=_json_optional_int(data, "cleanup_close_callback_count_address"),
             cleanup_close_callback_count_size=_json_optional_int(data, "cleanup_close_callback_count_size"),
             cleanup_close_submit_result_address=_json_optional_int(data, "cleanup_close_submit_result_address"),
             cleanup_close_submit_result_size=_json_optional_int(data, "cleanup_close_submit_result_size"),
-            cleanup_close_callback_result_address=_json_optional_int(
-                data, "cleanup_close_callback_result_address"
-            ),
+            cleanup_close_callback_result_address=_json_optional_int(data, "cleanup_close_callback_result_address"),
             cleanup_close_callback_result_size=_json_optional_int(data, "cleanup_close_callback_result_size"),
-            cleanup_close_submit_generation_address=_json_optional_int(
-                data, "cleanup_close_submit_generation_address"
-            ),
-            cleanup_close_submit_generation_size=_json_optional_int(
-                data, "cleanup_close_submit_generation_size"
-            ),
+            cleanup_close_submit_generation_address=_json_optional_int(data, "cleanup_close_submit_generation_address"),
+            cleanup_close_submit_generation_size=_json_optional_int(data, "cleanup_close_submit_generation_size"),
             cleanup_close_callback_generation_address=_json_optional_int(
                 data, "cleanup_close_callback_generation_address"
             ),
-            cleanup_close_callback_generation_size=_json_optional_int(
-                data, "cleanup_close_callback_generation_size"
-            ),
+            cleanup_close_callback_generation_size=_json_optional_int(data, "cleanup_close_callback_generation_size"),
             cleanup_close_target_address=_json_optional_int(data, "cleanup_close_target_address"),
             cleanup_close_target_size=_json_optional_int(data, "cleanup_close_target_size"),
             cleanup_close_command_address=_json_optional_int(data, "cleanup_close_command_address"),
             cleanup_close_command_size=_json_optional_int(data, "cleanup_close_command_size"),
             cleanup_close_submitted_fd_address=_json_optional_int(data, "cleanup_close_submitted_fd_address"),
             cleanup_close_submitted_fd_size=_json_optional_int(data, "cleanup_close_submitted_fd_size"),
-            cleanup_close_callback_pointer_address=_json_optional_int(
-                data, "cleanup_close_callback_pointer_address"
-            ),
+            cleanup_close_callback_pointer_address=_json_optional_int(data, "cleanup_close_callback_pointer_address"),
             cleanup_close_callback_pointer_size=_json_optional_int(data, "cleanup_close_callback_pointer_size"),
             cleanup_close_context_pointer_address=_json_optional_int(data, "cleanup_close_context_pointer_address"),
             cleanup_close_context_pointer_size=_json_optional_int(data, "cleanup_close_context_pointer_size"),
             cleanup_close_callback_exit_count_address=_json_optional_int(
                 data, "cleanup_close_callback_exit_count_address"
             ),
-            cleanup_close_callback_exit_count_size=_json_optional_int(
-                data, "cleanup_close_callback_exit_count_size"
-            ),
+            cleanup_close_callback_exit_count_size=_json_optional_int(data, "cleanup_close_callback_exit_count_size"),
             cleanup_close_stale_callback_count_address=_json_optional_int(
                 data, "cleanup_close_stale_callback_count_address"
             ),
-            cleanup_close_stale_callback_count_size=_json_optional_int(
-                data, "cleanup_close_stale_callback_count_size"
-            ),
+            cleanup_close_stale_callback_count_size=_json_optional_int(data, "cleanup_close_stale_callback_count_size"),
             cleanup_close_duplicate_callback_count_address=_json_optional_int(
                 data, "cleanup_close_duplicate_callback_count_address"
             ),
             cleanup_close_duplicate_callback_count_size=_json_optional_int(
                 data, "cleanup_close_duplicate_callback_count_size"
             ),
-            cleanup_close_request_address_address=_json_optional_int(
-                data, "cleanup_close_request_address_address"
-            ),
+            cleanup_close_request_address_address=_json_optional_int(data, "cleanup_close_request_address_address"),
             cleanup_close_request_address_size=_json_optional_int(data, "cleanup_close_request_address_size"),
             cleanup_close_request_storage_size_address=_json_optional_int(
                 data, "cleanup_close_request_storage_size_address"
             ),
-            cleanup_close_request_storage_size_size=_json_optional_int(
-                data, "cleanup_close_request_storage_size_size"
-            ),
+            cleanup_close_request_storage_size_size=_json_optional_int(data, "cleanup_close_request_storage_size_size"),
             cleanup_close_request_logical_size_address=_json_optional_int(
                 data, "cleanup_close_request_logical_size_address"
             ),
-            cleanup_close_request_logical_size_size=_json_optional_int(
-                data, "cleanup_close_request_logical_size_size"
-            ),
-            cleanup_close_request_alignment_address=_json_optional_int(
-                data, "cleanup_close_request_alignment_address"
-            ),
-            cleanup_close_request_alignment_size=_json_optional_int(
-                data, "cleanup_close_request_alignment_size"
-            ),
+            cleanup_close_request_logical_size_size=_json_optional_int(data, "cleanup_close_request_logical_size_size"),
+            cleanup_close_request_alignment_address=_json_optional_int(data, "cleanup_close_request_alignment_address"),
+            cleanup_close_request_alignment_size=_json_optional_int(data, "cleanup_close_request_alignment_size"),
             cleanup_close_request_value_address=_json_optional_int(data, "cleanup_close_request_value_address"),
             cleanup_close_request_value_size=_json_optional_int(data, "cleanup_close_request_value_size"),
             cleanup_close_request_bytes_address=_json_optional_int(data, "cleanup_close_request_bytes_address"),
@@ -2589,9 +2548,7 @@ class Prime3RuntimeTransportMetadata:
             socket_closed_after_bind_failure_address=_json_optional_int(
                 data, "socket_closed_after_bind_failure_address"
             ),
-            socket_closed_after_bind_failure_size=_json_optional_int(
-                data, "socket_closed_after_bind_failure_size"
-            ),
+            socket_closed_after_bind_failure_size=_json_optional_int(data, "socket_closed_after_bind_failure_size"),
             socket_leak_detected_address=_json_optional_int(data, "socket_leak_detected_address"),
             socket_leak_detected_size=_json_optional_int(data, "socket_leak_detected_size"),
             cp3w_game_identity=_json_optional_game_identity(data, "cp3w_game_identity"),
@@ -2690,9 +2647,7 @@ class Prime3RetailIosWrapperMetadata:
             raise Prime3DolPatchError("Retail IOS async close metadata has an unexpected prototype.")
         if self.async_close_register_arguments != ("r3=fd", "r4=completion", "r5=userdata"):
             raise Prime3DolPatchError("Retail IOS async close metadata has unexpected register argument placement.")
-        expected_ioctl_async_fingerprint = (
-            "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
-        )
+        expected_ioctl_async_fingerprint = "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
         if self.confirmed_ioctl_async_fingerprint_sha256 != expected_ioctl_async_fingerprint:
             raise Prime3DolPatchError("Retail IOS ioctl metadata has an unexpected function fingerprint.")
         if self.async_ioctl_address != 0x80504FE0 or self.async_ioctl_address == self.read_async_address:
@@ -2797,9 +2752,7 @@ class Prime3RetailIosWrapperMetadata:
             async_ioctl_stack_argument_count=_json_int(data, "async_ioctl_stack_argument_count"),
             async_ioctl_operation=_json_int(data, "async_ioctl_operation"),
             async_ioctl_confidence=_json_string(data, "async_ioctl_confidence"),
-            confirmed_ioctl_async_fingerprint_sha256=_json_string(
-                data, "confirmed_ioctl_async_fingerprint_sha256"
-            ),
+            confirmed_ioctl_async_fingerprint_sha256=_json_string(data, "confirmed_ioctl_async_fingerprint_sha256"),
             confirmed_ioctl_async_prototype=_json_string(data, "confirmed_ioctl_async_prototype"),
             confirmed_ioctl_async_register_arguments=tuple(
                 _json_string_list(data, "confirmed_ioctl_async_register_arguments")
@@ -3045,9 +2998,7 @@ class Prime3RuntimeDiagnosticMetadata:
                     f"Relocated runtime diagnostic field {name} is outside the runtime state range."
                 )
             if start + size > runtime_state_end:
-                raise Prime3DolPatchError(
-                    f"Relocated runtime diagnostic field {name} exceeds the runtime state range."
-                )
+                raise Prime3DolPatchError(f"Relocated runtime diagnostic field {name} exceeds the runtime state range.")
         _validate_non_overlapping_ranges(ranges)
         return ranges
 
@@ -3240,10 +3191,7 @@ class Prime3RelocatedRuntimeMetadata:
         if self.runtime_stack_start is not None:
             assert self.runtime_stack_end is not None
             if not (
-                self.runtime_state_start
-                <= self.runtime_stack_start
-                <= self.runtime_stack_end
-                <= self.runtime_state_end
+                self.runtime_state_start <= self.runtime_stack_start <= self.runtime_stack_end <= self.runtime_state_end
             ):
                 raise Prime3DolPatchError("Runtime stack range must stay inside the runtime state range.")
 
@@ -3638,8 +3586,7 @@ def _json_int_list(data: dict[str, object], key: str) -> list[int]:
 def _json_int_dict(data: dict[str, object], key: str) -> dict[str, int]:
     value = data.get(key)
     if not isinstance(value, dict) or not all(
-        isinstance(item_key, str) and isinstance(item_value, int)
-        for item_key, item_value in value.items()
+        isinstance(item_key, str) and isinstance(item_value, int) for item_key, item_value in value.items()
     ):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must map strings to integers.")
     return dict(value)
@@ -3648,9 +3595,7 @@ def _json_int_dict(data: dict[str, object], key: str) -> dict[str, int]:
 def _json_string_list(data: dict[str, object], key: str) -> list[str]:
     value = data.get(key)
     if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
-        raise Prime3DolPatchError(
-            f"Prime 3 runtime payload manifest field {key!r} must be a list or tuple of strings."
-        )
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a list or tuple of strings.")
     return list(value)
 
 

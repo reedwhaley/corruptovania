@@ -1,6 +1,6 @@
 # Prime 3 Wii Runtime Payload
 
-This directory contains the source-backed Wii PowerPC payload and probe-delivery tooling used to validate the Prime 3 Wii runtime artifact path and entry bootstrap experiments.
+This directory contains the canonical source-backed Wii PowerPC CP3W payload used by normal Prime 3 exports and by developer probe-delivery tooling.
 
 Current scope:
 
@@ -10,8 +10,10 @@ Current scope:
 - `build_probe_dol.py` and `verify_probe_delivery.py` support static DOL patch/verify runs for the generated payload artifacts
 - `observe_probe.py` remains read-only and reports live payload/bootstrap state from Dolphin memory
 - recurring poll hook installation is supported for the validated Wii NTSC retail DOL accessor at `0x800BB71C`
-- the relocated runtime now includes a developer-only retail-wrapper IOS-open diagnostic path plus the bounded transport state machine scaffolding behind it
-- no CP3W parser, mailbox, memory read/write surface, or normal exporter integration is included
+- the relocated runtime includes bounded developer diagnostics plus unbounded production mode `cp3w_inventory_service`
+- production mode implements HELLO, capability negotiation, `GET_GAME_IDENTITY`, and read-only `GET_INVENTORY` on fixed UDP port 43674
+- normal Prime 3 export builds or loads this canonical artifact, installs both guarded hooks, and validates the finished DOL
+- no inventory writes, grants, location tracking, or arbitrary memory read/write surface is included
 
 Transport recon status:
 

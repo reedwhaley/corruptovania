@@ -308,9 +308,7 @@ RUNTIME_TRANSPORT_GET_HOST_ID_SERVICE_STARTED_AFTER_COMPLETION_SYMBOL = (
 RUNTIME_TRANSPORT_IP_FD_BEFORE_GET_HOST_ID_SYMBOL = "runtime_transport_ip_fd_before_get_host_id"
 RUNTIME_TRANSPORT_IP_FD_AFTER_GET_HOST_ID_SYMBOL = "runtime_transport_ip_fd_after_get_host_id"
 RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_BEFORE_SUBMIT_SYMBOL = "runtime_transport_get_host_id_pending_before_submit"
-RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_AFTER_COMPLETION_SYMBOL = (
-    "runtime_transport_get_host_id_pending_after_completion"
-)
+RUNTIME_TRANSPORT_GET_HOST_ID_PENDING_AFTER_COMPLETION_SYMBOL = "runtime_transport_get_host_id_pending_after_completion"
 RUNTIME_TRANSPORT_GET_HOST_ID_PHASE_BEFORE_SUBMIT_SYMBOL = "runtime_transport_get_host_id_phase_before_submit"
 RUNTIME_TRANSPORT_GET_HOST_ID_PHASE_AFTER_COMPLETION_SYMBOL = "runtime_transport_get_host_id_phase_after_completion"
 RUNTIME_TRANSPORT_GET_HOST_ID_PRE_CALL_ARGS_SYMBOL = "runtime_transport_get_host_id_pre_call_args"
@@ -457,9 +455,7 @@ RUNTIME_TRANSPORT_CP3W_HELLO_VERSION_REJECTIONS_SYMBOL = "runtime_transport_cp3w
 RUNTIME_TRANSPORT_CP3W_HELLO_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_hello_responses_submitted"
 RUNTIME_TRANSPORT_CP3W_HELLO_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_hello_responses_completed"
 RUNTIME_TRANSPORT_CP3W_HELLO_DUPLICATE_REQUESTS_SYMBOL = "runtime_transport_cp3w_hello_duplicate_requests"
-RUNTIME_TRANSPORT_CP3W_HELLO_RENEGOTIATION_REJECTIONS_SYMBOL = (
-    "runtime_transport_cp3w_hello_renegotiation_rejections"
-)
+RUNTIME_TRANSPORT_CP3W_HELLO_RENEGOTIATION_REJECTIONS_SYMBOL = "runtime_transport_cp3w_hello_renegotiation_rejections"
 RUNTIME_TRANSPORT_CP3W_PRE_HELLO_GATED_COMMANDS_SYMBOL = "runtime_transport_cp3w_pre_hello_gated_commands"
 RUNTIME_TRANSPORT_CP3W_NOT_NEGOTIATED_RESPONSES_SUBMITTED_SYMBOL = (
     "runtime_transport_cp3w_not_negotiated_responses_submitted"
@@ -968,9 +964,7 @@ def _prime3_ntsc_retail_ios_wrapper_metadata() -> Prime3RetailIosWrapperMetadata
         async_ioctl_stack_argument_count=0,
         async_ioctl_operation=6,
         async_ioctl_confidence="verified",
-        confirmed_ioctl_async_fingerprint_sha256=(
-            "031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"
-        ),
+        confirmed_ioctl_async_fingerprint_sha256=("031342395575c5542428b9edfcd4fd3bf9633bfb54bd39726d3766b3e6f3b17b"),
         confirmed_ioctl_async_prototype=(
             "s32 ioctl_async(s32 fd, u32 command, const void *input, u32 input_length, "
             "void *output, u32 output_length, completion_fn completion, void *userdata)"
@@ -1065,10 +1059,14 @@ def build_prime3_runtime_payload(  # noqa: C901
         "cp3w_hello_session",
         "cp3w_game_identity",
         "cp3w_inventory",
+        "cp3w_inventory_service",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
-    if ios_udp_loop_count < 1 or ios_udp_loop_count > 100:
+    if ios_udp_mode == "cp3w_inventory_service":
+        if ios_udp_loop_count != 0:
+            raise RuntimeError("cp3w_inventory_service requires ios_udp_loop_count=0 (unbounded).")
+    elif ios_udp_loop_count < 1 or ios_udp_loop_count > 100:
         raise RuntimeError("ios_udp_loop_count must be between 1 and 100.")
     if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
@@ -1437,9 +1435,11 @@ def build_prime3_runtime_payload(  # noqa: C901
             cp3w_ping_pong = ios_udp_mode == "cp3w_ping_pong"
             cp3w_hello_session = ios_udp_mode == "cp3w_hello_session"
             cp3w_game_identity = ios_udp_mode == "cp3w_game_identity"
-            cp3w_inventory = ios_udp_mode == "cp3w_inventory"
+            cp3w_inventory_service = ios_udp_mode == "cp3w_inventory_service"
+            cp3w_inventory = ios_udp_mode in {"cp3w_inventory", "cp3w_inventory_service"}
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
+                udp_port=43674,
                 initialization_enabled=True,
                 receive_enabled=(
                     recvfrom_once
@@ -1465,7 +1465,9 @@ def build_prime3_runtime_payload(  # noqa: C901
                 ip_close_on_success=False,
                 socket_close_on_success=False,
                 terminal_phase_value=(
-                    0xFE
+                    26
+                    if cp3w_inventory_service
+                    else 0xFE
                     if nwc24_ioctl_once or nwc24_close_once or open_ip_once
                     else 18
                     if so_startup_once
@@ -1492,7 +1494,9 @@ def build_prime3_runtime_payload(  # noqa: C901
                     else 0x11
                 ),
                 terminal_phase_name=(
-                    "NWC24_COMPLETE"
+                    "WAIT_RECEIVE"
+                    if cp3w_inventory_service
+                    else "NWC24_COMPLETE"
                     if nwc24_ioctl_once
                     else "KD_CLOSED"
                     if nwc24_close_once
@@ -2203,8 +2207,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                 ),
                 cp3w_inventory=(
                     Prime3RuntimeInventoryMetadata(
-                        mode_value=21,
-                        mode_name="cp3w_inventory",
+                        mode_value=22 if cp3w_inventory_service else 21,
+                        mode_name=ios_udp_mode,
                         command_value=int(Prime3WiiCommand.GET_INVENTORY),
                         capability_value=int(Prime3WiiCapability.INVENTORY_STATE),
                         schema_version=INVENTORY_SCHEMA_VERSION,
@@ -2385,6 +2389,7 @@ def _build_relocated_runtime(
                 "cp3w_hello_session": "19",
                 "cp3w_game_identity": "20",
                 "cp3w_inventory": "21",
+                "cp3w_inventory_service": "22",
             }[ios_udp_mode]
         ),
         f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
@@ -2890,9 +2895,7 @@ def _build_relocated_runtime(
     transport_socket_target_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_SOCKET_TARGET_ADDRESS_SYMBOL
     )
-    transport_socket_command_address = _extract_symbol_address(
-        readelf_symbols, RUNTIME_TRANSPORT_SOCKET_COMMAND_SYMBOL
-    )
+    transport_socket_command_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_SOCKET_COMMAND_SYMBOL)
     transport_socket_submitted_fd_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_SOCKET_SUBMITTED_FD_SYMBOL
     )
@@ -3192,9 +3195,7 @@ def _build_relocated_runtime(
     transport_last_send_preview_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_SEND_PREVIEW_SYMBOL
     )
-    transport_last_send_preview_size = _extract_symbol_size(
-        readelf_symbols, RUNTIME_TRANSPORT_LAST_SEND_PREVIEW_SYMBOL
-    )
+    transport_last_send_preview_size = _extract_symbol_size(readelf_symbols, RUNTIME_TRANSPORT_LAST_SEND_PREVIEW_SYMBOL)
     transport_prepared_send_length_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_PREPARED_SEND_LENGTH_SYMBOL
     )
@@ -3526,9 +3527,7 @@ def _build_relocated_runtime(
         transport_cp3w_hello_responses_submitted_address=transport_cp3w_hello_responses_submitted_address,
         transport_cp3w_hello_responses_completed_address=transport_cp3w_hello_responses_completed_address,
         transport_cp3w_hello_duplicate_requests_address=transport_cp3w_hello_duplicate_requests_address,
-        transport_cp3w_hello_renegotiation_rejections_address=(
-            transport_cp3w_hello_renegotiation_rejections_address
-        ),
+        transport_cp3w_hello_renegotiation_rejections_address=(transport_cp3w_hello_renegotiation_rejections_address),
         transport_cp3w_pre_hello_gated_commands_address=transport_cp3w_pre_hello_gated_commands_address,
         transport_cp3w_not_negotiated_responses_submitted_address=(
             transport_cp3w_not_negotiated_responses_submitted_address
@@ -3627,9 +3626,7 @@ def _build_relocated_runtime(
         transport_ip_fd_before_get_host_id_address=transport_ip_fd_before_get_host_id_address,
         transport_ip_fd_after_get_host_id_address=transport_ip_fd_after_get_host_id_address,
         transport_get_host_id_pending_before_submit_address=transport_get_host_id_pending_before_submit_address,
-        transport_get_host_id_pending_after_completion_address=(
-            transport_get_host_id_pending_after_completion_address
-        ),
+        transport_get_host_id_pending_after_completion_address=(transport_get_host_id_pending_after_completion_address),
         transport_get_host_id_phase_before_submit_address=transport_get_host_id_phase_before_submit_address,
         transport_get_host_id_phase_after_completion_address=transport_get_host_id_phase_after_completion_address,
         transport_get_host_id_pre_call_args_address=transport_get_host_id_pre_call_args_address,
@@ -3946,9 +3943,7 @@ def _validate_retail_call_veneer_instructions(  # noqa: C901
     loaded_lo = int(ori_operands[2], 0) & 0xFFFF
     loaded_target = (loaded_hi << 16) | loaded_lo
     if loaded_target != expected_target:
-        raise RuntimeError(
-            f"{veneer_name} loads 0x{loaded_target:08X}, expected 0x{expected_target:08X}."
-        )
+        raise RuntimeError(f"{veneer_name} loads 0x{loaded_target:08X}, expected 0x{expected_target:08X}.")
     for _, mnemonic, operands in instructions[:bctrl_index]:
         written_register = _written_register(mnemonic, operands)
         if written_register in argument_registers:
@@ -4048,33 +4043,36 @@ def main() -> None:  # noqa: C901
             "--ios-open-kd-once is the failed direct-submit experiment and is no longer selectable; "
             "use --ios-open-via-retail-wrapper-once."
         )
-    if sum(
-        1
-        for selected in (
-            args.ios_udp_dry_run,
-            args.ios_open_via_retail_wrapper_once,
-            args.ios_nwc24_once,
-            args.ios_nwc24_via_retail_ioctl_once,
-            args.ios_close_kd_once,
-            args.ios_open_ip_once,
-            args.ios_so_startup_once,
-            args.ios_startup_once,
-            args.ios_get_host_id_once,
-            args.ios_create_socket_once,
-            args.ios_bind_once,
-            args.ios_recvfrom_once,
-            args.ios_recv_send_once,
-            args.ios_recv_send_loop,
-            args.ios_cp3w_frame_validation,
-            args.ios_cp3w_ping_pong,
-            args.ios_cp3w_hello_session,
-            args.ios_cp3w_game_identity,
-            args.ios_cp3w_inventory,
-            args.ios_ioctl_async_abi_probe,
-            args.enable_ios_udp_diagnostic_init,
+    if (
+        sum(
+            1
+            for selected in (
+                args.ios_udp_dry_run,
+                args.ios_open_via_retail_wrapper_once,
+                args.ios_nwc24_once,
+                args.ios_nwc24_via_retail_ioctl_once,
+                args.ios_close_kd_once,
+                args.ios_open_ip_once,
+                args.ios_so_startup_once,
+                args.ios_startup_once,
+                args.ios_get_host_id_once,
+                args.ios_create_socket_once,
+                args.ios_bind_once,
+                args.ios_recvfrom_once,
+                args.ios_recv_send_once,
+                args.ios_recv_send_loop,
+                args.ios_cp3w_frame_validation,
+                args.ios_cp3w_ping_pong,
+                args.ios_cp3w_hello_session,
+                args.ios_cp3w_game_identity,
+                args.ios_cp3w_inventory,
+                args.ios_ioctl_async_abi_probe,
+                args.enable_ios_udp_diagnostic_init,
+            )
+            if selected
         )
-        if selected
-    ) > 1:
+        > 1
+    ):
         raise RuntimeError("Use at most one IOS UDP diagnostic sub-mode flag at a time.")
     if args.ios_recv_send_loop_count < 1 or args.ios_recv_send_loop_count > 100:
         raise RuntimeError("--ios-recv-send-loop-count must be between 1 and 100.")
@@ -4144,9 +4142,7 @@ def main() -> None:  # noqa: C901
     diagnostic_address = None if args.diagnostic_address is None else int(args.diagnostic_address, 0)
     runtime_destination = None if args.runtime_destination is None else int(args.runtime_destination, 0)
     enable_ios_udp_diagnostic = (
-        args.enable_ios_udp_diagnostic
-        or args.enable_ios_udp_diagnostic_init
-        or ios_udp_mode != "normal"
+        args.enable_ios_udp_diagnostic or args.enable_ios_udp_diagnostic_init or ios_udp_mode != "normal"
     )
     if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("--enable-ios-udp-diagnostic requires --relocated-continue.")

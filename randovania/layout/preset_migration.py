@@ -1134,7 +1134,7 @@ def _migrate_v3c(preset: dict, game: RandovaniaGame) -> dict:
     if game == RandovaniaGame.METROID_PRIME_CORRUPTION:
         config = preset["configuration"]
         if "enable_prime3_wii_networking" not in config:
-            config["enable_prime3_wii_networking"] = False
+            config["enable_prime3_wii_networking"] = True
 
 
 _MIGRATIONS = [

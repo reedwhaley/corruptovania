@@ -47,6 +47,7 @@ class RemoteConnector(QtCore.QObject):
     PlayerLocationChanged = QtCore.Signal(PlayerLocationEvent)
     PickupIndexCollected = QtCore.Signal(PickupIndex)
     InventoryUpdated = QtCore.Signal(Inventory)
+    StatusUpdated = QtCore.Signal()
 
     @property
     def supports_writes(self) -> bool:
@@ -58,6 +59,9 @@ class RemoteConnector(QtCore.QObject):
 
     def description(self) -> str:
         raise NotImplementedError
+
+    def diagnostic_status(self) -> str | None:
+        return None
 
     @property
     def layout_uuid(self) -> uuid.UUID:
@@ -71,10 +75,9 @@ class RemoteConnector(QtCore.QObject):
         """
         await self.display_arbitrary_message(message.long_name)
 
-    @classmethod
-    def can_display_arbitrary_messages(cls) -> bool:
+    def can_display_arbitrary_messages(self) -> bool:
         """Returns if arbitrary messages can be sent to this game."""
-        return cls.display_arbitrary_message is not RemoteConnector.display_arbitrary_message
+        return type(self).display_arbitrary_message is not RemoteConnector.display_arbitrary_message
 
     async def display_arbitrary_message(self, message: str) -> None:
         """Requests the game to display an arbitrary message.

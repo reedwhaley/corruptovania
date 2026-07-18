@@ -116,7 +116,7 @@ class Prime3WiiFakeServer:
             lambda: _Prime3WiiFakeServerProtocol(self),
             local_addr=("127.0.0.1", 0),
         )
-        self.transport = transport  # type: ignore[assignment]
+        self.transport = transport
         self.port = transport.get_extra_info("sockname")[1]
 
     async def close(self) -> None:
@@ -186,13 +186,17 @@ class Prime3WiiFakeServer:
         if request.command is Prime3WiiCommand.HELLO:
             return self._build_hello_response(request)
 
-        if request.command in {
-            Prime3WiiCommand.PING,
-            Prime3WiiCommand.READ_MEMORY,
-            Prime3WiiCommand.DISCONNECT,
-            Prime3WiiCommand.GET_GAME_IDENTITY,
-            Prime3WiiCommand.GET_INVENTORY,
-        } and self.negotiated_request is None:
+        if (
+            request.command
+            in {
+                Prime3WiiCommand.PING,
+                Prime3WiiCommand.READ_MEMORY,
+                Prime3WiiCommand.DISCONNECT,
+                Prime3WiiCommand.GET_GAME_IDENTITY,
+                Prime3WiiCommand.GET_INVENTORY,
+            }
+            and self.negotiated_request is None
+        ):
             return encode_error_response(
                 request.command,
                 request.request_id,
@@ -287,30 +291,30 @@ class Prime3WiiFakeServer:
             )
 
         if request.command is Prime3WiiCommand.READ_MEMORY:
-            payload = decode_read_memory_payload(request.payload)
-            self.read_requests.append(payload)
-            if payload.size > self.max_read_size:
+            read_payload = decode_read_memory_payload(request.payload)
+            self.read_requests.append(read_payload)
+            if read_payload.size > self.max_read_size:
                 return encode_error_response(
                     request.command,
                     request.request_id,
                     Prime3WiiErrorCode.INVALID_PAYLOAD_LENGTH,
-                    f"Read size {payload.size} exceeds max {self.max_read_size}",
+                    f"Read size {read_payload.size} exceeds max {self.max_read_size}",
                 )
-            if not self._is_valid_range(payload.address, payload.size):
+            if not self._is_valid_range(read_payload.address, read_payload.size):
                 return encode_error_response(
                     request.command,
                     request.request_id,
                     Prime3WiiErrorCode.INVALID_ADDRESS,
-                    f"Invalid address range 0x{payload.address:08x}+{payload.size}",
+                    f"Invalid address range 0x{read_payload.address:08x}+{read_payload.size}",
                 )
             try:
-                body = bytes(self._memory[payload.address + i] for i in range(payload.size))
+                body = bytes(self._memory[read_payload.address + i] for i in range(read_payload.size))
             except KeyError:
                 return encode_error_response(
                     request.command,
                     request.request_id,
                     Prime3WiiErrorCode.INVALID_ADDRESS,
-                    f"Missing memory at 0x{payload.address:08x}",
+                    f"Missing memory at 0x{read_payload.address:08x}",
                 )
 
             return encode_response(

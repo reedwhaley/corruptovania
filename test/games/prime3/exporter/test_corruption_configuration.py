@@ -18,7 +18,7 @@ def default_corruption_preset():
 
 
 def test_corruption_configuration_default_networking_flag(default_corruption_preset) -> None:
-    assert default_corruption_preset.configuration.enable_prime3_wii_networking is False
+    assert default_corruption_preset.configuration.enable_prime3_wii_networking is True
 
 
 def test_corruption_configuration_json_round_trip(default_corruption_preset) -> None:
@@ -29,16 +29,16 @@ def test_corruption_configuration_json_round_trip(default_corruption_preset) -> 
     assert round_trip.enable_prime3_wii_networking is True
 
 
-def test_corruption_configuration_old_json_defaults_false(default_corruption_preset) -> None:
+def test_corruption_configuration_old_json_defaults_true(default_corruption_preset) -> None:
     data = default_corruption_preset.configuration.as_json
     data.pop("enable_prime3_wii_networking", None)
 
     round_trip = default_corruption_preset.configuration.from_json(data, game=RandovaniaGame.METROID_PRIME_CORRUPTION)
 
-    assert round_trip.enable_prime3_wii_networking is False
+    assert round_trip.enable_prime3_wii_networking is True
 
 
-def test_corruption_configuration_preset_migration_defaults_false() -> None:
+def test_corruption_configuration_preset_migration_defaults_true() -> None:
     preset = {
         "schema_version": 99,
         "game": "prime3",
@@ -47,7 +47,7 @@ def test_corruption_configuration_preset_migration_defaults_false() -> None:
 
     migrated = convert_to_current_version(preset, RandovaniaGame.METROID_PRIME_CORRUPTION)
 
-    assert migrated["configuration"]["enable_prime3_wii_networking"] is False
+    assert migrated["configuration"]["enable_prime3_wii_networking"] is True
 
 
 def test_corruption_configuration_permalink_round_trip(

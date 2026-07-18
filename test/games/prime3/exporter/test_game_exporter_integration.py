@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from open_prime_rando.dol_patching.corruption import dol_versions as corruption_dol_versions
@@ -114,6 +115,7 @@ def _configure_export_environment(
     paks_path.mkdir()
     toolchain = _toolchain()
     calls: list[tuple[str, ...]] = []
+    hardware_calls: list[tuple[Path, uuid.UUID, Path]] = []
 
     def fake_extract_prime3_disc_image(_toolchain_arg, _input_path, destination: Path, _progress_update) -> None:
         _write_prime3_extract_tree(destination, main_dol_bytes)
@@ -122,21 +124,38 @@ def _configure_export_environment(
         del env
         calls.append(command)
 
+    def fake_patch_hardware(path: Path, layout_uuid: uuid.UUID, *, runtime_build_dir: Path):
+        hardware_calls.append((path, layout_uuid, runtime_build_dir))
+        patched, _ = dol_patcher.patch_prime3_corruption_dol(path.read_bytes(), layout_uuid)
+        path.write_bytes(patched)
+        validation = SimpleNamespace(
+            payload_sha256="a" * 64,
+            version_description="Wii NTSC",
+            runtime_section_address=0x80006320,
+            entry_hook_target=0x80006320,
+            recurring_hook_target=0x81700000,
+            udp_port=43674,
+        )
+        return SimpleNamespace(validation=validation)
+
     mkdtemp_values = iter([str(extract_path), str(paks_path)])
     monkeypatch.setattr(game_exporter.randovania, "get_data_path", lambda: tmp_path.joinpath("data"))
     monkeypatch.setattr(game_exporter, "resolve_prime3_toolchain", lambda: toolchain)
     monkeypatch.setattr(game_exporter, "extract_prime3_disc_image", fake_extract_prime3_disc_image)
     monkeypatch.setattr(game_exporter, "_run_process", fake_run_process)
+    monkeypatch.setattr(game_exporter, "patch_prime3_hardware_dol_file_atomic", fake_patch_hardware)
     monkeypatch.setattr(game_exporter.tempfile, "mkdtemp", lambda: next(mkdtemp_values))
     monkeypatch.setattr(game_exporter.shutil, "rmtree", lambda path, ignore_errors=True: None)
 
-    return extract_path, paks_path, patcher_root, calls
+    return extract_path, paks_path, patcher_root, calls, hardware_calls
 
 
-def test_export_networking_disabled_leaves_main_dol_untouched(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_export_networking_legacy_disabled_flag_still_installs_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     version = corruption_dol_versions.ALL_VERSIONS[0]
     original_main_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
-    extract_path, _paks_path, _patcher_root, calls = _configure_export_environment(
+    extract_path, _paks_path, _patcher_root, calls, hardware_calls = _configure_export_environment(
         tmp_path, monkeypatch, original_main_dol
     )
 
@@ -147,7 +166,8 @@ def test_export_networking_disabled_leaves_main_dol_untouched(tmp_path: Path, mo
         lambda _message, _progress: None,
     )
 
-    assert extract_path.joinpath("DATA", "sys", "main.dol").read_bytes() == original_main_dol
+    assert extract_path.joinpath("DATA", "sys", "main.dol").read_bytes() != original_main_dol
+    assert len(hardware_calls) == 1
     assert any(command[0] == "randomizer" for command in calls)
     assert any(command[0] == "wit" for command in calls)
 
@@ -155,7 +175,7 @@ def test_export_networking_disabled_leaves_main_dol_untouched(tmp_path: Path, mo
 def test_export_networking_enabled_patches_working_copy_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     version = corruption_dol_versions.ALL_VERSIONS[0]
     source_main_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
-    extract_path, _paks_path, _patcher_root, _calls = _configure_export_environment(
+    extract_path, _paks_path, _patcher_root, _calls, hardware_calls = _configure_export_environment(
         tmp_path, monkeypatch, source_main_dol
     )
     layout_uuid = uuid.UUID("12345678-1234-5678-1234-567812345678")
@@ -176,6 +196,7 @@ def test_export_networking_enabled_patches_working_copy_only(tmp_path: Path, mon
     assert source_main_dol[patched_offset : patched_offset + len(version.build_string)] == version.build_string
     assert patched_bytes[patched_offset + 6 : patched_offset + 22] == layout_uuid.bytes
     assert source_main_dol == _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
+    assert hardware_calls[0][1] == layout_uuid
 
 
 def test_export_networking_enabled_rejects_unsupported_dol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -185,6 +206,11 @@ def test_export_networking_enabled_rejects_unsupported_dol(tmp_path: Path, monke
         build_string_bytes=b"X" * len(corruption_dol_versions.ALL_VERSIONS[0].build_string),
     )
     _configure_export_environment(tmp_path, monkeypatch, unsupported_main_dol)
+    monkeypatch.setattr(
+        game_exporter,
+        "patch_prime3_hardware_dol_file_atomic",
+        lambda path, *_args, **_kwargs: dol_patcher.identify_supported_corruption_version(path.read_bytes()),
+    )
     exporter = CorruptionGameExporter()
 
     with pytest.raises(dol_patcher.Prime3DolPatchError, match="Unsupported or unknown"):
@@ -201,7 +227,7 @@ def test_export_networking_surfaces_atomic_write_failure(tmp_path: Path, monkeyp
     _configure_export_environment(tmp_path, monkeypatch, main_dol)
     monkeypatch.setattr(
         game_exporter,
-        "patch_prime3_corruption_dol_file_atomic",
+        "patch_prime3_hardware_dol_file_atomic",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("replace failed")),
     )
     exporter = CorruptionGameExporter()
@@ -217,7 +243,7 @@ def test_export_networking_surfaces_atomic_write_failure(tmp_path: Path, monkeyp
 def test_export_deflicker_then_networking_compose_cleanly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     version = corruption_dol_versions.ALL_VERSIONS[0]
     original_main_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
-    extract_path, _paks_path, _patcher_root, calls = _configure_export_environment(
+    extract_path, _paks_path, _patcher_root, calls, _hardware_calls = _configure_export_environment(
         tmp_path, monkeypatch, original_main_dol
     )
     layout_uuid = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")

@@ -38,7 +38,7 @@ class ConnectorBuilderChoice(Enum):
         return True
 
     def supports_multiple_instances(self) -> bool:
-        return self != ConnectorBuilderChoice.DOLPHIN
+        return self not in {ConnectorBuilderChoice.DOLPHIN, ConnectorBuilderChoice.PRIME3_WII}
 
     @classmethod
     def all_usable_choices(cls) -> list[Self]:
@@ -53,5 +53,5 @@ _pretty_backend_name = {
     ConnectorBuilderChoice.DREAD: "Dread",
     ConnectorBuilderChoice.NINTENDONT: "Nintendont",
     ConnectorBuilderChoice.MSR: "Samus Returns",
-    ConnectorBuilderChoice.PRIME3_WII: "Prime 3 Wii",
+    ConnectorBuilderChoice.PRIME3_WII: "Wii / Wii U (Prime 3)",
 }

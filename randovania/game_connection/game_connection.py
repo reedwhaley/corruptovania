@@ -55,7 +55,16 @@ class GameConnection(QObject):
         self.world_database = world_database
 
         for builder_param in options.connector_builders:
-            self.add_connection_builder(builder_param.create_builder())
+            try:
+                builder = builder_param.create_builder()
+            except (TypeError, ValueError) as exc:
+                self.logger.warning(
+                    "Ignoring invalid persisted connection setting for %s: %s",
+                    builder_param.choice,
+                    exc,
+                )
+                continue
+            self.add_connection_builder(builder)
 
         self._timer = InfiniteTimer(self._auto_update, self._dt)
 
@@ -127,6 +136,7 @@ class GameConnection(QObject):
         connector.PlayerLocationChanged.connect(functools.partial(self._on_player_location_changed, connector))
         connector.PickupIndexCollected.connect(functools.partial(self._on_pickup_index_collected, connector))
         connector.InventoryUpdated.connect(functools.partial(self._on_inventory_updated, connector))
+        connector.StatusUpdated.connect(self.BuildersUpdated.emit)
         self.GameStateUpdated.emit(self._ensure_connected_state_exists(connector))
 
     def _handle_connector_removed(self, connector: RemoteConnector) -> None:

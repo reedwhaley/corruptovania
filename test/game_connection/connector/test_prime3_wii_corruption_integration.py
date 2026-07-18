@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,18 +9,43 @@ from open_prime_rando.dol_patching.corruption import dol_versions as corruption_
 
 from randovania.game_connection.builder.prime3_wii_connector_builder import Prime3WiiConnectorBuilder
 from randovania.game_connection.connector.corruption_remote_connector import CorruptionRemoteConnector
-from randovania.game_connection.connector.remote_connector import PlayerLocationEvent
-from randovania.game_connection.executor.prime3_wii_protocol import Prime3WiiCommand
-from randovania.game_connection.game_connection import GameConnection
+from randovania.game_connection.executor.prime3_wii_protocol import (
+    INVENTORY_ITEM_IDS,
+    Prime3WiiAvailability,
+    Prime3WiiCapability,
+    Prime3WiiCommand,
+    Prime3WiiInventoryAvailability,
+    Prime3WiiInventoryRecord,
+    Prime3WiiInventorySnapshot,
+)
+from randovania.game_connection.game_connection import ConnectedGameState, GameConnection
 from randovania.game_description.resources.inventory import Inventory, InventoryItem
 from randovania.network_common.game_connection_status import GameConnectionStatus
 from test.game_connection.executor.prime3_wii_fake_corruption_memory import Prime3WiiFakeCorruptionMemory
 from test.game_connection.executor.prime3_wii_fake_server import Prime3WiiFakeServer
 
+if TYPE_CHECKING:
+    from randovania.game_connection.connector.remote_connector import PlayerLocationEvent
+
 
 @pytest.fixture(name="server")
 async def fake_server():
-    server = Prime3WiiFakeServer(max_read_size=64)
+    server = Prime3WiiFakeServer(
+        capabilities=Prime3WiiCapability.GAME_IDENTITY | Prime3WiiCapability.INVENTORY_STATE,
+        identity_availability=(
+            Prime3WiiAvailability.EXECUTABLE_RECOGNIZED
+            | Prime3WiiAvailability.GAME_STATE_POINTER_VALID
+            | Prime3WiiAvailability.INVENTORY_ROOT_AVAILABLE
+        ),
+        inventory_availability=(
+            Prime3WiiInventoryAvailability.EXECUTABLE_RECOGNIZED
+            | Prime3WiiInventoryAvailability.GAME_STATE_POINTER_VALID
+            | Prime3WiiInventoryAvailability.INVENTORY_ROOT_VALID
+            | Prime3WiiInventoryAvailability.RANGE_VALID
+            | Prime3WiiInventoryAvailability.CONSISTENCY_CHECK_PASSED
+            | Prime3WiiInventoryAvailability.SNAPSHOT_AVAILABLE
+        ),
+    )
     await server.start()
     try:
         yield server
@@ -35,9 +61,30 @@ def fake_memory():
     )
 
 
+def _load_inventory(server: Prime3WiiFakeServer, memory: Prime3WiiFakeCorruptionMemory) -> None:
+    resources_by_id = {
+        item.extra["item_id"]: item
+        for item in memory.connector.game.resource_database.item
+        if item.extra["item_id"] < 1000
+    }
+    records = tuple(
+        Prime3WiiInventoryRecord(
+            memory.item_states[resources_by_id[item_id].short_name].amount,
+            memory.item_states[resources_by_id[item_id].short_name].capacity,
+        )
+        for item_id in INVENTORY_ITEM_IDS
+    )
+    server.inventory_payload = Prime3WiiInventorySnapshot(
+        availability_flags=server.inventory_payload.availability_flags,
+        snapshot_sequence=server.inventory_payload.snapshot_sequence + 1,
+        records=records,
+    )
+
+
 async def _build_connector(server: Prime3WiiFakeServer, memory: Prime3WiiFakeCorruptionMemory):
-    builder = Prime3WiiConnectorBuilder("127.0.0.1", port=server.port)
-    memory.load_into(server)
+    assert server.port is not None
+    builder = Prime3WiiConnectorBuilder("127.0.0.1", port=server.port, allow_loopback=True)
+    _load_inventory(server, memory)
     with patch("randovania.game_connection.connector.prime_remote_connector.PrimeRemoteConnector.start_updates"):
         connector = await builder.build_connector()
     assert isinstance(connector, CorruptionRemoteConnector)
@@ -57,12 +104,12 @@ async def test_read_only_update_flow(server: Prime3WiiFakeServer, memory):
     await connector.update()
     await connector.update()
     memory.set_item("Missile", 30, 30)
-    memory.load_into(server)
+    _load_inventory(server, memory)
     await connector.update()
 
     missile = connector.game.resource_database.get_item("Missile")
     suit_type = connector.game.resource_database.get_item("SuitType")
-    assert locations == [PlayerLocationEvent(memory.region, None)]
+    assert locations == []
     assert len(inventories) == 2
     assert inventories[0][missile] == InventoryItem(25, 25)
     assert inventories[1][missile] == InventoryItem(30, 30)
@@ -82,8 +129,10 @@ async def test_read_only_message_actions_fail(server: Prime3WiiFakeServer, memor
 
 async def test_connection_loss_disconnects_cleanly(server: Prime3WiiFakeServer, memory):
     _, connector = await _build_connector(server, memory)
-    server.drop_next(Prime3WiiCommand.READ_MEMORY, count=3)
+    server.drop_next(Prime3WiiCommand.GET_INVENTORY, count=6)
 
+    await connector.update()
+    await connector.update()
     await connector.update()
 
     assert connector.is_disconnected()
@@ -95,8 +144,9 @@ async def test_game_connection_inventory_path(server: Prime3WiiFakeServer, memor
     options.__enter__ = MagicMock(return_value=options)
     options.connector_builders = []
     connection = GameConnection(options, MagicMock())
-    builder = Prime3WiiConnectorBuilder("127.0.0.1", port=server.port)
-    memory.load_into(server)
+    assert server.port is not None
+    builder = Prime3WiiConnectorBuilder("127.0.0.1", port=server.port, allow_loopback=True)
+    _load_inventory(server, memory)
     with patch("randovania.game_connection.connector.prime_remote_connector.PrimeRemoteConnector.start_updates"):
         connection.add_connection_builder(builder)
         await connection._auto_update()
@@ -104,12 +154,12 @@ async def test_game_connection_inventory_path(server: Prime3WiiFakeServer, memor
     assert isinstance(connector, CorruptionRemoteConnector)
     connector._timer = MagicMock()
 
-    states = []
+    states: list[ConnectedGameState] = []
     connection.GameStateUpdated.connect(states.append)
     await connector.update()
 
     state = connection.connected_states[connector]
     missile = connector.game.resource_database.get_item("Missile")
-    assert state.status == GameConnectionStatus.InGame
+    assert state.status == GameConnectionStatus.TitleScreen
     assert state.current_inventory[missile] == InventoryItem(25, 25)
     assert any(emitted.current_inventory[missile] == InventoryItem(25, 25) for emitted in states)

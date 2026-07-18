@@ -1338,6 +1338,41 @@ def test_build_prime3_runtime_payload_cp3w_inventory_manifest(tmp_path: Path) ->
     assert inventory.phase_names["LOOP_COMPLETE"] == 93
 
 
+def test_build_prime3_runtime_payload_cp3w_inventory_service_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_inventory_service_manifest_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="cp3w_inventory_service",
+        ios_udp_loop_count=0,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "cp3w_inventory_service"
+    assert transport.udp_port == 43674
+    assert transport.terminal_phase_value == 26
+    assert transport.terminal_phase_name == "WAIT_RECEIVE"
+    assert transport.cp3w_inventory is not None
+    assert transport.cp3w_inventory.mode_value == 22
+    assert transport.cp3w_inventory.configured_count == 0
+
+
+def test_cp3w_inventory_service_rearms_without_exchange_limit() -> None:
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY_SERVICE = 22" in source
+    assert "runtime_transport_is_unbounded_cp3w_inventory_service()" in source
+    assert "!runtime_transport_is_unbounded_cp3w_inventory_service()" in source
+    assert "if (command == RUNTIME_CP3W_COMMAND_DISCONNECT)" in source
+    assert "dispatch_result == 14" in source
+
+
 @pytest.mark.parametrize("count", [0, -1, 101])
 def test_main_rejects_out_of_range_cp3w_inventory_count(count: int, monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_build_module(f"prime3_wii_runtime_build_payload_cp3w_inventory_count_{count}")

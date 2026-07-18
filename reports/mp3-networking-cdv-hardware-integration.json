@@ -1,0 +1,166 @@
+{
+  "model_flavor": "GPT-5.6 Sol",
+  "date": "2026-07-18",
+  "repositories": {
+    "active": {
+      "path": "C:\\Users\\Reed Whaley\\Documents\\MP3 Networking",
+      "branch": "prime3-wii-networking",
+      "starting_head": "142667253071376ae468ed40f24e11b166cd2980",
+      "ending_head": "142667253071376ae468ed40f24e11b166cd2980",
+      "remotes": {
+        "origin": "https://github.com/reedwhaley/corruptovania.git"
+      },
+      "initial_status": "clean"
+    },
+    "reference": {
+      "path": "C:\\Users\\Reed Whaley\\Documents\\CDV MacOS PR",
+      "branch": "prime3-wii-networking",
+      "head": "16ac9d5177f5c1e80312f622e92607fc1a871dee",
+      "remotes": {
+        "origin": "https://github.com/reedwhaley/corruptovania.git",
+        "upstream": "https://github.com/Schwork-Corruption/corruptovania.git"
+      },
+      "status": "clean, ahead 2",
+      "modified": false
+    }
+  },
+  "architecture": {
+    "existing_patch_pipeline": "Prime 3 exporter extraction, optional DOL gameplay patches, randomizer PAK patch, wit ISO/WBFS output",
+    "existing_connection": "Prime connector architecture with pluggable memory-operation executors and shared inventory conversion",
+    "old_implementation_reviewed": true,
+    "ported": [
+      "IPv4-only Wii/Wii U connection mode",
+      "fixed UDP 43674 with ephemeral local bind",
+      "HELLO, capability negotiation, GET_GAME_IDENTITY, GET_INVENTORY",
+      "request IDs, retries, reconnect backoff, endpoint filtering",
+      "runtime restart, duplicate, sequence reset, wrap, and gap handling",
+      "temporary unavailability and clean shutdown diagnostics",
+      "fake runtime, loopback, connector, inventory, and reconnect tests"
+    ],
+    "rewritten_for_active_architecture": [
+      "inventory-only executor without generic READ_MEMORY",
+      "automatic exporter orchestration around canonical runtime and patcher",
+      "unbounded canonical runtime service mode 22",
+      "fire-and-forget DISCONNECT session reset and receive rearm",
+      "static hardware artifact validator",
+      "package-build-time canonical payload generation"
+    ]
+  },
+  "runtime": {
+    "mode": "cp3w_inventory_service",
+    "mode_value": 22,
+    "udp_port": 43674,
+    "payload_sha256": "766562914b7e590c5925353022a9da26f1ce85b9bc76705bb8b4729ffbb37e3b",
+    "runtime_blob_sha256": "b9ac5c35a6adb50a3db8f80ffc24e96fee6a0f42eb0f41a71805b57617cc171c",
+    "runtime_section_address": "0x806843C0",
+    "entry_hook_target": "0x806843C0",
+    "recurring_hook_address": "0x800BB71C",
+    "recurring_hook_target": "0x817E1008",
+    "service_unbounded": true,
+    "runtime_occurrence_count": 1,
+    "identity_supported": true,
+    "inventory_supported": true
+  },
+  "patching": {
+    "automatic": true,
+    "manual_second_pass_required": false,
+    "profile_validated_before_modification": true,
+    "atomic_replacement_after_validation": true,
+    "duplicate_installation_rejected": true,
+    "supported_profiles": [
+      {
+        "game": "Metroid Prime 3 Corruption",
+        "platform": "Wii",
+        "region": "NTSC-U",
+        "revision": "3.436",
+        "description": "Wii NTSC",
+        "profile_id": "0x50334E41",
+        "profile_fingerprint": "0x67B00CE6"
+      }
+    ],
+    "cli_behavior": "normal Prime 3 export automatically includes CP3W",
+    "gui_behavior": "normal generation automatically includes CP3W; connection asks only for console IPv4"
+  },
+  "validation": {
+    "deterministic": true,
+    "payload_elf_sha256": "8a5d652afe3ec7d084ad984be40b9f39e4048d26002dcad213128525a6d1a075",
+    "payload_bin_sha256": "766562914b7e590c5925353022a9da26f1ce85b9bc76705bb8b4729ffbb37e3b",
+    "payload_json_sha256": "7d06c5614b14352d279d4e94b1d8b76be7f17b06a5f95c44c5d16c561f8a64c2",
+    "dol_sha256": "54247a49ca73d12871aafa3199aeffc6677986208aff9299139a2c0e7ae6b8f0",
+    "iso": {
+      "path": "E:\\MP3 Networking Hardware Validation 20260718\\MP3-CP3W-Hardware-Validation.iso",
+      "sha256": "b3e43cb00d3c6ea772bb2c5cb1e238a3ee372d566c96d7c18cdc5a23b552e6bc",
+      "size": 4678778880,
+      "wit_verify": true,
+      "extracted_dol_sha256": "54247a49ca73d12871aafa3199aeffc6677986208aff9299139a2c0e7ae6b8f0"
+    },
+    "wbfs": {
+      "path": "E:\\MP3 Networking Hardware Validation 20260718\\MP3-CP3W-Hardware-Validation.wbfs",
+      "sha256": "3a068b47e07efafa6e8b740b03e1e1aabe53fc04c667fd45abf66759cc94cf6e",
+      "size": 4424990720,
+      "wit_verify": true,
+      "extracted_dol_sha256": "54247a49ca73d12871aafa3199aeffc6677986208aff9299139a2c0e7ae6b8f0"
+    },
+    "dolphin": {
+      "version": "2603a",
+      "booted_generated_iso": true,
+      "hello": true,
+      "game_identity": true,
+      "inventory": true,
+      "inventory_record_count": 59,
+      "two_sessions_after_disconnect": true,
+      "observed_sequences": [1, 2, 3, 4, 5, 6],
+      "inventory_equal_to_dolphin_conversion": true,
+      "suit_type_equal": true,
+      "observed_crash": false,
+      "title_observed": true,
+      "load_and_transition_automated": false,
+      "graceful_game_shutdown_claimed": false
+    },
+    "tests": {
+      "focused_passed": 53,
+      "broader_relevant_passed": 590,
+      "broader_duration_seconds": 39.79
+    },
+    "static": {
+      "ruff": "passed on changed Python",
+      "ruff_format": "passed on changed Python",
+      "py_compile": "passed on changed Python and randovania.spec",
+      "targeted_mypy": "passed for hardware_runtime.py",
+      "configured_mypy": "74 pre-existing/environment errors remain across the repository",
+      "git_diff_check": "passed"
+    },
+    "normal_workflow_note": "The real-DOL integration used the normal integration API and exporter tests prove automatic invocation. ISO/WBFS assembly reused the exporter's wit command over an isolated extracted tree rather than running a new randomizer seed through the external randomizer."
+  },
+  "hardware_readiness": {
+    "original_wii": "structurally ready, not physically tested",
+    "wii_u_vwii": "structurally ready, not physically tested",
+    "expected_setting": "Wii / Wii U (Prime 3) plus console IPv4 only",
+    "physical_validation_complete": false
+  },
+  "scope_guards": {
+    "inventory_writes_added": false,
+    "grants_added": false,
+    "location_tracking_added": false,
+    "generic_memory_reads_added": false,
+    "generic_memory_writes_added": false,
+    "generated_binaries_tracked": false,
+    "commit_created": false,
+    "pushed": false
+  },
+  "changed_areas": [
+    "Wii executor, builder, connection manager, connector diagnostics, and UI",
+    "Prime 3 exporter, production runtime orchestrator, manifest validation, and packaging spec",
+    "canonical relocated runtime and payload builder",
+    "focused connection/export/runtime tests",
+    "Prime 3 Wii/Wii U documentation and reports"
+  ],
+  "limitations": [
+    "No physical Wii or Wii U vWii test was performed.",
+    "Dolphin load-game and room-transition input were not automated.",
+    "The configured repository-wide mypy run is not baseline-clean.",
+    "The isolated container proof did not execute a fresh external randomizer seed."
+  ],
+  "software_milestone_complete": true,
+  "physical_validation_remains": true
+}

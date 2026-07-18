@@ -35,4 +35,7 @@ class ConnectorBuilderOption(JsonDataclass):
     params: dict
 
     def create_builder(self) -> ConnectorBuilder:
+        if self.choice is ConnectorBuilderChoice.PRIME3_WII:
+            # Persisted configuration contains only the console address. Port/session overrides are test-only.
+            return Prime3WiiConnectorBuilder(ip=self.params.get("ip", ""))
         return _CHOICE_TO_BUILDER[self.choice](**self.params)

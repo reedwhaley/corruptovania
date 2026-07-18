@@ -16,7 +16,8 @@ class CorruptionConfiguration(BaseConfiguration):
     start_with_corrupted_hypermode: bool = False
     MP3Update: bool = False
     disable_deflicker: bool = False
-    enable_prime3_wii_networking: bool = False
+    # Retained for preset compatibility; normal exports always install CP3W.
+    enable_prime3_wii_networking: bool = True
 
     @classmethod
     def game_enum(cls) -> RandovaniaGame:

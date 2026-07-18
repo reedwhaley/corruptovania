@@ -49,7 +49,6 @@ class CorruptionPatchDataFactory(PatchDataFactory):
 
         mp3_update = self.configuration.MP3Update
         disable_deflicker = self.configuration.disable_deflicker
-        enable_prime3_wii_networking = self.configuration.enable_prime3_wii_networking
         phaaze_skip = self.configuration.teleporters.skip_final_bosses
 
         starting_items = patches.starting_resources()
@@ -118,6 +117,6 @@ class CorruptionPatchDataFactory(PatchDataFactory):
             "phaaze_skip": phaaze_skip,
             "mp3_update": mp3_update,
             "disable_deflicker": disable_deflicker,
-            "enable_prime3_wii_networking": enable_prime3_wii_networking,
+            "enable_prime3_wii_networking": True,
             "layout_uuid": str(self.players_config.get_own_uuid()),
         }

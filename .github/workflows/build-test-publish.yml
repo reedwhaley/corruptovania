@@ -197,21 +197,29 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/build/ci-devkitpro
-          key: prime3-devkitppc-${{ runner.os }}-20250727-3e16f0dca280
+          key: prime3-devkitppc-${{ runner.os }}-20250727-3e16f0dca280-v2
 
       - name: Extract pinned official devkitPro toolchain
         if: steps.devkit-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
+
+          rm -rf "${DEVKITPRO}"
           mkdir -p "${DEVKITPRO}"
+
           docker pull "${DEVKITPPC_IMAGE}"
-          container_id="$(docker create "${DEVKITPPC_IMAGE}")"
-          trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true' EXIT
-          docker cp "${container_id}:/opt/devkitpro/." "${DEVKITPRO}"
+
+          docker run --rm "${DEVKITPPC_IMAGE}" \
+            tar -C /opt/devkitpro -cf - devkitPPC \
+            | tar -C "${DEVKITPRO}" -xf -
+
           docker run --rm "${DEVKITPPC_IMAGE}" \
             dkp-pacman -Q devkitPPC devkitppc-rules \
             > "${DEVKITPRO}/ci-package-versions.txt"
+
+          test -x "${DEVKITPPC}/bin/powerpc-eabi-gcc"
+          test -f "${DEVKITPRO}/ci-package-versions.txt"
 
       - name: Export devkitPro environment
         shell: bash

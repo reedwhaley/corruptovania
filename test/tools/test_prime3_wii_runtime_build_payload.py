@@ -717,6 +717,101 @@ def test_main_rejects_cp3w_frame_validation_count_without_flag(
         module.main()
 
 
+def test_main_selects_cp3w_ping_pong_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_ping_pong_mode")
+    captured: dict[str, object] = {}
+
+    def _fake_build(output_dir: Path, **kwargs):
+        captured["output_dir"] = output_dir
+        captured.update(kwargs)
+        raise RuntimeError("stop after argument selection")
+
+    monkeypatch.setattr(module, "build_prime3_runtime_payload", _fake_build)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-ping-pong",
+            "--ios-cp3w-ping-pong-count",
+            "8",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after argument selection"):
+        module.main()
+
+    assert captured["ios_udp_mode"] == "cp3w_ping_pong"
+    assert captured["ios_udp_loop_count"] == 8
+    assert captured["enable_ios_udp_diagnostic"] is True
+    assert captured["payload_mode"] == "relocated_continue"
+
+
+def test_main_rejects_cp3w_ping_pong_count_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_ping_pong_count_rejected")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-ping-pong-count",
+            "9",
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="requires --ios-cp3w-ping-pong"):
+        module.main()
+
+
+@pytest.mark.parametrize("count", [0, -1, 101])
+def test_main_rejects_out_of_range_cp3w_ping_pong_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    count: int,
+) -> None:
+    module = _load_build_module(f"prime3_wii_runtime_build_payload_cp3w_ping_pong_count_{count}")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_payload.py",
+            "--relocated-continue",
+            "--enable-ios-udp-diagnostic",
+            "--ios-cp3w-ping-pong",
+            "--ios-cp3w-ping-pong-count",
+            str(count),
+            "--reserved-high",
+            "0x817E0000",
+            "--diagnostic-address",
+            "0x817E0100",
+            "--output-dir",
+            os.fspath(tmp_path),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="must be between 1 and 100"):
+        module.main()
+
+
 @pytest.mark.parametrize("count", [0, -1, 101])
 def test_main_rejects_out_of_range_cp3w_frame_validation_count(
     monkeypatch: pytest.MonkeyPatch,
@@ -902,6 +997,51 @@ def test_build_prime3_runtime_payload_relocated_continue_cp3w_manifest(tmp_path:
     assert transport.cp3w_last_actual_payload_length_address is not None
     assert transport.cp3w_last_frame_result_address is not None
     assert transport.cp3w_final_datagram_index_address is not None
+
+
+def test_build_prime3_runtime_payload_relocated_continue_cp3w_ping_pong_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_cp3w_ping_pong_manifest_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="cp3w_ping_pong",
+        ios_udp_loop_count=8,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "cp3w_ping_pong"
+    assert transport.receive_enabled is True
+    assert transport.send_enabled is True
+    assert transport.terminal_phase_value == 61
+    assert transport.terminal_phase_name == "CP3W_PING_PONG_LOOP_COMPLETE"
+    assert transport.cp3w_response_status_error == 1
+    assert transport.cp3w_command_ping == 3
+    assert transport.cp3w_pong_command == 3
+    assert transport.cp3w_pong_uses_ping_command is True
+    assert transport.cp3w_error_code_unknown_command == 4
+    assert transport.cp3w_ping_max_payload_length is not None
+    assert transport.cp3w_ping_max_payload_length > 0
+    assert transport.cp3w_unsupported_message_ascii == "Command is unsupported"
+    assert transport.cp3w_requests_dispatched_address is not None
+    assert transport.cp3w_ping_requests_received_address is not None
+    assert transport.cp3w_pong_responses_submitted_address is not None
+    assert transport.cp3w_pong_responses_completed_address is not None
+    assert transport.cp3w_unsupported_commands_received_address is not None
+    assert transport.cp3w_unsupported_responses_submitted_address is not None
+    assert transport.cp3w_unsupported_responses_completed_address is not None
+    assert transport.cp3w_last_command_address is not None
+    assert transport.cp3w_last_response_status_address is not None
+    assert transport.cp3w_last_ping_payload_length_address is not None
+    assert transport.cp3w_last_dispatch_result_address is not None
 
 
 def test_validate_retail_call_veneer_instructions_accepts_balanced_lr_restore() -> None:

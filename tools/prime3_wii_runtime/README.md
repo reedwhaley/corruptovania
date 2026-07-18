@@ -78,6 +78,7 @@ python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-r
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-bind-once --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-recv-send-loop --ios-recv-send-loop-count 3 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-cp3w-frame-validation --ios-cp3w-frame-validation-count 6 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
+python tools/prime3_wii_runtime/build_payload.py --relocated-continue --enable-recurring-hook-diagnostics --enable-ios-udp-diagnostic --ios-cp3w-ping-pong --ios-cp3w-ping-pong-count 8 --reserved-high 0x817E0000 --diagnostic-address 0x817E0100
 ```
 
 Artifacts are written to `build/prime3_wii_runtime/` or the requested `--output-dir`:
@@ -123,6 +124,8 @@ The current `--ios-recv-send-loop` proof extends that bounded sequence through `
 
 The current `--ios-cp3w-frame-validation` proof reuses that bounded receive/reply transport but inserts a CP3W parser and framed fixed reply before send submission. `--ios-cp3w-frame-validation-count` defaults to `6`, accepts only `1..100`, rejects `0`, negatives, non-integers, use without the framing flag, and conflicting diagnostic modes. The CP3W-specific runtime phases are `50=CP3W_VALIDATE_FRAME`, `51=CP3W_FRAME_VALID`, `52=CP3W_FRAME_REJECTED`, `53=CP3W_SUBMIT_RESPONSE`, `54=CP3W_WAIT_RESPONSE`, and `55=CP3W_FRAME_LOOP_COMPLETE`.
 
+The current `--ios-cp3w-ping-pong` proof builds directly on that framing runtime and adds bounded command dispatch for canonical CP3W `PING` and structured unsupported-command replies. `--ios-cp3w-ping-pong-count` defaults to `8`, accepts only `1..100`, rejects `0`, negatives, non-integers, use without the ping/pong flag, and conflicting diagnostic modes. The added phases are `56=CP3W_DISPATCH_REQUEST`, `57=CP3W_HANDLE_PING`, `58=CP3W_HANDLE_UNSUPPORTED_COMMAND`, `59=CP3W_SUBMIT_DISPATCH_RESPONSE`, `60=CP3W_WAIT_DISPATCH_RESPONSE`, and `61=CP3W_PING_PONG_LOOP_COMPLETE`.
+
 CP3W packet format:
 
 - big-endian, fixed `16`-byte header plus payload plus trailing `4`-byte CRC32
@@ -154,6 +157,14 @@ Framing-mode behavior:
 - stale and duplicate callback counters are expected to remain `0` in successful runs
 - terminal count `N` means `cp3w_datagrams_processed == N`, no receive beyond `N`, and terminal phase `CP3W_FRAME_LOOP_COMPLETE`
 
+Ping/pong-mode behavior:
+
+- valid `PING` requests receive a CP3W response packet with response command `PING`, response status `OK`, the original request id, and an exact payload echo
+- unsupported but otherwise well-formed commands such as `DISCONNECT` receive a structured CP3W error response with response status `ERROR`, error code `UNKNOWN_COMMAND`, the original request command, and UTF-8 message `Command is unsupported`
+- malformed packets still follow the framing rejection path and do not submit a reply
+- dispatch bookkeeping records request count, ping count, pong submit/complete counts, unsupported-command count, unsupported reply submit/complete counts, last command, last response status, last ping payload length, and last dispatch result
+- terminal count `N` means `cp3w_datagrams_processed == N`, no receive beyond `N`, and terminal phase `CP3W_PING_PONG_LOOP_COMPLETE`
+
 `observe_probe.py` now supports `--poll-ms` with a default of `500` and a minimum of `10`. The report includes the first and second observation timestamps, the existing transport counters, and the CP3W metadata when the manifest exports it. During scripted injection, use `--poll-ms 50` for denser snapshots; `--repeat-delay-ms` remains accepted as a compatibility alias for the same interval.
 
 Live CP3W validation procedure:
@@ -164,6 +175,15 @@ Live CP3W validation procedure:
 4. Launch the rebuilt ISO in Dolphin and wait for transport phase `WAIT_RECEIVE`.
 5. Use `python host/udp_cp3w_frame_test.py --host 127.0.0.1 --port 43674` to inject the deterministic sequence: valid request id `1`, invalid magic, truncated packet, payload length mismatch, unsupported command, bad CRC, valid request id `42`.
 6. Verify that the two valid packets receive exact framed CP3W replies, every malformed packet times out, and the runtime reaches terminal `CP3W_FRAME_LOOP_COMPLETE` with stable counters and no extra replies.
+
+Live CP3W ping/pong validation procedure:
+
+1. Build the dispatch payload with `--ios-cp3w-ping-pong --ios-cp3w-ping-pong-count 8`.
+2. Patch a copied CDV `main.dol` with `build_probe_dol.py --install-recurring-poll-hook --enable-ios-udp-diagnostic`.
+3. Rebuild the ISO, round-trip extract it, and verify the patched DOL hash matches exactly.
+4. Launch the rebuilt ISO in Dolphin and wait for transport phase `WAIT_RECEIVE`.
+5. Use `python host/udp_cp3w_ping_pong_test.py --host 127.0.0.1 --port 43674` to inject one canonical `PING` request and one canonical unsupported `DISCONNECT` request.
+6. Verify that the `PING` request receives an echoed `PING` response, the unsupported request receives a structured `UNKNOWN_COMMAND` error response with message `Command is unsupported`, and the runtime reaches terminal `CP3W_PING_PONG_LOOP_COMPLETE` with stable dispatch counters and no extra replies.
 
 Workspace cleanup behavior:
 

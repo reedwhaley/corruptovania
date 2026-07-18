@@ -427,6 +427,17 @@ RUNTIME_TRANSPORT_CP3W_LAST_DECLARED_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_
 RUNTIME_TRANSPORT_CP3W_LAST_ACTUAL_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_cp3w_last_actual_payload_length"
 RUNTIME_TRANSPORT_CP3W_LAST_FRAME_RESULT_SYMBOL = "runtime_transport_cp3w_last_frame_result"
 RUNTIME_TRANSPORT_CP3W_FINAL_DATAGRAM_INDEX_SYMBOL = "runtime_transport_cp3w_final_datagram_index"
+RUNTIME_TRANSPORT_CP3W_REQUESTS_DISPATCHED_SYMBOL = "runtime_transport_cp3w_requests_dispatched"
+RUNTIME_TRANSPORT_CP3W_PING_REQUESTS_RECEIVED_SYMBOL = "runtime_transport_cp3w_ping_requests_received"
+RUNTIME_TRANSPORT_CP3W_PONG_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_pong_responses_submitted"
+RUNTIME_TRANSPORT_CP3W_PONG_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_pong_responses_completed"
+RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_COMMANDS_RECEIVED_SYMBOL = "runtime_transport_cp3w_unsupported_commands_received"
+RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_SUBMITTED_SYMBOL = "runtime_transport_cp3w_unsupported_responses_submitted"
+RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_COMPLETED_SYMBOL = "runtime_transport_cp3w_unsupported_responses_completed"
+RUNTIME_TRANSPORT_CP3W_LAST_COMMAND_SYMBOL = "runtime_transport_cp3w_last_command"
+RUNTIME_TRANSPORT_CP3W_LAST_RESPONSE_STATUS_SYMBOL = "runtime_transport_cp3w_last_response_status"
+RUNTIME_TRANSPORT_CP3W_LAST_PING_PAYLOAD_LENGTH_SYMBOL = "runtime_transport_cp3w_last_ping_payload_length"
+RUNTIME_TRANSPORT_CP3W_LAST_DISPATCH_RESULT_SYMBOL = "runtime_transport_cp3w_last_dispatch_result"
 RUNTIME_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
 
 
@@ -589,6 +600,17 @@ class RelocatedRuntimeBuildResult:
     transport_cp3w_last_actual_payload_length_address: int
     transport_cp3w_last_frame_result_address: int
     transport_cp3w_final_datagram_index_address: int
+    transport_cp3w_requests_dispatched_address: int
+    transport_cp3w_ping_requests_received_address: int
+    transport_cp3w_pong_responses_submitted_address: int
+    transport_cp3w_pong_responses_completed_address: int
+    transport_cp3w_unsupported_commands_received_address: int
+    transport_cp3w_unsupported_responses_submitted_address: int
+    transport_cp3w_unsupported_responses_completed_address: int
+    transport_cp3w_last_command_address: int
+    transport_cp3w_last_response_status_address: int
+    transport_cp3w_last_ping_payload_length_address: int
+    transport_cp3w_last_dispatch_result_address: int
     transport_open_kd_submit_result_address: int
     transport_open_kd_callback_result_address: int
     transport_open_kd_submit_generation_address: int
@@ -769,6 +791,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ios-recv-send-loop-count", type=int, default=3)
     parser.add_argument("--ios-cp3w-frame-validation", action="store_true")
     parser.add_argument("--ios-cp3w-frame-validation-count", type=int, default=6)
+    parser.add_argument("--ios-cp3w-ping-pong", action="store_true")
+    parser.add_argument("--ios-cp3w-ping-pong-count", type=int, default=8)
     parser.add_argument("--ios-ioctl-async-abi-probe", action="store_true")
     parser.add_argument("--ios-open-kd-once", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reserved-high")
@@ -902,6 +926,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "retail_wrapper_recv_send_once",
         "retail_wrapper_recv_send_loop",
         "cp3w_frame_validation",
+        "cp3w_ping_pong",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1271,11 +1296,14 @@ def build_prime3_runtime_payload(  # noqa: C901
             recv_send_once = ios_udp_mode == "retail_wrapper_recv_send_once"
             recv_send_loop = ios_udp_mode == "retail_wrapper_recv_send_loop"
             cp3w_frame_validation = ios_udp_mode == "cp3w_frame_validation"
+            cp3w_ping_pong = ios_udp_mode == "cp3w_ping_pong"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 initialization_enabled=True,
-                receive_enabled=recvfrom_once or recv_send_once or recv_send_loop or cp3w_frame_validation,
-                send_enabled=recv_send_once or recv_send_loop or cp3w_frame_validation,
+                receive_enabled=(
+                    recvfrom_once or recv_send_once or recv_send_loop or cp3w_frame_validation or cp3w_ping_pong
+                ),
+                send_enabled=recv_send_once or recv_send_loop or cp3w_frame_validation or cp3w_ping_pong,
                 nwc24_startup_enabled=True,
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
@@ -1291,6 +1319,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else 27
                     if recvfrom_once
+                    else 61
+                    if cp3w_ping_pong
                     else 55
                     if cp3w_frame_validation
                     else 45
@@ -1314,6 +1344,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                     if create_socket_once
                     else "RECEIVED_DATAGRAM"
                     if recvfrom_once
+                    else "CP3W_PING_PONG_LOOP_COMPLETE"
+                    if cp3w_ping_pong
                     else "CP3W_FRAME_LOOP_COMPLETE"
                     if cp3w_frame_validation
                     else "LOOP_COMPLETE"
@@ -1427,14 +1459,21 @@ def build_prime3_runtime_payload(  # noqa: C901
                 cp3w_crc_reflected=True,
                 cp3w_packet_kind_request=1,
                 cp3w_packet_kind_response=2,
+                cp3w_response_status_error=1,
+                cp3w_command_ping=3,
+                cp3w_pong_command=3,
+                cp3w_pong_uses_ping_command=True,
                 cp3w_command_reserved_mailbox=127,
+                cp3w_error_code_unknown_command=4,
                 cp3w_packet_kind_offset=5,
                 cp3w_command_offset=6,
                 cp3w_response_status_offset=7,
                 cp3w_request_id_offset=8,
                 cp3w_payload_length_offset=12,
+                cp3w_ping_max_payload_length=64 - HEADER_SIZE - CRC_SIZE,
                 cp3w_request_payload_ascii="P3_FRAME_TEST_20260717",
                 cp3w_response_payload_ascii="P3_FRAME_ACK_20260717",
+                cp3w_unsupported_message_ascii="Command is unsupported",
                 cp3w_request_payload_length=len("P3_FRAME_TEST_20260717"),
                 cp3w_response_payload_length=len("P3_FRAME_ACK_20260717"),
                 prepared_send_length_address=relocated_runtime.transport_prepared_send_length_address,
@@ -1485,6 +1524,34 @@ def build_prime3_runtime_payload(  # noqa: C901
                 cp3w_last_frame_result_size=4,
                 cp3w_final_datagram_index_address=relocated_runtime.transport_cp3w_final_datagram_index_address,
                 cp3w_final_datagram_index_size=4,
+                cp3w_requests_dispatched_address=relocated_runtime.transport_cp3w_requests_dispatched_address,
+                cp3w_requests_dispatched_size=4,
+                cp3w_ping_requests_received_address=relocated_runtime.transport_cp3w_ping_requests_received_address,
+                cp3w_ping_requests_received_size=4,
+                cp3w_pong_responses_submitted_address=relocated_runtime.transport_cp3w_pong_responses_submitted_address,
+                cp3w_pong_responses_submitted_size=4,
+                cp3w_pong_responses_completed_address=relocated_runtime.transport_cp3w_pong_responses_completed_address,
+                cp3w_pong_responses_completed_size=4,
+                cp3w_unsupported_commands_received_address=(
+                    relocated_runtime.transport_cp3w_unsupported_commands_received_address
+                ),
+                cp3w_unsupported_commands_received_size=4,
+                cp3w_unsupported_responses_submitted_address=(
+                    relocated_runtime.transport_cp3w_unsupported_responses_submitted_address
+                ),
+                cp3w_unsupported_responses_submitted_size=4,
+                cp3w_unsupported_responses_completed_address=(
+                    relocated_runtime.transport_cp3w_unsupported_responses_completed_address
+                ),
+                cp3w_unsupported_responses_completed_size=4,
+                cp3w_last_command_address=relocated_runtime.transport_cp3w_last_command_address,
+                cp3w_last_command_size=4,
+                cp3w_last_response_status_address=relocated_runtime.transport_cp3w_last_response_status_address,
+                cp3w_last_response_status_size=4,
+                cp3w_last_ping_payload_length_address=relocated_runtime.transport_cp3w_last_ping_payload_length_address,
+                cp3w_last_ping_payload_length_size=4,
+                cp3w_last_dispatch_result_address=relocated_runtime.transport_cp3w_last_dispatch_result_address,
+                cp3w_last_dispatch_result_size=4,
                 receive_arm_count_address=relocated_runtime.transport_receive_arm_count_address,
                 receive_arm_count_size=4,
                 receive_rearm_count_address=relocated_runtime.transport_receive_rearm_count_address,
@@ -2003,6 +2070,7 @@ def _build_relocated_runtime(
                 "retail_wrapper_recv_send_once": "15",
                 "retail_wrapper_recv_send_loop": "16",
                 "cp3w_frame_validation": "17",
+                "cp3w_ping_pong": "18",
             }[ios_udp_mode]
         ),
         f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
@@ -2879,6 +2947,39 @@ def _build_relocated_runtime(
     transport_cp3w_final_datagram_index_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_CP3W_FINAL_DATAGRAM_INDEX_SYMBOL
     )
+    transport_cp3w_requests_dispatched_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_REQUESTS_DISPATCHED_SYMBOL
+    )
+    transport_cp3w_ping_requests_received_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_PING_REQUESTS_RECEIVED_SYMBOL
+    )
+    transport_cp3w_pong_responses_submitted_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_PONG_RESPONSES_SUBMITTED_SYMBOL
+    )
+    transport_cp3w_pong_responses_completed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_PONG_RESPONSES_COMPLETED_SYMBOL
+    )
+    transport_cp3w_unsupported_commands_received_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_COMMANDS_RECEIVED_SYMBOL
+    )
+    transport_cp3w_unsupported_responses_submitted_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_SUBMITTED_SYMBOL
+    )
+    transport_cp3w_unsupported_responses_completed_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_UNSUPPORTED_RESPONSES_COMPLETED_SYMBOL
+    )
+    transport_cp3w_last_command_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_COMMAND_SYMBOL
+    )
+    transport_cp3w_last_response_status_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_RESPONSE_STATUS_SYMBOL
+    )
+    transport_cp3w_last_ping_payload_length_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_PING_PAYLOAD_LENGTH_SYMBOL
+    )
+    transport_cp3w_last_dispatch_result_address = _extract_symbol_address(
+        readelf_symbols, RUNTIME_TRANSPORT_CP3W_LAST_DISPATCH_RESULT_SYMBOL
+    )
     cache_range_start, cache_range_size = compute_cache_range(
         address=runtime_destination,
         size=len(payload_bytes),
@@ -3042,6 +3143,17 @@ def _build_relocated_runtime(
         transport_cp3w_last_actual_payload_length_address=transport_cp3w_last_actual_payload_length_address,
         transport_cp3w_last_frame_result_address=transport_cp3w_last_frame_result_address,
         transport_cp3w_final_datagram_index_address=transport_cp3w_final_datagram_index_address,
+        transport_cp3w_requests_dispatched_address=transport_cp3w_requests_dispatched_address,
+        transport_cp3w_ping_requests_received_address=transport_cp3w_ping_requests_received_address,
+        transport_cp3w_pong_responses_submitted_address=transport_cp3w_pong_responses_submitted_address,
+        transport_cp3w_pong_responses_completed_address=transport_cp3w_pong_responses_completed_address,
+        transport_cp3w_unsupported_commands_received_address=transport_cp3w_unsupported_commands_received_address,
+        transport_cp3w_unsupported_responses_submitted_address=transport_cp3w_unsupported_responses_submitted_address,
+        transport_cp3w_unsupported_responses_completed_address=transport_cp3w_unsupported_responses_completed_address,
+        transport_cp3w_last_command_address=transport_cp3w_last_command_address,
+        transport_cp3w_last_response_status_address=transport_cp3w_last_response_status_address,
+        transport_cp3w_last_ping_payload_length_address=transport_cp3w_last_ping_payload_length_address,
+        transport_cp3w_last_dispatch_result_address=transport_cp3w_last_dispatch_result_address,
         transport_open_kd_submit_result_address=transport_open_kd_submit_result_address,
         transport_open_kd_callback_result_address=transport_open_kd_callback_result_address,
         transport_open_kd_submit_generation_address=transport_open_kd_submit_generation_address,
@@ -3552,6 +3664,7 @@ def main() -> None:  # noqa: C901
             args.ios_recv_send_once,
             args.ios_recv_send_loop,
             args.ios_cp3w_frame_validation,
+            args.ios_cp3w_ping_pong,
             args.ios_ioctl_async_abi_probe,
             args.enable_ios_udp_diagnostic_init,
         )
@@ -3566,6 +3679,10 @@ def main() -> None:  # noqa: C901
         raise RuntimeError("--ios-cp3w-frame-validation-count must be between 1 and 100.")
     if args.ios_cp3w_frame_validation_count != 6 and not args.ios_cp3w_frame_validation:
         raise RuntimeError("--ios-cp3w-frame-validation-count requires --ios-cp3w-frame-validation.")
+    if args.ios_cp3w_ping_pong_count < 1 or args.ios_cp3w_ping_pong_count > 100:
+        raise RuntimeError("--ios-cp3w-ping-pong-count must be between 1 and 100.")
+    if args.ios_cp3w_ping_pong_count != 8 and not args.ios_cp3w_ping_pong:
+        raise RuntimeError("--ios-cp3w-ping-pong-count requires --ios-cp3w-ping-pong.")
     ios_udp_mode = "normal"
     if args.ios_udp_dry_run:
         ios_udp_mode = "dry_run"
@@ -3593,6 +3710,8 @@ def main() -> None:  # noqa: C901
         ios_udp_mode = "retail_wrapper_recv_send_loop"
     elif args.ios_cp3w_frame_validation:
         ios_udp_mode = "cp3w_frame_validation"
+    elif args.ios_cp3w_ping_pong:
+        ios_udp_mode = "cp3w_ping_pong"
     elif args.ios_ioctl_async_abi_probe:
         ios_udp_mode = "retail_wrapper_ioctl_async_abi_probe"
     elif args.ios_bind_once or args.enable_ios_udp_diagnostic_init:
@@ -3618,7 +3737,11 @@ def main() -> None:  # noqa: C901
         enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
         ios_udp_mode=ios_udp_mode,
         ios_udp_loop_count=(
-            args.ios_cp3w_frame_validation_count if args.ios_cp3w_frame_validation else args.ios_recv_send_loop_count
+            args.ios_cp3w_frame_validation_count
+            if args.ios_cp3w_frame_validation
+            else args.ios_cp3w_ping_pong_count
+            if args.ios_cp3w_ping_pong
+            else args.ios_recv_send_loop_count
         ),
         reserved_high=reserved_high,
         diagnostic_address=diagnostic_address,

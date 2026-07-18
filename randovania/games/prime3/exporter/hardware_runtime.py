@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 from typing import TYPE_CHECKING
 
 import randovania
@@ -39,6 +40,10 @@ CP3W_UDP_PORT = 43674
 PRODUCTION_RUNTIME_MODE = "cp3w_inventory_service"
 PRODUCTION_RESERVED_HIGH = 0x817E0000
 PRODUCTION_DIAGNOSTIC_ADDRESS = 0x817E0100
+PRODUCTION_RUNTIME_ASSET_DIR = os.fspath(
+    randovania.get_data_path().parents[1].joinpath("build", "prime3_wii_runtime", "production")
+)
+PRODUCTION_RUNTIME_BUILD_COMMAND = "python -u tools/build_prime3_runtime_assets.py"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -64,6 +69,19 @@ class Prime3HardwarePatchResult:
     validation: Prime3HardwareArtifactValidation
 
 
+@dataclasses.dataclass(frozen=True)
+class Prime3ProductionRuntimeAssets:
+    directory: Path
+    elf_path: Path | None
+    payload_path: Path
+    manifest_path: Path
+    payload: bytes
+    manifest: Prime3RuntimePayloadManifest
+    elf_sha256: str | None
+    payload_sha256: str
+    manifest_sha256: str
+
+
 def build_production_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManifest:
     return build_prime3_runtime_payload(
         output_dir,
@@ -77,6 +95,46 @@ def build_production_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadMa
     )
 
 
+def load_validated_production_runtime_assets(
+    asset_dir: Path,
+    *,
+    require_elf: bool,
+) -> Prime3ProductionRuntimeAssets:
+    payload_path = asset_dir.joinpath("payload.bin")
+    manifest_path = asset_dir.joinpath("payload.json")
+    elf_path = asset_dir.joinpath("payload.elf")
+    required_paths = [payload_path, manifest_path]
+    if require_elf:
+        required_paths.append(elf_path)
+    missing = [os.fspath(path) for path in required_paths if not path.is_file()]
+    if missing:
+        raise Prime3DolPatchError(
+            "Validated Prime 3 CP3W runtime assets are missing: "
+            f"{', '.join(missing)}. Run `{PRODUCTION_RUNTIME_BUILD_COMMAND}` before packaging."
+        )
+
+    payload = payload_path.read_bytes()
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = Prime3RuntimePayloadManifest.from_json_text(manifest_bytes.decode("utf-8"))
+    _validate_production_manifest(payload, manifest)
+
+    elf_bytes = elf_path.read_bytes() if elf_path.is_file() else None
+    if elf_bytes is not None and not elf_bytes.startswith(b"\x7fELF"):
+        raise Prime3DolPatchError(f"Prime 3 CP3W runtime ELF is invalid: {elf_path}")
+
+    return Prime3ProductionRuntimeAssets(
+        directory=asset_dir,
+        elf_path=elf_path if elf_bytes is not None else None,
+        payload_path=payload_path,
+        manifest_path=manifest_path,
+        payload=payload,
+        manifest=manifest,
+        elf_sha256=hashlib.sha256(elf_bytes).hexdigest() if elf_bytes is not None else None,
+        payload_sha256=hashlib.sha256(payload).hexdigest(),
+        manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+    )
+
+
 def load_or_build_production_runtime(
     output_dir: Path,
 ) -> tuple[bytes, Prime3RuntimePayloadManifest]:
@@ -84,11 +142,13 @@ def load_or_build_production_runtime(
     packaged_payload = packaged_dir.joinpath("payload.bin")
     packaged_manifest = packaged_dir.joinpath("payload.json")
     if packaged_payload.is_file() and packaged_manifest.is_file():
-        manifest = Prime3RuntimePayloadManifest.from_json_text(packaged_manifest.read_text(encoding="utf-8"))
-        payload = packaged_payload.read_bytes()
+        assets = load_validated_production_runtime_assets(packaged_dir, require_elf=False)
+        manifest = assets.manifest
+        payload = assets.payload
     else:
         manifest = build_production_runtime_payload(output_dir)
-        payload = output_dir.joinpath("payload.bin").read_bytes()
+        assets = load_validated_production_runtime_assets(output_dir, require_elf=True)
+        payload = assets.payload
     _validate_production_manifest(payload, manifest)
     return payload, manifest
 

@@ -7,7 +7,10 @@ from PyInstaller.utils.hooks import copy_metadata
 
 import randovania
 from randovania.game.game_enum import RandovaniaGame
-from randovania.games.prime3.exporter.hardware_runtime import build_production_runtime_payload
+from randovania.games.prime3.exporter.hardware_runtime import (
+    PRODUCTION_RUNTIME_ASSET_DIR,
+    load_validated_production_runtime_assets,
+)
 
 block_cipher = None
 
@@ -24,12 +27,11 @@ game_assets = [
 ]
 
 
-def build_prime3_runtime_assets():
-    output_dir = Path("build/prime3_wii_runtime/production")
-    build_production_runtime_payload(output_dir)
+def collect_prime3_runtime_assets():
+    assets = load_validated_production_runtime_assets(Path(PRODUCTION_RUNTIME_ASSET_DIR), require_elf=True)
     return [
-        (os.fspath(output_dir.joinpath("payload.bin")), "data/prime3_wii_runtime"),
-        (os.fspath(output_dir.joinpath("payload.json")), "data/prime3_wii_runtime"),
+        (os.fspath(assets.payload_path), "data/prime3_wii_runtime"),
+        (os.fspath(assets.manifest_path), "data/prime3_wii_runtime"),
     ]
 
 
@@ -80,7 +82,7 @@ prime3_common_datas = [
     ("randovania/data/gollop_mp3_patcher/nodtool/LICENSE", "data/gollop_mp3_patcher/nodtool"),
 ]
 prime3_macos_datas, prime3_macos_binaries = collect_prime3_macos_assets()
-prime3_runtime_datas = build_prime3_runtime_assets()
+prime3_runtime_datas = collect_prime3_runtime_assets()
 
 datas = [
     ("randovania/data/configuration.json", "data/"),

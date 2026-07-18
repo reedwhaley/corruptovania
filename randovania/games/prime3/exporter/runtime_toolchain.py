@@ -18,11 +18,9 @@ SUPPORTED_DEVKITPPC_RELEASE = "47.1"
 SUPPORTED_GCC_VERSION = "15.1.0"
 SUPPORTED_BINUTILS_VERSION = "2.44"
 REQUIRED_TARGET_TRIPLE = "powerpc-eabi"
-REQUIRED_WII_PACKAGES = (
+REQUIRED_TOOLCHAIN_PACKAGES = (
     "devkitPPC",
-    "libogc",
-    "gamecube-tools",
-    "wii-pkg-config",
+    "devkitppc-rules",
 )
 REQUIRED_MACHINE_FLAGS = (
     "-DGEKKO",
@@ -99,12 +97,23 @@ def _parse_binutils_version(tool_name: str, output: str) -> str:
 def _validate_installed_ini(devkitpro_root: Path) -> None:
     installed_ini = devkitpro_root.joinpath("installed.ini")
     if not installed_ini.is_file():
-        raise Prime3DolPatchError(f"Missing devkitPro installation metadata: {installed_ini}")
+        if platform.system() == "Windows":
+            raise Prime3DolPatchError(f"Missing devkitPro installation metadata: {installed_ini}")
+        return
 
     parser = configparser.ConfigParser()
     parser.read(installed_ini, encoding="utf-8")
     if parser.get("WiiDev", "Enabled", fallback="0") != "1":
         raise Prime3DolPatchError("devkitPro installation metadata does not mark WiiDev as enabled.")
+
+
+def _required_tool(devkitppc_root: Path, name: str) -> Path:
+    suffixes = (".exe", "") if platform.system() == "Windows" else ("", ".exe")
+    for suffix in suffixes:
+        candidate = devkitppc_root.joinpath("bin", f"{name}{suffix}")
+        if candidate.is_file():
+            return candidate
+    return _required_file(devkitppc_root.joinpath("bin", name), f"Missing {name}")
 
 
 def _validate_supported_versions(devkitppc_release: str, gcc_version: str, binutils_version: str) -> None:
@@ -140,20 +149,11 @@ def resolve_prime3_runtime_toolchain(env: Mapping[str, str] | None = None) -> Pr
 
     _validate_installed_ini(devkitpro_root)
 
-    compiler_path = _required_file(devkitppc_root.joinpath("bin", "powerpc-eabi-gcc.exe"), "Missing powerpc-eabi-gcc")
-    linker_path = _required_file(devkitppc_root.joinpath("bin", "powerpc-eabi-ld.exe"), "Missing powerpc-eabi-ld")
-    objcopy_path = _required_file(
-        devkitppc_root.joinpath("bin", "powerpc-eabi-objcopy.exe"),
-        "Missing powerpc-eabi-objcopy",
-    )
-    readelf_path = _required_file(
-        devkitppc_root.joinpath("bin", "powerpc-eabi-readelf.exe"),
-        "Missing powerpc-eabi-readelf",
-    )
-    objdump_path = _required_file(
-        devkitppc_root.joinpath("bin", "powerpc-eabi-objdump.exe"),
-        "Missing powerpc-eabi-objdump",
-    )
+    compiler_path = _required_tool(devkitppc_root, "powerpc-eabi-gcc")
+    linker_path = _required_tool(devkitppc_root, "powerpc-eabi-ld")
+    objcopy_path = _required_tool(devkitppc_root, "powerpc-eabi-objcopy")
+    readelf_path = _required_tool(devkitppc_root, "powerpc-eabi-readelf")
+    objdump_path = _required_tool(devkitppc_root, "powerpc-eabi-objdump")
 
     target_triple = _run_tool([os.fspath(compiler_path), "-dumpmachine"]).strip()
     if target_triple != REQUIRED_TARGET_TRIPLE:

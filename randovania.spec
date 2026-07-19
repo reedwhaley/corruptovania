@@ -1,4 +1,4 @@
-# -*- mode: python -*-
+﻿# -*- mode: python -*-
 import os
 import platform
 from pathlib import Path
@@ -121,6 +121,7 @@ a = Analysis(
         "randovania.game_connection.connector.echoes_remote_connector",
         "randovania.game_connection.connector.prime1_remote_connector",
         "randovania.game_connection.executor.prime3_wii_protocol_artifacts",
+        "randovania.game_connection.executor.prime3_wii_runtime_diagnostics",
         "randovania.lib.checkpoint_report_analysis",
         "open_prime_rando.dol_patching.prime1.dol_versions",
         "unittest.mock",
@@ -166,3 +167,4 @@ app = BUNDLE(
         "CFBundleShortVersionString": randovania.VERSION,
     },
 )
+

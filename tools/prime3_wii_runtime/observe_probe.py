@@ -29,6 +29,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiRegionId,
     Prime3WiiRevisionId,
 )
+from randovania.game_connection.executor.prime3_wii_runtime_diagnostics import parse_diagnostics
 from randovania.games.prime3.exporter.runtime_payload import Prime3RuntimePayloadManifest
 
 GAME_ID_ADDRESS = 0x80000000
@@ -76,6 +77,18 @@ TRANSPORT_PHASE_NAMES = {
     15: "BIND_SOCKET",
     16: "WAIT_BIND_SOCKET",
     17: "BOUND_NO_RECV",
+    96: "INITIAL_DELAY",
+    97: "VERIFY_BOUND_ENDPOINT",
+    98: "WAIT_VERIFY_BOUND_ENDPOINT",
+    99: "LISTENING",
+    100: "RETRY_DELAY",
+    101: "RESTART_REQUESTED",
+    102: "SOCKET_LOST",
+    103: "CLOSE_SOCKET_FOR_RECOVERY",
+    104: "WAIT_CLOSE_SOCKET_FOR_RECOVERY",
+    105: "SUBMIT_HEARTBEAT",
+    106: "WAIT_HEARTBEAT",
+    107: "FATAL_ERROR",
     25: "SUBMIT_RECEIVE_ONCE",
     26: "WAIT_RECEIVE",
     27: "RECEIVED_DATAGRAM",
@@ -327,9 +340,7 @@ def observe_probe_memory(
 
     game_id = first_read["game_id"]
     if game_id != config.expected_game_id:
-        raise ProbeObservationError(
-            f"Unexpected game ID {game_id!r}; expected {config.expected_game_id!r}."
-        )
+        raise ProbeObservationError(f"Unexpected game ID {game_id!r}; expected {config.expected_game_id!r}.")
 
     result: dict[str, object] = {
         "checkpoint_name": config.checkpoint_name,
@@ -567,63 +578,67 @@ def _read_probe_state(  # noqa: C901
         relocated_runtime = cast(
             "RelocatedRuntimeObservation",
             {
-            "address": runtime_metadata.runtime_destination_address,
-            "size": runtime_metadata.embedded_runtime_blob_size,
-            "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
-            "code_sha256": hashlib.sha256(runtime_bytes[runtime_code_offset:runtime_code_end_offset]).hexdigest(),
-            "state_sha256": hashlib.sha256(runtime_bytes[runtime_state_offset:runtime_state_end_offset]).hexdigest(),
-            "matches_expected": runtime_bytes == expected_runtime_bytes,
-            "all_zero": all(item == 0 for item in runtime_bytes),
-            "classification": _classify_payload(runtime_bytes, expected_runtime_bytes),
-            "copy_complete_marker_value": int.from_bytes(
-                runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
-                "big",
-            ),
-            "copy_complete_matches_expected": int.from_bytes(
-                runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
-                "big",
-            )
-            == runtime_metadata.copy_complete_marker_value,
-            "runtime_executed_marker_value": int.from_bytes(
-                runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
-                "big",
-            ),
-            "runtime_executed_matches_expected": int.from_bytes(
-                runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
-                "big",
-            )
-            == runtime_metadata.runtime_executed_marker_value,
-            "runtime_execution_counter_value": int.from_bytes(
-                runtime_bytes[counter_offset : counter_offset + 4],
-                "big",
-            ),
-            "runtime_status_value": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big"),
-            "runtime_status_matches_expected": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big")
-            == runtime_metadata.runtime_success_status_value,
-            "bootstrap_return_marker_value": int.from_bytes(
-                runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
-                "big",
-            ),
-            "bootstrap_return_matches_expected": int.from_bytes(
-                runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
-                "big",
-            )
-            == runtime_metadata.bootstrap_return_marker_value,
-            "runtime_poll_counter_value": int.from_bytes(
-                runtime_bytes[poll_counter_offset : poll_counter_offset + 4],
-                "big",
-            ),
-            "runtime_poll_heartbeat_value": int.from_bytes(
-                runtime_bytes[poll_heartbeat_offset : poll_heartbeat_offset + 4],
-                "big",
-            ),
-            "runtime_poll_last_sequence_value": int.from_bytes(
-                runtime_bytes[poll_last_sequence_offset : poll_last_sequence_offset + 4],
-                "big",
-            ),
-            "diagnostics": None,
-            "transport": None,
-            "retail_ios_wrapper": None,
+                "address": runtime_metadata.runtime_destination_address,
+                "size": runtime_metadata.embedded_runtime_blob_size,
+                "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
+                "code_sha256": hashlib.sha256(runtime_bytes[runtime_code_offset:runtime_code_end_offset]).hexdigest(),
+                "state_sha256": hashlib.sha256(
+                    runtime_bytes[runtime_state_offset:runtime_state_end_offset]
+                ).hexdigest(),
+                "matches_expected": runtime_bytes == expected_runtime_bytes,
+                "all_zero": all(item == 0 for item in runtime_bytes),
+                "classification": _classify_payload(runtime_bytes, expected_runtime_bytes),
+                "copy_complete_marker_value": int.from_bytes(
+                    runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
+                    "big",
+                ),
+                "copy_complete_matches_expected": int.from_bytes(
+                    runtime_bytes[copy_complete_marker_offset : copy_complete_marker_offset + 4],
+                    "big",
+                )
+                == runtime_metadata.copy_complete_marker_value,
+                "runtime_executed_marker_value": int.from_bytes(
+                    runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
+                    "big",
+                ),
+                "runtime_executed_matches_expected": int.from_bytes(
+                    runtime_bytes[runtime_executed_marker_offset : runtime_executed_marker_offset + 4],
+                    "big",
+                )
+                == runtime_metadata.runtime_executed_marker_value,
+                "runtime_execution_counter_value": int.from_bytes(
+                    runtime_bytes[counter_offset : counter_offset + 4],
+                    "big",
+                ),
+                "runtime_status_value": int.from_bytes(runtime_bytes[status_offset : status_offset + 4], "big"),
+                "runtime_status_matches_expected": int.from_bytes(
+                    runtime_bytes[status_offset : status_offset + 4], "big"
+                )
+                == runtime_metadata.runtime_success_status_value,
+                "bootstrap_return_marker_value": int.from_bytes(
+                    runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
+                    "big",
+                ),
+                "bootstrap_return_matches_expected": int.from_bytes(
+                    runtime_bytes[bootstrap_return_offset : bootstrap_return_offset + 4],
+                    "big",
+                )
+                == runtime_metadata.bootstrap_return_marker_value,
+                "runtime_poll_counter_value": int.from_bytes(
+                    runtime_bytes[poll_counter_offset : poll_counter_offset + 4],
+                    "big",
+                ),
+                "runtime_poll_heartbeat_value": int.from_bytes(
+                    runtime_bytes[poll_heartbeat_offset : poll_heartbeat_offset + 4],
+                    "big",
+                ),
+                "runtime_poll_last_sequence_value": int.from_bytes(
+                    runtime_bytes[poll_last_sequence_offset : poll_last_sequence_offset + 4],
+                    "big",
+                ),
+                "diagnostics": None,
+                "transport": None,
+                "retail_ios_wrapper": None,
             },
         )
 
@@ -778,94 +793,92 @@ def _read_probe_state(  # noqa: C901
                 "pass": result_flags & 0x003FFFFF == 0x003FFFFF,
             }
         if runtime_metadata.transport is not None:
-                transport = runtime_metadata.transport
+            transport = runtime_metadata.transport
 
-                def read_transport_u32_vector(address: int, size: int) -> list[int]:
-                    count = size // 4
-                    return [_runtime_u32(address + index * 4) for index in range(count)]
+            def read_transport_u32_vector(address: int, size: int) -> list[int]:
+                count = size // 4
+                return [_runtime_u32(address + index * 4) for index in range(count)]
 
-                def optional_u32(address: int | None) -> int | None:
-                    if address is None:
-                        return None
-                    return _runtime_u32(address)
+            def optional_u32(address: int | None) -> int | None:
+                if address is None:
+                    return None
+                return _runtime_u32(address)
 
-                def optional_s32(address: int | None) -> int | None:
-                    if address is None:
-                        return None
-                    return _runtime_s32(address)
+            def optional_s32(address: int | None) -> int | None:
+                if address is None:
+                    return None
+                return _runtime_s32(address)
 
-                def optional_u32_bits_from_s32(address: int | None) -> int | None:
-                    if address is None:
-                        return None
-                    return _runtime_s32(address) & 0xFFFFFFFF
+            def optional_u32_bits_from_s32(address: int | None) -> int | None:
+                if address is None:
+                    return None
+                return _runtime_s32(address) & 0xFFFFFFFF
 
-                phase_value = _runtime_u32(transport.phase_address)
-                previous_phase = None
-                previous_phase_name = None
-                if runtime_metadata.diagnostics is not None:
-                    previous_phase = _runtime_u32(runtime_metadata.diagnostics.last_transport_phase_before_step_address)
-                    previous_phase_name = _phase_name(previous_phase)
-                receive_preview_offset = (
-                    transport.last_receive_preview_address - runtime_metadata.runtime_destination_address
+            phase_value = _runtime_u32(transport.phase_address)
+            previous_phase = None
+            previous_phase_name = None
+            if runtime_metadata.diagnostics is not None:
+                previous_phase = _runtime_u32(runtime_metadata.diagnostics.last_transport_phase_before_step_address)
+                previous_phase_name = _phase_name(previous_phase)
+            receive_preview_offset = (
+                transport.last_receive_preview_address - runtime_metadata.runtime_destination_address
+            )
+            send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
+            nwc24_output_offset = transport.nwc24_output_buffer_address - runtime_metadata.runtime_destination_address
+            open_ip_path_address = optional_u32(transport.open_ip_path_pointer_address)
+            open_ip_path_length = optional_u32(transport.open_ip_path_length_address)
+            host_id_value = _runtime_u32(transport.host_id_address)
+            host_id_bytes = [
+                (host_id_value >> 24) & 0xFF,
+                (host_id_value >> 16) & 0xFF,
+                (host_id_value >> 8) & 0xFF,
+                host_id_value & 0xFF,
+            ]
+            socket_request_address = optional_u32(transport.socket_request_address_address)
+            socket_request_logical_size = optional_u32(transport.socket_request_logical_size_address)
+            socket_request_bytes_hex = None
+            if socket_request_address is not None and socket_request_logical_size is not None:
+                socket_request_bytes_hex = _read_exact(
+                    backend,
+                    socket_request_address,
+                    socket_request_logical_size,
+                    f"socket request 0x{socket_request_address:08x}",
+                ).hex()
+            bind_request_address = optional_u32(transport.bind_request_address_address)
+            bind_request_logical_size = optional_u32(transport.bind_request_logical_size_address)
+            bind_request_bytes_hex = None
+            bind_request_bytes_be = None
+            if bind_request_address is not None and bind_request_logical_size is not None:
+                bind_request_bytes = _read_exact(
+                    backend,
+                    bind_request_address,
+                    bind_request_logical_size,
+                    f"bind request 0x{bind_request_address:08x}",
                 )
-                send_preview_offset = transport.last_send_preview_address - runtime_metadata.runtime_destination_address
-                nwc24_output_offset = (
-                    transport.nwc24_output_buffer_address - runtime_metadata.runtime_destination_address
+                bind_request_bytes_hex = bind_request_bytes.hex()
+                bind_request_bytes_be = list(bind_request_bytes)
+            cleanup_close_request_address = optional_u32(transport.cleanup_close_request_address_address)
+            cleanup_close_request_logical_size = optional_u32(transport.cleanup_close_request_logical_size_address)
+            cleanup_close_request_bytes_hex = None
+            if cleanup_close_request_address is not None and cleanup_close_request_logical_size is not None:
+                cleanup_close_request_bytes_hex = _read_exact(
+                    backend,
+                    cleanup_close_request_address,
+                    cleanup_close_request_logical_size,
+                    f"cleanup close request 0x{cleanup_close_request_address:08x}",
+                ).hex()
+            open_ip_path_bounded_string = None
+            open_ip_path_bytes_hex = None
+            if open_ip_path_address is not None and open_ip_path_length is not None:
+                raw_path = _read_exact(
+                    backend,
+                    open_ip_path_address,
+                    min(open_ip_path_length + 1, 0x80),
+                    f"open-ip path 0x{open_ip_path_address:08x}",
                 )
-                open_ip_path_address = optional_u32(transport.open_ip_path_pointer_address)
-                open_ip_path_length = optional_u32(transport.open_ip_path_length_address)
-                host_id_value = _runtime_u32(transport.host_id_address)
-                host_id_bytes = [
-                    (host_id_value >> 24) & 0xFF,
-                    (host_id_value >> 16) & 0xFF,
-                    (host_id_value >> 8) & 0xFF,
-                    host_id_value & 0xFF,
-                ]
-                socket_request_address = optional_u32(transport.socket_request_address_address)
-                socket_request_logical_size = optional_u32(transport.socket_request_logical_size_address)
-                socket_request_bytes_hex = None
-                if socket_request_address is not None and socket_request_logical_size is not None:
-                    socket_request_bytes_hex = _read_exact(
-                        backend,
-                        socket_request_address,
-                        socket_request_logical_size,
-                        f"socket request 0x{socket_request_address:08x}",
-                    ).hex()
-                bind_request_address = optional_u32(transport.bind_request_address_address)
-                bind_request_logical_size = optional_u32(transport.bind_request_logical_size_address)
-                bind_request_bytes_hex = None
-                bind_request_bytes_be = None
-                if bind_request_address is not None and bind_request_logical_size is not None:
-                    bind_request_bytes = _read_exact(
-                        backend,
-                        bind_request_address,
-                        bind_request_logical_size,
-                        f"bind request 0x{bind_request_address:08x}",
-                    )
-                    bind_request_bytes_hex = bind_request_bytes.hex()
-                    bind_request_bytes_be = list(bind_request_bytes)
-                cleanup_close_request_address = optional_u32(transport.cleanup_close_request_address_address)
-                cleanup_close_request_logical_size = optional_u32(transport.cleanup_close_request_logical_size_address)
-                cleanup_close_request_bytes_hex = None
-                if cleanup_close_request_address is not None and cleanup_close_request_logical_size is not None:
-                    cleanup_close_request_bytes_hex = _read_exact(
-                        backend,
-                        cleanup_close_request_address,
-                        cleanup_close_request_logical_size,
-                        f"cleanup close request 0x{cleanup_close_request_address:08x}",
-                    ).hex()
-                open_ip_path_bounded_string = None
-                open_ip_path_bytes_hex = None
-                if open_ip_path_address is not None and open_ip_path_length is not None:
-                    raw_path = _read_exact(
-                        backend,
-                        open_ip_path_address,
-                        min(open_ip_path_length + 1, 0x80),
-                        f"open-ip path 0x{open_ip_path_address:08x}",
-                    )
-                    open_ip_path_bytes_hex = raw_path.hex()
-                    open_ip_path_bounded_string = raw_path.split(b"\0", 1)[0].decode("ascii", errors="replace")
-                transport_observation: dict[str, object] = {
+                open_ip_path_bytes_hex = raw_path.hex()
+                open_ip_path_bounded_string = raw_path.split(b"\0", 1)[0].decode("ascii", errors="replace")
+            transport_observation: dict[str, object] = {
                 "mode": transport.mode,
                 "initialization_enabled": transport.initialization_enabled,
                 "receive_enabled": transport.receive_enabled,
@@ -975,42 +988,26 @@ def _read_probe_state(  # noqa: C901
                 "cp3w_frames_payload_too_large": optional_u32(transport.cp3w_frames_payload_too_large_address),
                 "cp3w_frames_invalid_payload": optional_u32(transport.cp3w_frames_invalid_payload_address),
                 "cp3w_frames_malformed": optional_u32(transport.cp3w_frames_malformed_address),
-                "cp3w_framed_responses_submitted": optional_u32(
-                    transport.cp3w_framed_responses_submitted_address
-                ),
-                "cp3w_framed_responses_completed": optional_u32(
-                    transport.cp3w_framed_responses_completed_address
-                ),
+                "cp3w_framed_responses_submitted": optional_u32(transport.cp3w_framed_responses_submitted_address),
+                "cp3w_framed_responses_completed": optional_u32(transport.cp3w_framed_responses_completed_address),
                 "cp3w_last_request_id": optional_u32(transport.cp3w_last_request_id_address),
                 "cp3w_last_response_id": optional_u32(transport.cp3w_last_response_id_address),
                 "cp3w_last_message_type": optional_u32(transport.cp3w_last_message_type_address),
-                "cp3w_last_declared_payload_length": optional_u32(
-                    transport.cp3w_last_declared_payload_length_address
-                ),
+                "cp3w_last_declared_payload_length": optional_u32(transport.cp3w_last_declared_payload_length_address),
                 "cp3w_last_actual_payload_length": optional_u32(transport.cp3w_last_actual_payload_length_address),
                 "cp3w_last_frame_result": optional_u32(transport.cp3w_last_frame_result_address),
                 "cp3w_final_datagram_index": optional_u32(transport.cp3w_final_datagram_index_address),
                 "cp3w_requests_dispatched": optional_u32(transport.cp3w_requests_dispatched_address),
                 "cp3w_hello_requests_received": optional_u32(transport.cp3w_hello_requests_received_address),
                 "cp3w_hello_successes": optional_u32(transport.cp3w_hello_successes_address),
-                "cp3w_hello_version_rejections": optional_u32(
-                    transport.cp3w_hello_version_rejections_address
-                ),
-                "cp3w_hello_responses_submitted": optional_u32(
-                    transport.cp3w_hello_responses_submitted_address
-                ),
-                "cp3w_hello_responses_completed": optional_u32(
-                    transport.cp3w_hello_responses_completed_address
-                ),
-                "cp3w_hello_duplicate_requests": optional_u32(
-                    transport.cp3w_hello_duplicate_requests_address
-                ),
+                "cp3w_hello_version_rejections": optional_u32(transport.cp3w_hello_version_rejections_address),
+                "cp3w_hello_responses_submitted": optional_u32(transport.cp3w_hello_responses_submitted_address),
+                "cp3w_hello_responses_completed": optional_u32(transport.cp3w_hello_responses_completed_address),
+                "cp3w_hello_duplicate_requests": optional_u32(transport.cp3w_hello_duplicate_requests_address),
                 "cp3w_hello_renegotiation_rejections": optional_u32(
                     transport.cp3w_hello_renegotiation_rejections_address
                 ),
-                "cp3w_pre_hello_gated_commands": optional_u32(
-                    transport.cp3w_pre_hello_gated_commands_address
-                ),
+                "cp3w_pre_hello_gated_commands": optional_u32(transport.cp3w_pre_hello_gated_commands_address),
                 "cp3w_not_negotiated_responses_submitted": optional_u32(
                     transport.cp3w_not_negotiated_responses_submitted_address
                 ),
@@ -1030,9 +1027,7 @@ def _read_probe_state(  # noqa: C901
                     transport.cp3w_unsupported_responses_completed_address
                 ),
                 "cp3w_negotiated_flag": optional_u32(transport.cp3w_negotiated_flag_address),
-                "cp3w_selected_protocol_version": optional_u32(
-                    transport.cp3w_selected_protocol_version_address
-                ),
+                "cp3w_selected_protocol_version": optional_u32(transport.cp3w_selected_protocol_version_address),
                 "cp3w_client_nonce": optional_u32(transport.cp3w_client_nonce_address),
                 "cp3w_client_capabilities": optional_u32(transport.cp3w_client_capabilities_address),
                 "cp3w_runtime_capabilities": optional_u32(transport.cp3w_runtime_capabilities_address),
@@ -1089,9 +1084,7 @@ def _read_probe_state(  # noqa: C901
                 "open_ip_context_pointer": optional_u32(transport.open_ip_context_pointer_address),
                 "open_ip_callback_exit_count": optional_u32(transport.open_ip_callback_exit_count_address),
                 "open_ip_stale_callback_count": optional_u32(transport.open_ip_stale_callback_count_address),
-                "open_ip_duplicate_callback_count": optional_u32(
-                    transport.open_ip_duplicate_callback_count_address
-                ),
+                "open_ip_duplicate_callback_count": optional_u32(transport.open_ip_duplicate_callback_count_address),
                 "ip_fd_before_open_ip": optional_s32(transport.ip_fd_before_open_ip_address),
                 "open_ip_target_address": (
                     runtime_metadata.retail_ios_wrapper.open_async_address
@@ -1164,9 +1157,7 @@ def _read_probe_state(  # noqa: C901
                 ),
                 "ip_fd_before_get_host_id": optional_s32(transport.ip_fd_before_get_host_id_address),
                 "ip_fd_after_get_host_id": optional_s32(transport.ip_fd_after_get_host_id_address),
-                "get_host_id_pending_before_submit": optional_u32(
-                    transport.get_host_id_pending_before_submit_address
-                ),
+                "get_host_id_pending_before_submit": optional_u32(transport.get_host_id_pending_before_submit_address),
                 "get_host_id_pending_after_completion": optional_u32(
                     transport.get_host_id_pending_after_completion_address
                 ),
@@ -1258,20 +1249,14 @@ def _read_probe_state(  # noqa: C901
                 ),
                 "cleanup_close_submit_result": optional_s32(transport.cleanup_close_submit_result_address),
                 "cleanup_close_callback_result": optional_s32(transport.cleanup_close_callback_result_address),
-                "cleanup_close_submit_generation": optional_u32(
-                    transport.cleanup_close_submit_generation_address
-                ),
-                "cleanup_close_callback_generation": optional_u32(
-                    transport.cleanup_close_callback_generation_address
-                ),
+                "cleanup_close_submit_generation": optional_u32(transport.cleanup_close_submit_generation_address),
+                "cleanup_close_callback_generation": optional_u32(transport.cleanup_close_callback_generation_address),
                 "cleanup_close_target_address": optional_u32(transport.cleanup_close_target_address),
                 "cleanup_close_command": optional_u32(transport.cleanup_close_command_address),
                 "cleanup_close_submitted_fd": optional_s32(transport.cleanup_close_submitted_fd_address),
                 "cleanup_close_callback_pointer": optional_u32(transport.cleanup_close_callback_pointer_address),
                 "cleanup_close_context_pointer": optional_u32(transport.cleanup_close_context_pointer_address),
-                "cleanup_close_callback_exit_count": optional_u32(
-                    transport.cleanup_close_callback_exit_count_address
-                ),
+                "cleanup_close_callback_exit_count": optional_u32(transport.cleanup_close_callback_exit_count_address),
                 "cleanup_close_stale_callback_count": optional_u32(
                     transport.cleanup_close_stale_callback_count_address
                 ),
@@ -1286,9 +1271,7 @@ def _read_probe_state(  # noqa: C901
                 "cleanup_close_request_alignment": optional_u32(transport.cleanup_close_request_alignment_address),
                 "cleanup_close_request_value": optional_s32(transport.cleanup_close_request_value_address),
                 "cleanup_close_request_bytes_hex": cleanup_close_request_bytes_hex,
-                "cleanup_close_request_bytes_address": optional_u32(
-                    transport.cleanup_close_request_bytes_address
-                ),
+                "cleanup_close_request_bytes_address": optional_u32(transport.cleanup_close_request_bytes_address),
                 "cleanup_close_request_bytes_size": transport.cleanup_close_request_bytes_size,
                 "cleanup_close_pre_call_args": (
                     read_transport_u32_vector(
@@ -1303,63 +1286,73 @@ def _read_probe_state(  # noqa: C901
                 ),
                 "bound_flag": optional_u32(transport.bound_flag_address),
                 "bound_address": optional_u32(transport.bound_address_address),
-                "socket_closed_after_bind_failure": optional_u32(
-                    transport.socket_closed_after_bind_failure_address
-                ),
+                "socket_closed_after_bind_failure": optional_u32(transport.socket_closed_after_bind_failure_address),
                 "socket_leak_detected": optional_u32(transport.socket_leak_detected_address),
             }
-                relocated_runtime["transport"] = transport_observation
-                if transport.cp3w_game_identity is not None:
-                    identity = transport.cp3w_game_identity
-                    identity_state = {
-                        name: _runtime_u32(address) for name, address in identity.state_addresses.items()
-                    }
-                    availability = identity_state["last_availability"]
-                    known_availability_mask = sum(identity.availability_flags.values())
-                    command_value = identity.command_value
-                    capability_value = identity.capability_value
-                    transport_observation["cp3w_game_identity"] = {
-                        **identity.to_json_dict(),
-                        "command_name": Prime3WiiCommand(command_value).name,
-                        "capability_name": Prime3WiiCapability(capability_value).name,
-                        "game_name": Prime3WiiGameId(identity.game_id).name,
-                        "platform_name": Prime3WiiPlatformId(identity.platform_id).name,
-                        "region_name": Prime3WiiRegionId(identity.region_id).name,
-                        "revision_name": Prime3WiiRevisionId(identity.revision_id).name,
-                        "state": identity_state,
-                        "availability_raw": availability,
-                        "availability_names": [
-                            item.name for item in Prime3WiiAvailability if availability & int(item)
-                        ],
-                        "availability_unknown_bits": availability & ~known_availability_mask,
-                        "game_state_pointer_validated": bool(
-                            availability & int(Prime3WiiAvailability.GAME_STATE_POINTER_VALID)
-                        ),
-                        "player_state_pointer_validated": bool(
-                            availability & int(Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID)
-                        ),
-                        "inventory_root_validated": bool(
-                            availability & int(Prime3WiiAvailability.INVENTORY_ROOT_AVAILABLE)
-                        ),
-                    }
-                if transport.cp3w_inventory is not None:
-                    inventory = transport.cp3w_inventory
-                    inventory_state = {
-                        name: _runtime_u32(address) for name, address in inventory.state_addresses.items()
-                    }
-                    availability = inventory_state["last_availability"]
-                    known_availability_mask = sum(inventory.availability_flags.values())
-                    transport_observation["cp3w_inventory"] = {
-                        **inventory.to_json_dict(),
-                        "command_name": Prime3WiiCommand(inventory.command_value).name,
-                        "capability_name": Prime3WiiCapability(inventory.capability_value).name,
-                        "state": inventory_state,
-                        "availability_raw": availability,
-                        "availability_names": [
-                            item.name for item in Prime3WiiInventoryAvailability if availability & int(item)
-                        ],
-                        "availability_unknown_bits": availability & ~known_availability_mask,
-                    }
+            relocated_runtime["transport"] = transport_observation
+            if transport.network_diagnostics_address is not None:
+                diagnostics_size = transport.network_diagnostics_size
+                if diagnostics_size is None:
+                    raise RuntimeError("Network diagnostics address has no corresponding size.")
+                network_diagnostics = parse_diagnostics(
+                    _read_exact(
+                        backend,
+                        transport.network_diagnostics_address,
+                        diagnostics_size,
+                        f"network diagnostics 0x{transport.network_diagnostics_address:08x}",
+                    )
+                )
+                transport_observation["network_diagnostics"] = {
+                    **network_diagnostics.values,
+                    "build_id_text": network_diagnostics.build_id_text,
+                    "current_phase_name": _phase_name(network_diagnostics["current_phase"]),
+                    "previous_phase_name": _phase_name(network_diagnostics["previous_phase"]),
+                }
+            if transport.cp3w_game_identity is not None:
+                identity = transport.cp3w_game_identity
+                identity_state = {name: _runtime_u32(address) for name, address in identity.state_addresses.items()}
+                availability = identity_state["last_availability"]
+                known_availability_mask = sum(identity.availability_flags.values())
+                command_value = identity.command_value
+                capability_value = identity.capability_value
+                transport_observation["cp3w_game_identity"] = {
+                    **identity.to_json_dict(),
+                    "command_name": Prime3WiiCommand(command_value).name,
+                    "capability_name": Prime3WiiCapability(capability_value).name,
+                    "game_name": Prime3WiiGameId(identity.game_id).name,
+                    "platform_name": Prime3WiiPlatformId(identity.platform_id).name,
+                    "region_name": Prime3WiiRegionId(identity.region_id).name,
+                    "revision_name": Prime3WiiRevisionId(identity.revision_id).name,
+                    "state": identity_state,
+                    "availability_raw": availability,
+                    "availability_names": [item.name for item in Prime3WiiAvailability if availability & int(item)],
+                    "availability_unknown_bits": availability & ~known_availability_mask,
+                    "game_state_pointer_validated": bool(
+                        availability & int(Prime3WiiAvailability.GAME_STATE_POINTER_VALID)
+                    ),
+                    "player_state_pointer_validated": bool(
+                        availability & int(Prime3WiiAvailability.PLAYER_STATE_POINTER_VALID)
+                    ),
+                    "inventory_root_validated": bool(
+                        availability & int(Prime3WiiAvailability.INVENTORY_ROOT_AVAILABLE)
+                    ),
+                }
+            if transport.cp3w_inventory is not None:
+                inventory = transport.cp3w_inventory
+                inventory_state = {name: _runtime_u32(address) for name, address in inventory.state_addresses.items()}
+                availability = inventory_state["last_availability"]
+                known_availability_mask = sum(inventory.availability_flags.values())
+                transport_observation["cp3w_inventory"] = {
+                    **inventory.to_json_dict(),
+                    "command_name": Prime3WiiCommand(inventory.command_value).name,
+                    "capability_name": Prime3WiiCapability(inventory.capability_value).name,
+                    "state": inventory_state,
+                    "availability_raw": availability,
+                    "availability_names": [
+                        item.name for item in Prime3WiiInventoryAvailability if availability & int(item)
+                    ],
+                    "availability_unknown_bits": availability & ~known_availability_mask,
+                }
 
     boot_info_pointer = low_memory_words["0x800000F4"]
     boot_info_plus_8 = None
@@ -1474,12 +1467,8 @@ def _diagnostic_stop_boundary(  # noqa: C901
                 and _object_as_int(transport["ip_fd"]) >= 0
                 and _object_as_int(transport["socket_fd"]) >= 0
                 and _object_as_int(transport["bound_port"]) == 43674
-                and (
-                    transport.get("bound_flag") is None or _object_as_int(transport["bound_flag"]) != 0
-                )
-                and (
-                    transport.get("bound_address") is None or _object_as_int(transport["bound_address"]) == 0
-                )
+                and (transport.get("bound_flag") is None or _object_as_int(transport["bound_flag"]) != 0)
+                and (transport.get("bound_address") is None or _object_as_int(transport["bound_address"]) == 0)
                 and _object_as_int(transport["callback_pending"]) == 0
                 and _object_as_int(transport["receive_submit_count"]) == 0
                 and _object_as_int(transport["send_submit_count"]) == 0
@@ -1619,7 +1608,8 @@ def _diagnostic_stop_boundary(  # noqa: C901
                     and _object_as_int(transport["startup_target_address"]) == 0x80504FE0
                     and _object_as_int(transport["startup_command"]) == 31
                     and _object_as_int(transport["startup_submitted_fd"]) == _object_as_int(transport["ip_fd"])
-                    and transport.get("startup_pre_call_args") == [
+                    and transport.get("startup_pre_call_args")
+                    == [
                         _object_as_int(transport["ip_fd"]),
                         31,
                         0,
@@ -1740,7 +1730,8 @@ def _diagnostic_stop_boundary(  # noqa: C901
                     and _object_as_int(transport["get_host_id_target_address"]) == 0x80504FE0
                     and _object_as_int(transport["get_host_id_command"]) == 16
                     and _object_as_int(transport["get_host_id_submitted_fd"]) == _object_as_int(transport["ip_fd"])
-                    and transport.get("get_host_id_pre_call_args") == [
+                    and transport.get("get_host_id_pre_call_args")
+                    == [
                         _object_as_int(transport["ip_fd"]),
                         16,
                         0,
@@ -1794,7 +1785,8 @@ def _diagnostic_stop_boundary(  # noqa: C901
                     and _object_as_int(transport["socket_target_address"]) == 0x80504FE0
                     and _object_as_int(transport["socket_command"]) == 15
                     and _object_as_int(transport["socket_submitted_fd"]) == _object_as_int(transport["ip_fd"])
-                    and transport.get("socket_pre_call_args") == [
+                    and transport.get("socket_pre_call_args")
+                    == [
                         _object_as_int(transport["ip_fd"]),
                         15,
                         _object_as_int(transport["socket_request_address"]),

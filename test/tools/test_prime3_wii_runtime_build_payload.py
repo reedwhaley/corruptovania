@@ -1394,8 +1394,10 @@ def test_continuous_transport_waits_for_hardware_network_readiness() -> None:
     assert "runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY" in source
     assert "*(volatile s32*)runtime_transport_nwc24_output_buffer == -29" in source
     assert "*(volatile s32*)runtime_transport_nwc24_output_buffer != -15" in source
-    assert "? RUNTIME_TRANSPORT_PHASE_OPEN_IP" in source
-    assert "? RUNTIME_TRANSPORT_PHASE_OPEN_KD" in source
+    assert "runtime_transport_kd_fd < 0" in source
+    assert "runtime_transport_kd_closed == 0" in source
+    assert "runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_KD" in source
+    assert "runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_IP" in source
 
 
 def test_hardware_host_id_and_bind_address_are_encoded_correctly() -> None:

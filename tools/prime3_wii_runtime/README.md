@@ -14,6 +14,9 @@ Current scope:
 - production mode implements HELLO, capability negotiation, `GET_GAME_IDENTITY`, and read-only `GET_INVENTORY` on fixed UDP port 43674
 - normal Prime 3 export builds or loads this canonical artifact, installs both guarded hooks, and validates the finished DOL
 - no inventory writes, grants, location tracking, or arbitrary memory read/write surface is included
+- production networking has delayed startup, persistent retry/socket recovery, post-bind endpoint verification, and a fixed `CP3D` diagnostic/control block
+
+Hardware diagnostics, state values, control offsets, probe usage, and the validation sequence are documented in `docs/prime3_wii_hardware_network_validation.md`.
 
 Transport recon status:
 

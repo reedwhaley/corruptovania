@@ -84,6 +84,77 @@ typedef struct runtime_operation_context {
     u32 duplicate_callback_count;
 } runtime_operation_context;
 
+typedef struct runtime_network_diagnostics {
+    u32 magic;
+    u32 version;
+    u32 size;
+    u32 build_id;
+    u32 current_phase;
+    u32 previous_phase;
+    u32 transition_count;
+    u32 ios_version;
+    u32 ios_revision;
+    u32 initialization_attempt_count;
+    u32 successful_initialization_count;
+    u32 restart_request_count;
+    u32 socket_recovery_count;
+    u32 initial_delay_polls;
+    u32 retry_delay_polls;
+    s32 network_initialization_result;
+    s32 nwc24_result;
+    s32 host_id_result;
+    u32 host_ip;
+    s32 socket_descriptor;
+    s32 socket_creation_result;
+    s32 bind_result;
+    s32 getsockname_result;
+    s32 last_socket_error;
+    u32 last_error_phase;
+    u32 requested_bind_address;
+    u32 requested_bind_port;
+    u32 actual_bind_address;
+    u32 actual_bind_port;
+    u32 byte_order_applied;
+    u32 listening;
+    u32 receive_loop_active;
+    u32 receive_call_count;
+    u32 packets_received;
+    u32 malformed_packets_received;
+    u32 transient_receive_errors;
+    u32 fatal_receive_errors;
+    u32 send_call_count;
+    u32 packets_sent;
+    u32 send_failures;
+    u32 close_call_count;
+    u32 shutdown_call_count;
+    u32 cleanup_call_count;
+    u32 network_device_close_count;
+    s32 last_close_descriptor;
+    s32 last_shutdown_descriptor;
+    u32 last_received_command;
+    u32 last_received_packet_size;
+    u32 last_sender_ip;
+    u32 last_sender_port;
+    s32 last_heartbeat_result;
+    u32 uptime_polls;
+    u32 last_successful_bind_poll;
+    u32 last_packet_receive_poll;
+    u32 last_packet_send_poll;
+    u32 restart_request;
+    u32 heartbeat_request;
+    u32 overlay_enabled;
+    u32 overlay_page;
+    u32 auto_retry_enabled;
+    u32 reset_counters_request;
+    u32 socket_lost_count;
+    u32 getsockname_call_count;
+    u32 receive_loop_iteration_count;
+} runtime_network_diagnostics;
+
+typedef char runtime_network_diagnostics_size_must_be_0x100[
+    sizeof(runtime_network_diagnostics) == 0x100 ? 1 : -1
+];
+
 enum {
     RUNTIME_TRANSPORT_PHASE_UNINITIALIZED = 0,
     RUNTIME_TRANSPORT_PHASE_OPEN_KD = 1,
@@ -181,6 +252,18 @@ enum {
     RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_LOOP_COMPLETE = 93,
     RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY = 94,
     RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY = 95,
+    RUNTIME_TRANSPORT_PHASE_INITIAL_DELAY = 96,
+    RUNTIME_TRANSPORT_PHASE_VERIFY_BOUND_ENDPOINT = 97,
+    RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT = 98,
+    RUNTIME_TRANSPORT_PHASE_LISTENING = 99,
+    RUNTIME_TRANSPORT_PHASE_RETRY_DELAY = 100,
+    RUNTIME_TRANSPORT_PHASE_RESTART_REQUESTED = 101,
+    RUNTIME_TRANSPORT_PHASE_SOCKET_LOST = 102,
+    RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_FOR_RECOVERY = 103,
+    RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_FOR_RECOVERY = 104,
+    RUNTIME_TRANSPORT_PHASE_SUBMIT_HEARTBEAT = 105,
+    RUNTIME_TRANSPORT_PHASE_WAIT_HEARTBEAT = 106,
+    RUNTIME_TRANSPORT_PHASE_FATAL_ERROR = 107,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -208,6 +291,8 @@ enum {
     RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE = 9,
     RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET = 10,
     RUNTIME_TRANSPORT_OP_SEND_SOCKET = 11,
+    RUNTIME_TRANSPORT_OP_GETSOCKNAME = 12,
+    RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY = 13,
 };
 
 enum {
@@ -256,6 +341,7 @@ enum {
     IOCTL_NWC24_STARTUP = 6,
     IOCTL_SO_BIND = 2,
     IOCTL_SO_CLOSE = 3,
+    IOCTL_SO_GETSOCKNAME = 7,
     IOCTLV_SO_RECVFROM = 12,
     IOCTLV_SO_SENDTO = 13,
     IOCTL_SO_SOCKET = 15,
@@ -272,6 +358,11 @@ enum {
     RUNTIME_WII_SOCKADDR_IN_SIZE = 8,
     RUNTIME_NETWORK_READY_RETRY_POLL_INTERVAL = 60,
     RUNTIME_NWC24_RETRY_POLL_INTERVAL = 6,
+    RUNTIME_INITIAL_DELAY_POLL_INTERVAL = 300,
+    RUNTIME_RETRY_DELAY_POLL_INTERVAL = 120,
+    RUNTIME_DIAGNOSTICS_MAGIC = 0x43503344,
+    RUNTIME_DIAGNOSTICS_VERSION = 1,
+    RUNTIME_DIAGNOSTICS_SIZE = 0x100,
     RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS = 0x80504FE0,
     RUNTIME_SOCKET_REQUEST_LOGICAL_SIZE = 12,
     RUNTIME_RECEIVE_REQUEST_LOGICAL_SIZE = 8,
@@ -362,6 +453,7 @@ static const char runtime_ip_path[] __attribute_section_rodata__ = "/dev/net/ip/
 static const char runtime_send_payload_ascii[RUNTIME_SEND_PAYLOAD_LENGTH + 1] __attribute_section_rodata__ =
     "P3_SENDTO_LOOP_REPLY_20260717";
 static const u8 runtime_cp3w_magic[4] __attribute_section_rodata__ = {'C', 'P', '3', 'W'};
+static const u8 runtime_heartbeat_prefix[] __attribute_section_rodata__ = "CP3W-DIAG-HEARTBEAT";
 static const char runtime_cp3w_request_payload_ascii[] __attribute_section_rodata__ = "P3_FRAME_TEST_20260717";
 static const char runtime_cp3w_response_payload_ascii[] __attribute_section_rodata__ = "P3_FRAME_ACK_20260717";
 static const char runtime_cp3w_runtime_name_ascii[] __attribute_section_rodata__ = "Prime3 Wii Runtime";
@@ -496,6 +588,28 @@ volatile u32 runtime_transport_callback_generation __attribute_section_state__ _
 volatile u32 runtime_transport_callback_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_rejected_callback_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_callback_pending __attribute_section_state__ __attribute_used__ = 0;
+volatile runtime_network_diagnostics runtime_network_diagnostics_block
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u32 runtime_transport_retry_deadline __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_last_error_phase __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_initialization_success_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_restart_request_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_socket_recovery_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_socket_lost_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_getsockname_submit_count __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_getsockname_result __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_actual_bound_address __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_actual_bound_port __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_last_successful_bind_poll __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_last_packet_receive_poll __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_last_packet_send_poll __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_transient_receive_error_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_fatal_receive_error_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_send_failure_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_close_call_count __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_transport_cleanup_count __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_transport_last_close_descriptor __attribute_section_state__ __attribute_used__ = -1;
+volatile s32 runtime_transport_last_heartbeat_result __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_open_kd_submit_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_open_kd_callback_count __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_transport_open_kd_submit_result __attribute_section_state__ __attribute_used__ = 0;
@@ -906,6 +1020,9 @@ volatile u8 runtime_transport_receive_payload_buffer[RUNTIME_UDP_RECEIVE_CAPACIT
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 volatile u8 runtime_transport_nwc24_output_buffer[0x20]
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
+volatile u32 runtime_transport_getsockname_request __attribute_section_state_aligned_32__ __attribute_used__ = 0;
+volatile u8 runtime_transport_getsockname_address[RUNTIME_WII_SOCKADDR_IN_SIZE]
+    __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static volatile runtime_operation_context runtime_transport_nwc24_context
     __attribute_section_state_aligned_32__ __attribute_used__ = {0};
 static volatile runtime_operation_context runtime_transport_kd_close_context
@@ -942,6 +1059,9 @@ static void runtime_memzero(volatile void* destination, u32 size) __attribute_se
 static void runtime_memcpy(volatile void* destination, const volatile void* source, u32 size) __attribute_section_code__;
 static u16 runtime_bswap16(u16 value) __attribute_section_code__;
 static u32 runtime_host_id_is_ready(s32 result) __attribute_section_code__;
+static void runtime_sync_network_diagnostics(void) __attribute_section_code__;
+static void runtime_schedule_retry(u32 error_phase, s32 result, u32 socket_lost) __attribute_section_code__;
+static void runtime_prepare_heartbeat(void) __attribute_section_code__;
 static void runtime_copy_preview(volatile u8* destination, const volatile u8* source, u32 size) __attribute_section_code__;
 static void runtime_copy_sockaddr_in(volatile u8* destination, u32 address_be, u16 port_be) __attribute_section_code__;
 static u16 runtime_read_be16(const volatile u8* source) __attribute_section_code__;
@@ -1208,8 +1328,96 @@ static u32 runtime_crc32(const volatile u8* source, u32 size)
 
 static void runtime_set_phase(u32 phase, u32 action)
 {
+    if (runtime_transport_phase != phase) {
+        runtime_network_diagnostics_block.previous_phase = runtime_transport_phase;
+        runtime_network_diagnostics_block.transition_count += 1;
+    }
     runtime_transport_phase = phase;
     runtime_transport_last_poll_action = action;
+}
+
+static void runtime_sync_network_diagnostics(void)
+{
+    volatile runtime_network_diagnostics* diagnostics = &runtime_network_diagnostics_block;
+    diagnostics->current_phase = runtime_transport_phase;
+    diagnostics->initialization_attempt_count = runtime_transport_open_ip_submit_count;
+    diagnostics->successful_initialization_count = runtime_transport_initialization_success_count;
+    diagnostics->restart_request_count = runtime_transport_restart_request_count;
+    diagnostics->socket_recovery_count = runtime_transport_socket_recovery_count;
+    diagnostics->network_initialization_result = runtime_transport_startup_callback_result;
+    diagnostics->nwc24_result = *(volatile s32*)runtime_transport_nwc24_output_buffer;
+    diagnostics->host_id_result = runtime_transport_get_host_id_callback_result;
+    diagnostics->host_ip = runtime_transport_host_id;
+    diagnostics->socket_descriptor = runtime_transport_socket_fd;
+    diagnostics->socket_creation_result = runtime_transport_socket_callback_result;
+    diagnostics->bind_result = runtime_transport_bind_callback_result;
+    diagnostics->getsockname_result = runtime_transport_getsockname_result;
+    diagnostics->last_socket_error = runtime_transport_last_socket_error;
+    diagnostics->last_error_phase = runtime_transport_last_error_phase;
+    diagnostics->actual_bind_address = runtime_transport_actual_bound_address;
+    diagnostics->actual_bind_port = runtime_transport_actual_bound_port;
+    diagnostics->listening = runtime_transport_bound_flag != 0 && runtime_transport_socket_fd >= 0;
+    diagnostics->receive_loop_active = runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET;
+    diagnostics->receive_call_count = runtime_transport_receive_submit_count;
+    diagnostics->packets_received = runtime_transport_receive_count;
+    diagnostics->malformed_packets_received = runtime_transport_cp3w_frames_malformed;
+    diagnostics->transient_receive_errors = runtime_transport_transient_receive_error_count;
+    diagnostics->fatal_receive_errors = runtime_transport_fatal_receive_error_count;
+    diagnostics->send_call_count = runtime_transport_send_submit_count;
+    diagnostics->packets_sent = runtime_transport_send_count;
+    diagnostics->send_failures = runtime_transport_send_failure_count;
+    diagnostics->close_call_count = runtime_transport_close_call_count;
+    diagnostics->cleanup_call_count = runtime_transport_cleanup_count;
+    diagnostics->last_close_descriptor = runtime_transport_last_close_descriptor;
+    diagnostics->last_received_command = runtime_transport_cp3w_last_command;
+    diagnostics->last_received_packet_size = runtime_transport_last_receive_length;
+    diagnostics->last_sender_ip = runtime_transport_last_peer_ipv4;
+    diagnostics->last_sender_port = runtime_transport_last_peer_port;
+    diagnostics->last_heartbeat_result = runtime_transport_last_heartbeat_result;
+    diagnostics->uptime_polls = runtime_poll_counter;
+    diagnostics->last_successful_bind_poll = runtime_transport_last_successful_bind_poll;
+    diagnostics->last_packet_receive_poll = runtime_transport_last_packet_receive_poll;
+    diagnostics->last_packet_send_poll = runtime_transport_last_packet_send_poll;
+    diagnostics->socket_lost_count = runtime_transport_socket_lost_count;
+    diagnostics->getsockname_call_count = runtime_transport_getsockname_submit_count;
+    diagnostics->receive_loop_iteration_count = runtime_transport_receive_arm_count;
+}
+
+static void runtime_schedule_retry(u32 error_phase, s32 result, u32 socket_lost)
+{
+    runtime_transport_last_error_phase = error_phase;
+    runtime_transport_last_error = result;
+    runtime_transport_last_ios_result = result;
+    if (socket_lost != 0) {
+        runtime_transport_socket_lost_count += 1;
+        runtime_transport_socket_recovery_count += 1;
+    }
+    if (runtime_network_diagnostics_block.auto_retry_enabled == 0) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FATAL_ERROR, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    } else if (socket_lost != 0) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SOCKET_LOST, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    } else if (runtime_transport_socket_fd >= 0) {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_FOR_RECOVERY, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    } else {
+        runtime_transport_retry_deadline = runtime_poll_counter + runtime_network_diagnostics_block.retry_delay_polls;
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RETRY_DELAY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+    }
+}
+
+static void runtime_prepare_heartbeat(void)
+{
+    u32 index = 0;
+    runtime_memzero(runtime_transport_send_payload_bytes, sizeof(runtime_transport_send_payload_bytes));
+    while (index < sizeof(runtime_heartbeat_prefix) - 1) {
+        runtime_transport_send_payload_bytes[index] = runtime_heartbeat_prefix[index];
+        index += 1;
+    }
+    runtime_transport_send_payload_bytes[index++] = 0;
+    runtime_write_be32(runtime_transport_send_payload_bytes + index, PRIME3_CP3W_RUNTIME_BUILD_ID);
+    index += 4;
+    runtime_write_be32(runtime_transport_send_payload_bytes + index, runtime_transport_phase);
+    index += 4;
+    runtime_transport_prepared_send_length = index;
 }
 
 static void runtime_diag_increment(volatile u32* counter)
@@ -2592,7 +2800,11 @@ static volatile runtime_operation_context* runtime_context_for_operation(u32 ope
     if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         return &runtime_transport_bind_context;
     }
-    if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+    if (
+        operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
+        || operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY
+        || operation == RUNTIME_TRANSPORT_OP_GETSOCKNAME
+    ) {
         return &runtime_transport_cleanup_close_context;
     }
     if (operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
@@ -2616,7 +2828,11 @@ static void runtime_sync_context_for_operation(u32 operation)
         runtime_sync_socket_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         runtime_sync_bind_context_evidence();
-    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+    } else if (
+        operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
+        || operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY
+        || operation == RUNTIME_TRANSPORT_OP_GETSOCKNAME
+    ) {
         runtime_sync_cleanup_close_context_evidence();
     } else if (operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         runtime_sync_receive_context_evidence();
@@ -2687,7 +2903,11 @@ static s32 runtime_ios_callback(s32 result, void* usrdata)
         runtime_transport_socket_context.callback_exit_count += 1;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_BIND_SOCKET) {
         runtime_transport_bind_context.callback_exit_count += 1;
-    } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+    } else if (
+        runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
+        || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY
+        || runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_GETSOCKNAME
+    ) {
         runtime_transport_cleanup_close_context.callback_exit_count += 1;
     } else if (runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_RECEIVE_SOCKET) {
         runtime_transport_receive_context.callback_exit_count += 1;
@@ -2892,7 +3112,7 @@ static s32 runtime_submit_ioctl(
             || buffer_io != 0
             || len_io != 0
             || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
-            || runtime_transport_startup_submit_count != 1
+            || runtime_transport_startup_submit_count == 0
             || runtime_transport_kd_fd != -1
             || runtime_transport_kd_closed == 0
             || runtime_transport_service_started != 0
@@ -2983,7 +3203,7 @@ static s32 runtime_submit_ioctl(
             || buffer_io != 0
             || len_io != 0
             || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
-            || runtime_transport_socket_submit_count != 1
+            || runtime_transport_socket_submit_count == 0
             || runtime_transport_get_host_id_callback_count == 0
             || runtime_transport_get_host_id_callback_count != runtime_transport_get_host_id_submit_count
             || runtime_transport_host_id_available == 0
@@ -3040,7 +3260,7 @@ static s32 runtime_submit_ioctl(
             || buffer_io != 0
             || len_io != 0
             || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
-            || runtime_transport_bind_submit_count != 1
+            || runtime_transport_bind_submit_count == 0
             || runtime_transport_socket_ready == 0
             || runtime_transport_socket_fd < 0
             || runtime_transport_get_host_id_callback_count == 0
@@ -3088,7 +3308,30 @@ static s32 runtime_submit_ioctl(
         runtime_memzero(&runtime_transport_bind_context, sizeof(runtime_transport_bind_context));
         runtime_transport_bind_context.expected_generation = runtime_transport_pending_generation + 1;
         runtime_sync_bind_context_evidence();
-    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+    } else if (operation == RUNTIME_TRANSPORT_OP_GETSOCKNAME) {
+        if (
+            !runtime_transport_uses_receive_mode()
+            || fd < 0
+            || fd != runtime_transport_ip_fd
+            || ioctl != IOCTL_SO_GETSOCKNAME
+            || buffer_in != &runtime_transport_getsockname_request
+            || len_in != 4
+            || buffer_io != runtime_transport_getsockname_address
+            || len_io != RUNTIME_WII_SOCKADDR_IN_SIZE
+            || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
+            || runtime_transport_socket_fd < 0
+            || runtime_transport_bound_flag == 0
+        ) {
+            runtime_transport_last_ios_result = -1;
+            runtime_transport_last_submit_result = -1;
+            return -1;
+        }
+        runtime_memzero(&runtime_transport_cleanup_close_context, sizeof(runtime_transport_cleanup_close_context));
+        runtime_transport_cleanup_close_context.expected_generation = runtime_transport_pending_generation + 1;
+    } else if (
+        operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
+        || operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY
+    ) {
         if (
             !(runtime_transport_is_bind_once_mode()
                 || runtime_transport_uses_receive_mode())
@@ -3181,7 +3424,11 @@ static s32 runtime_submit_ioctl(
         runtime_transport_bind_context.callback_exit_count = 0;
         runtime_transport_bind_context.stale_callback_count = 0;
         runtime_transport_bind_context.duplicate_callback_count = 0;
-    } else if (operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
+    } else if (
+        operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_AFTER_BIND_FAILURE
+        || operation == RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY
+        || operation == RUNTIME_TRANSPORT_OP_GETSOCKNAME
+    ) {
         runtime_transport_cleanup_close_context.expected_generation = runtime_transport_pending_generation;
         runtime_transport_cleanup_close_context.completion_generation = 0;
         runtime_transport_cleanup_close_context.completion_flag = 0;
@@ -3490,11 +3737,17 @@ static s32 runtime_wait_completion(void)
         runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_STARTUP
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT
     ) {
         if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_STARTUP) {
             runtime_cache_invalidate(runtime_transport_nwc24_output_buffer, sizeof(runtime_transport_nwc24_output_buffer));
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET) {
             runtime_cache_invalidate(&runtime_transport_socket_request, sizeof(runtime_transport_socket_request));
+        } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT) {
+            runtime_cache_invalidate(
+                runtime_transport_getsockname_address,
+                sizeof(runtime_transport_getsockname_address)
+            );
         } else {
             runtime_cache_invalidate(&runtime_transport_bind_params, sizeof(runtime_transport_bind_params));
         }
@@ -3567,6 +3820,7 @@ static s32 runtime_consume_receive_completion(void)
         runtime_transport_previous_peer_port = runtime_transport_last_peer_port;
     }
     runtime_transport_receive_count += 1;
+    runtime_transport_last_packet_receive_poll = runtime_poll_counter;
     runtime_transport_current_exchange_index = runtime_transport_receive_count;
     runtime_transport_receive_bytes += accepted_length;
     runtime_transport_last_receive_length = accepted_length;
@@ -3619,6 +3873,7 @@ static s32 runtime_consume_receive_completion(void)
 
 static s32 runtime_consume_send_completion(void)
 {
+    u32 heartbeat = runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_HEARTBEAT;
     if (runtime_transport_callback_pending == 0) {
         runtime_transport_polls_while_send_pending = runtime_poll_counter;
         runtime_set_phase(runtime_transport_phase, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
@@ -3675,6 +3930,12 @@ static s32 runtime_consume_send_completion(void)
     runtime_transport_completed_exchange_count += 1;
     runtime_transport_last_completed_exchange_index = runtime_transport_completed_exchange_count;
     runtime_transport_polls_after_send = runtime_poll_counter;
+    runtime_transport_last_packet_send_poll = runtime_poll_counter;
+    if (heartbeat != 0) {
+        runtime_transport_last_heartbeat_result = runtime_transport_last_ios_result;
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_REARM_RECEIVE, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
+        return 0;
+    }
     if (runtime_transport_is_cp3w_frame_validation_mode()) {
         runtime_transport_cp3w_framed_responses_completed += 1;
         if (!runtime_transport_validate_loop_limit()) {
@@ -3825,7 +4086,12 @@ static void runtime_record_init_error(s32 result)
 {
     runtime_transport_last_error = result;
     runtime_transport_last_ios_result = result;
-    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    runtime_transport_last_error_phase = runtime_transport_phase;
+    if (runtime_transport_uses_receive_mode()) {
+        runtime_schedule_retry(runtime_transport_phase, result, 0);
+    } else {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    }
 }
 
 static void runtime_record_receive_error(u32 phase, s32 result)
@@ -3833,7 +4099,14 @@ static void runtime_record_receive_error(u32 phase, s32 result)
     runtime_transport_last_socket_error = result;
     runtime_transport_last_error = result;
     runtime_transport_last_ios_result = result;
-    runtime_set_phase(phase, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    runtime_transport_last_error_phase = phase;
+    if (runtime_transport_uses_receive_mode() && result < 0) {
+        runtime_transport_transient_receive_error_count += 1;
+        runtime_schedule_retry(phase, result, 1);
+    } else {
+        runtime_transport_fatal_receive_error_count += 1;
+        runtime_set_phase(phase, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    }
 }
 
 static void runtime_record_send_error(u32 phase, s32 result)
@@ -3841,7 +4114,13 @@ static void runtime_record_send_error(u32 phase, s32 result)
     runtime_transport_last_socket_error = result;
     runtime_transport_last_error = result;
     runtime_transport_last_ios_result = result;
-    runtime_set_phase(phase, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    runtime_transport_last_error_phase = phase;
+    runtime_transport_send_failure_count += 1;
+    if (runtime_transport_uses_receive_mode() && result < 0) {
+        runtime_schedule_retry(phase, result, 1);
+    } else {
+        runtime_set_phase(phase, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    }
 }
 
 static void runtime_record_socket_error(s32 result)
@@ -3849,7 +4128,12 @@ static void runtime_record_socket_error(s32 result)
     runtime_transport_last_socket_error = result;
     runtime_transport_last_error = result;
     runtime_transport_last_ios_result = result;
-    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    runtime_transport_last_error_phase = runtime_transport_phase;
+    if (runtime_transport_uses_receive_mode()) {
+        runtime_schedule_retry(runtime_transport_phase, result, runtime_transport_socket_fd >= 0);
+    } else {
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+    }
 }
 
 static void runtime_record_operation_callback(void)
@@ -4495,10 +4779,44 @@ void runtime_entry_impl(void)
     runtime_memzero(&runtime_transport_receive_request, sizeof(runtime_transport_receive_request));
     runtime_memzero(runtime_transport_receive_vectors, sizeof(runtime_transport_receive_vectors));
     runtime_memzero(runtime_transport_send_vectors, sizeof(runtime_transport_send_vectors));
+    runtime_memzero(&runtime_network_diagnostics_block, sizeof(runtime_network_diagnostics_block));
+    runtime_memzero(runtime_transport_getsockname_address, sizeof(runtime_transport_getsockname_address));
+    runtime_network_diagnostics_block.magic = RUNTIME_DIAGNOSTICS_MAGIC;
+    runtime_network_diagnostics_block.version = RUNTIME_DIAGNOSTICS_VERSION;
+    runtime_network_diagnostics_block.size = RUNTIME_DIAGNOSTICS_SIZE;
+    runtime_network_diagnostics_block.build_id = PRIME3_CP3W_RUNTIME_BUILD_ID;
+    runtime_network_diagnostics_block.initial_delay_polls = RUNTIME_INITIAL_DELAY_POLL_INTERVAL;
+    runtime_network_diagnostics_block.retry_delay_polls = RUNTIME_RETRY_DELAY_POLL_INTERVAL;
+    runtime_network_diagnostics_block.requested_bind_address = INADDR_ANY;
+    runtime_network_diagnostics_block.requested_bind_port = RUNTIME_UDP_PORT;
+    runtime_network_diagnostics_block.byte_order_applied = 1;
+    runtime_network_diagnostics_block.auto_retry_enabled = 1;
+    runtime_network_diagnostics_block.last_close_descriptor = -1;
+    runtime_network_diagnostics_block.last_shutdown_descriptor = -1;
+    runtime_transport_retry_deadline = 0;
+    runtime_transport_last_error_phase = 0;
+    runtime_transport_initialization_success_count = 0;
+    runtime_transport_restart_request_count = 0;
+    runtime_transport_socket_recovery_count = 0;
+    runtime_transport_socket_lost_count = 0;
+    runtime_transport_getsockname_submit_count = 0;
+    runtime_transport_getsockname_result = 0;
+    runtime_transport_actual_bound_address = 0;
+    runtime_transport_actual_bound_port = 0;
+    runtime_transport_last_successful_bind_poll = 0;
+    runtime_transport_last_packet_receive_poll = 0;
+    runtime_transport_last_packet_send_poll = 0;
+    runtime_transport_transient_receive_error_count = 0;
+    runtime_transport_fatal_receive_error_count = 0;
+    runtime_transport_send_failure_count = 0;
+    runtime_transport_close_call_count = 0;
+    runtime_transport_cleanup_count = 0;
+    runtime_transport_last_close_descriptor = -1;
+    runtime_transport_last_heartbeat_result = 0;
     runtime_transport_cleanup_close_request = -1;
 #if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
     runtime_transport_phase = runtime_transport_uses_receive_mode()
-        ? RUNTIME_TRANSPORT_PHASE_OPEN_IP
+        ? RUNTIME_TRANSPORT_PHASE_INITIAL_DELAY
         : RUNTIME_TRANSPORT_PHASE_OPEN_KD;
     runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_INIT;
 #else
@@ -4525,6 +4843,34 @@ void runtime_poll_entry_impl(void)
     runtime_diag_increment(&runtime_state_machine_entry_count);
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_STATE_MACHINE_ENTRY);
     state_machine_entered = 1;
+
+    if (runtime_network_diagnostics_block.reset_counters_request != 0) {
+        runtime_network_diagnostics_block.reset_counters_request = 0;
+        runtime_transport_receive_count = 0;
+        runtime_transport_send_count = 0;
+        runtime_transport_cp3w_frames_malformed = 0;
+        runtime_transport_transient_receive_error_count = 0;
+        runtime_transport_fatal_receive_error_count = 0;
+        runtime_transport_send_failure_count = 0;
+    }
+    if (
+        runtime_network_diagnostics_block.restart_request != 0
+        && runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_NONE
+    ) {
+        runtime_network_diagnostics_block.restart_request = 0;
+        runtime_transport_restart_request_count += 1;
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RESTART_REQUESTED, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+    }
+    if (
+        runtime_network_diagnostics_block.heartbeat_request != 0
+        && runtime_transport_pending_operation == RUNTIME_TRANSPORT_OP_NONE
+        && runtime_transport_bound_flag != 0
+        && runtime_transport_last_peer_family == AF_INET
+    ) {
+        runtime_network_diagnostics_block.heartbeat_request = 0;
+        runtime_prepare_heartbeat();
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SUBMIT_HEARTBEAT, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
+    }
 
     if (
         runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE
@@ -4556,6 +4902,7 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_REARM_INVALID_STATE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LOOP_LIMIT_INVALID
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_EXCHANGE_COUNTER_OVERFLOW
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_FATAL_ERROR
     ) {
         if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SENT_DATAGRAM) {
             runtime_transport_polls_after_send = runtime_poll_counter;
@@ -4582,6 +4929,66 @@ void runtime_poll_entry_impl(void)
         goto runtime_poll_exit;
     }
 
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_INITIAL_DELAY) {
+        if (runtime_poll_counter >= runtime_network_diagnostics_block.initial_delay_polls) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_IP, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
+        } else {
+            runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_WAIT;
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RESTART_REQUESTED) {
+        runtime_transport_bound_flag = 0;
+        if (runtime_transport_socket_fd >= 0) {
+            runtime_set_phase(
+                RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_FOR_RECOVERY,
+                RUNTIME_TRANSPORT_POLL_ACTION_RETRY
+            );
+        } else {
+            runtime_transport_retry_deadline = runtime_poll_counter;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RETRY_DELAY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SOCKET_LOST) {
+        runtime_transport_bound_flag = 0;
+        if (runtime_transport_socket_fd >= 0) {
+            runtime_set_phase(
+                RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_FOR_RECOVERY,
+                RUNTIME_TRANSPORT_POLL_ACTION_RETRY
+            );
+        } else {
+            runtime_transport_retry_deadline =
+                runtime_poll_counter + runtime_network_diagnostics_block.retry_delay_polls;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RETRY_DELAY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RETRY_DELAY) {
+        if (runtime_poll_counter < runtime_transport_retry_deadline) {
+            runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_WAIT;
+            goto runtime_poll_exit;
+        }
+        if (
+            runtime_transport_kd_fd < 0
+            && runtime_transport_kd_closed == 0
+            && runtime_transport_ip_fd < 0
+        ) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_KD, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else if (runtime_transport_kd_fd >= 0 && runtime_transport_kd_closed == 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NWC24_STARTUP, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else if (runtime_transport_ip_fd < 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_IP, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else if (runtime_transport_service_started == 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SO_STARTUP, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else if (runtime_transport_host_id_ready == 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_GETHOSTID, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        }
+        goto runtime_poll_exit;
+    }
+
     if (
         runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_OPEN_KD
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_STARTUP
@@ -4591,6 +4998,9 @@ void runtime_poll_entry_impl(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_GETHOSTID
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_FOR_RECOVERY
+        || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_HEARTBEAT
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_RECEIVE
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_RESPONSE
@@ -4600,7 +5010,8 @@ void runtime_poll_entry_impl(void)
             ? runtime_consume_receive_completion()
             : (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SEND
                 || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_RESPONSE
-                || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_DISPATCH_RESPONSE)
+                || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CP3W_WAIT_DISPATCH_RESPONSE
+                || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_HEARTBEAT)
             ? runtime_consume_send_completion()
             : runtime_wait_completion();
         if (wait_result != 0) {
@@ -4759,6 +5170,8 @@ void runtime_poll_entry_impl(void)
             goto runtime_poll_exit;
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET) {
             if (runtime_transport_last_ios_result != 0) {
+                runtime_transport_last_socket_error = runtime_transport_last_ios_result;
+                runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET;
                 runtime_transport_socket_closed_after_bind_failure = 0;
                 runtime_transport_socket_leak_detected = 0;
                 runtime_set_phase(
@@ -4767,10 +5180,34 @@ void runtime_poll_entry_impl(void)
                 );
                 goto runtime_poll_exit;
             }
-            runtime_transport_bound_port = RUNTIME_UDP_PORT;
-            runtime_transport_bound_address = INADDR_ANY;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_VERIFY_BOUND_ENDPOINT, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            goto runtime_poll_exit;
+        } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT) {
+            runtime_transport_getsockname_result = runtime_transport_last_ios_result;
+            if (
+                runtime_transport_last_ios_result != 0
+                || runtime_transport_getsockname_address[0] != RUNTIME_WII_SOCKADDR_IN_SIZE
+                || runtime_transport_getsockname_address[1] != AF_INET
+            ) {
+                runtime_schedule_retry(
+                    RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT,
+                    runtime_transport_last_ios_result != 0 ? runtime_transport_last_ios_result : -1,
+                    0
+                );
+                goto runtime_poll_exit;
+            }
+            runtime_transport_actual_bound_port = runtime_read_be16(runtime_transport_getsockname_address + 2);
+            runtime_transport_actual_bound_address = runtime_read_be32(runtime_transport_getsockname_address + 4);
+            if (runtime_transport_actual_bound_port != RUNTIME_UDP_PORT) {
+                runtime_schedule_retry(RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT, -1, 0);
+                goto runtime_poll_exit;
+            }
+            runtime_transport_bound_port = runtime_transport_actual_bound_port;
+            runtime_transport_bound_address = runtime_transport_actual_bound_address;
             runtime_transport_bound_flag = 1;
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            runtime_transport_initialization_success_count += 1;
+            runtime_transport_last_successful_bind_poll = runtime_poll_counter;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_LISTENING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
             goto runtime_poll_exit;
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
             if (runtime_transport_last_ios_result != 0) {
@@ -4784,7 +5221,30 @@ void runtime_poll_entry_impl(void)
             runtime_transport_socket_descriptor_valid = 0;
             runtime_transport_socket_closed_after_bind_failure = 1;
             runtime_transport_socket_leak_detected = 0;
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BIND_FAILED_CLEANED, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            if (runtime_transport_uses_receive_mode()) {
+                runtime_transport_cleanup_count += 1;
+                runtime_transport_retry_deadline =
+                    runtime_poll_counter + runtime_network_diagnostics_block.retry_delay_polls;
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RETRY_DELAY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+            } else {
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_BIND_FAILED_CLEANED, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            }
+            goto runtime_poll_exit;
+        } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_FOR_RECOVERY) {
+            if (runtime_transport_last_ios_result != 0) {
+                runtime_transport_last_socket_error = runtime_transport_last_ios_result;
+                runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_FOR_RECOVERY;
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FATAL_ERROR, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+                goto runtime_poll_exit;
+            }
+            runtime_transport_cleanup_count += 1;
+            runtime_transport_socket_fd = -1;
+            runtime_transport_socket_ready = 0;
+            runtime_transport_socket_descriptor_valid = 0;
+            runtime_transport_bound_flag = 0;
+            runtime_transport_retry_deadline =
+                runtime_poll_counter + runtime_network_diagnostics_block.retry_delay_polls;
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RETRY_DELAY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
             goto runtime_poll_exit;
         }
     }
@@ -4846,6 +5306,9 @@ void runtime_poll_entry_impl(void)
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CLOSE_KD) {
         runtime_transport_kd_close_submit_count += 1;
+        runtime_transport_close_call_count += 1;
+        runtime_network_diagnostics_block.network_device_close_count += 1;
+        runtime_transport_last_close_descriptor = runtime_transport_kd_fd;
         if (
             runtime_submit_close(
                 runtime_transport_kd_fd,
@@ -4958,10 +5421,38 @@ void runtime_poll_entry_impl(void)
         }
         goto runtime_poll_exit;
     }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_VERIFY_BOUND_ENDPOINT) {
+        runtime_transport_getsockname_request = (u32)runtime_transport_socket_fd;
+        runtime_memzero(runtime_transport_getsockname_address, sizeof(runtime_transport_getsockname_address));
+        runtime_transport_getsockname_address[0] = RUNTIME_WII_SOCKADDR_IN_SIZE;
+        runtime_transport_getsockname_address[1] = AF_INET;
+        runtime_transport_getsockname_submit_count += 1;
+        if (
+            runtime_submit_ioctl(
+                runtime_transport_ip_fd,
+                IOCTL_SO_GETSOCKNAME,
+                &runtime_transport_getsockname_request,
+                4,
+                runtime_transport_getsockname_address,
+                RUNTIME_WII_SOCKADDR_IN_SIZE,
+                RUNTIME_TRANSPORT_OP_GETSOCKNAME,
+                RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT
+            ) < 0
+        ) {
+            runtime_schedule_retry(
+                RUNTIME_TRANSPORT_PHASE_VERIFY_BOUND_ENDPOINT,
+                runtime_transport_last_submit_result,
+                0
+            );
+        }
+        goto runtime_poll_exit;
+    }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
         runtime_transport_cleanup_close_request = runtime_transport_socket_fd;
         runtime_transport_cleanup_close_request_value = runtime_transport_cleanup_close_request;
         runtime_transport_socket_close_submit_count += 1;
+        runtime_transport_close_call_count += 1;
+        runtime_transport_last_close_descriptor = runtime_transport_socket_fd;
         if (
             runtime_submit_ioctl(
                 runtime_transport_ip_fd,
@@ -4976,6 +5467,48 @@ void runtime_poll_entry_impl(void)
         ) {
             runtime_transport_socket_leak_detected = 1;
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED_SOCKET_LEAK, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_CLOSE_SOCKET_FOR_RECOVERY) {
+        runtime_transport_cleanup_close_request = runtime_transport_socket_fd;
+        runtime_transport_cleanup_close_request_value = runtime_transport_cleanup_close_request;
+        runtime_transport_socket_close_submit_count += 1;
+        runtime_transport_close_call_count += 1;
+        runtime_transport_last_close_descriptor = runtime_transport_socket_fd;
+        if (
+            runtime_submit_ioctl(
+                runtime_transport_ip_fd,
+                IOCTL_SO_CLOSE,
+                &runtime_transport_cleanup_close_request,
+                4,
+                0,
+                0,
+                RUNTIME_TRANSPORT_OP_CLOSE_SOCKET_FOR_RECOVERY,
+                RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_FOR_RECOVERY
+            ) < 0
+        ) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FATAL_ERROR, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_LISTENING) {
+        runtime_set_phase(
+            runtime_transport_uses_receive_mode()
+                ? RUNTIME_TRANSPORT_PHASE_SUBMIT_RECEIVE_ONCE
+                : RUNTIME_TRANSPORT_PHASE_BOUND_NO_RECV,
+            RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+        );
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SUBMIT_HEARTBEAT) {
+        runtime_transport_send_submit_count += 1;
+        if (runtime_submit_ioctlv_send(RUNTIME_TRANSPORT_PHASE_WAIT_HEARTBEAT) != 0) {
+            runtime_transport_last_heartbeat_result = runtime_transport_send_submit_result;
+            runtime_record_send_error(
+                RUNTIME_TRANSPORT_PHASE_SEND_SUBMIT_FAILED,
+                runtime_transport_send_submit_result
+            );
         }
         goto runtime_poll_exit;
     }
@@ -5305,6 +5838,7 @@ void runtime_poll_entry_impl(void)
     }
 
 runtime_poll_exit:
+    runtime_sync_network_diagnostics();
     runtime_last_transport_phase_after_step = runtime_transport_phase;
     if (state_machine_entered != 0) {
         runtime_diag_increment(&runtime_state_machine_exit_count);

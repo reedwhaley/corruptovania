@@ -877,6 +877,9 @@ class Prime3RuntimeTransportMetadata:
     socket_leak_detected_size: int | None = None
     cp3w_game_identity: Prime3RuntimeGameIdentityMetadata | None = None
     cp3w_inventory: Prime3RuntimeInventoryMetadata | None = None
+    network_diagnostics_address: int | None = None
+    network_diagnostics_size: int | None = None
+    network_diagnostics_version: int | None = None
 
     def validate(  # noqa: C901
         self, *, runtime_state_start: int, runtime_state_end: int
@@ -885,6 +888,16 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("Relocated runtime transport metadata requires a mode.")
         if self.udp_port != 43674:
             raise Prime3DolPatchError("Prime 3 CP3W transport must use UDP port 43674.")
+        diagnostics_fields = (
+            self.network_diagnostics_address,
+            self.network_diagnostics_size,
+            self.network_diagnostics_version,
+        )
+        if any(value is not None for value in diagnostics_fields):
+            if self.network_diagnostics_address is None or self.network_diagnostics_size != 0x100:
+                raise Prime3DolPatchError("Prime 3 network diagnostics must define a 0x100-byte state block.")
+            if self.network_diagnostics_version != 1:
+                raise Prime3DolPatchError("Prime 3 network diagnostics must use ABI version 1.")
         if not self.initialization_enabled:
             raise Prime3DolPatchError("Relocated runtime transport metadata must mark initialization_enabled.")
         is_recvfrom_once = self.mode == "retail_wrapper_recvfrom_once"
@@ -1879,6 +1892,11 @@ class Prime3RuntimeTransportMetadata:
                 self.socket_leak_detected_address,
                 self.socket_leak_detected_size,
             ),
+            (
+                "transport_network_diagnostics",
+                self.network_diagnostics_address,
+                self.network_diagnostics_size,
+            ),
         )
         for name, optional_start, optional_size in optional_ranges:
             if optional_start is None and optional_size is None:
@@ -2553,6 +2571,9 @@ class Prime3RuntimeTransportMetadata:
             socket_leak_detected_size=_json_optional_int(data, "socket_leak_detected_size"),
             cp3w_game_identity=_json_optional_game_identity(data, "cp3w_game_identity"),
             cp3w_inventory=_json_optional_inventory(data, "cp3w_inventory"),
+            network_diagnostics_address=_json_optional_int(data, "network_diagnostics_address"),
+            network_diagnostics_size=_json_optional_int(data, "network_diagnostics_size"),
+            network_diagnostics_version=_json_optional_int(data, "network_diagnostics_version"),
         )
 
 

@@ -174,6 +174,7 @@ RUNTIME_CODE_START_SYMBOL = "runtime_code_start"
 RUNTIME_CODE_END_SYMBOL = "runtime_code_end"
 RUNTIME_STATE_START_SYMBOL = "runtime_state_start"
 RUNTIME_STATE_END_SYMBOL = "runtime_state_end"
+RUNTIME_NETWORK_DIAGNOSTICS_SYMBOL = "runtime_network_diagnostics_block"
 RUNTIME_CANARY_START_SYMBOL = "runtime_canary_start"
 RUNTIME_CANARY_END_SYMBOL = "runtime_canary_end"
 RUNTIME_COPY_COMPLETE_MARKER_SYMBOL = "runtime_copy_complete_marker"
@@ -554,6 +555,7 @@ class RelocatedRuntimeBuildResult:
     code_end: int
     state_start: int
     state_end: int
+    network_diagnostics_address: int
     canary_address: int
     canary_size: int
     canary_sha256: str
@@ -1467,6 +1469,9 @@ def build_prime3_runtime_payload(  # noqa: C901
                 kd_close_enabled=not nwc24_ioctl_once,
                 ip_close_on_success=False,
                 socket_close_on_success=False,
+                network_diagnostics_address=relocated_runtime.network_diagnostics_address,
+                network_diagnostics_size=0x100,
+                network_diagnostics_version=1,
                 terminal_phase_value=(
                     26
                     if cp3w_inventory_service
@@ -2488,6 +2493,7 @@ def _build_relocated_runtime(
     code_end = _extract_symbol_address(readelf_symbols, RUNTIME_CODE_END_SYMBOL)
     state_start = _extract_symbol_address(readelf_symbols, RUNTIME_STATE_START_SYMBOL)
     state_end = _extract_symbol_address(readelf_symbols, RUNTIME_STATE_END_SYMBOL)
+    network_diagnostics_address = _extract_symbol_address(readelf_symbols, RUNTIME_NETWORK_DIAGNOSTICS_SYMBOL)
     canary_start = _extract_symbol_address(readelf_symbols, RUNTIME_CANARY_START_SYMBOL)
     canary_end = _extract_symbol_address(readelf_symbols, RUNTIME_CANARY_END_SYMBOL)
     copy_complete_marker_address = _extract_symbol_address(readelf_symbols, RUNTIME_COPY_COMPLETE_MARKER_SYMBOL)
@@ -3380,6 +3386,7 @@ def _build_relocated_runtime(
         code_end=code_end,
         state_start=state_start,
         state_end=state_end,
+        network_diagnostics_address=network_diagnostics_address,
         canary_address=canary_start,
         canary_size=canary_end - canary_start,
         canary_sha256=hashlib.sha256(RELOCATED_RUNTIME_CANARY_BYTES).hexdigest(),

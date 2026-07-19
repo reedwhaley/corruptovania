@@ -9,6 +9,17 @@ from pathlib import Path
 
 import pytest
 
+from randovania.game_connection.executor.prime3_wii_protocol import (
+    INVENTORY_RUNTIME_CAPABILITIES,
+    HelloResponsePayload,
+    Prime3WiiCommand,
+    Prime3WiiResponse,
+    Prime3WiiResponseStatus,
+    decode_request,
+    encode_hello_response_payload,
+    encode_response,
+)
+
 SCRIPT_PATH = Path(__file__).resolve().parents[2].joinpath("tools", "prime3_wii_runtime", "udp_diagnostic_client.py")
 
 
@@ -22,18 +33,23 @@ def _load_module(module_name: str = "prime3_wii_runtime_udp_diagnostic_client_te
     return module
 
 
-def _response_bytes(module, *, sequence: int, recurring_poll_counter: int = 123, transport_state: int = 21) -> bytes:
-    echoed_preview = module.REQUEST_STRUCT.pack(module.REQUEST_MAGIC, module.PROTOCOL_VERSION, sequence, 0)
-    return module.RESPONSE_STRUCT.pack(
-        module.RESPONSE_MAGIC,
-        module.PROTOCOL_VERSION,
-        77,
-        recurring_poll_counter,
-        transport_state,
-        0xC0A80164,
-        5,
-        module.REQUEST_STRUCT.size,
-        echoed_preview,
+def _response_bytes(module, *, sequence: int) -> bytes:
+    hello = HelloResponsePayload(
+        selected_protocol_version=module.PROTOCOL_VERSION,
+        runtime_capabilities=INVENTORY_RUNTIME_CAPABILITIES,
+        accepted_client_capabilities=INVENTORY_RUNTIME_CAPABILITIES,
+        session_id=0x10203040,
+        runtime_build_id=0x50335731,
+        runtime_mode=22,
+        runtime_name="Prime3 Wii CP3W",
+    )
+    return encode_response(
+        Prime3WiiResponse(
+            command=Prime3WiiCommand.HELLO,
+            request_id=sequence,
+            status=Prime3WiiResponseStatus.OK,
+            payload=encode_hello_response_payload(hello),
+        )
     )
 
 
@@ -43,7 +59,8 @@ def test_build_request_generates_32_bit_sequence() -> None:
     request = module.build_request()
 
     assert 0 <= request.sequence <= 0xFFFFFFFF
-    assert request.to_bytes().startswith(module.REQUEST_MAGIC)
+    assert request.to_bytes().startswith(b"CP3W")
+    assert decode_request(request.to_bytes()).command is Prime3WiiCommand.HELLO
 
 
 def test_build_request_rejects_out_of_range_sequence() -> None:
@@ -66,10 +83,9 @@ def test_parse_response_accepts_valid_packet() -> None:
 
     assert result.responding_address == "192.168.1.100"
     assert result.responding_port == 43674
-    assert result.sequence == 77
-    assert result.heartbeat == 123
-    assert result.recurring_poll_counter == 123
-    assert result.transport_state == 21
+    assert result.request_id == 0x12345678
+    assert result.runtime_build_id_text == "P3W1"
+    assert result.runtime_mode == 22
 
 
 def test_parse_response_rejects_wrong_magic() -> None:
@@ -77,7 +93,7 @@ def test_parse_response_rejects_wrong_magic() -> None:
     packet = bytearray(_response_bytes(module, sequence=1))
     packet[:4] = b"NOPE"
 
-    with pytest.raises(ValueError, match="Wrong response magic"):
+    with pytest.raises(ValueError, match="Malformed CP3W response"):
         module.parse_response(
             bytes(packet),
             expected_sequence=1,
@@ -89,15 +105,15 @@ def test_parse_response_rejects_wrong_magic() -> None:
 def test_parse_response_rejects_wrong_length() -> None:
     module = _load_module("prime3_wii_runtime_udp_diagnostic_client_length_test")
 
-    with pytest.raises(ValueError, match="Expected 48 response bytes"):
-        module.parse_response(b"\x00" * 47, expected_sequence=1, responding_address=("127.0.0.1", 1), round_trip_ms=1.0)
+    with pytest.raises(ValueError, match="shorter than minimum"):
+        module.parse_response(b"\x00" * 4, expected_sequence=1, responding_address=("127.0.0.1", 1), round_trip_ms=1.0)
 
 
 def test_parse_response_rejects_wrong_sequence() -> None:
     module = _load_module("prime3_wii_runtime_udp_diagnostic_client_sequence_test")
     packet = _response_bytes(module, sequence=2)
 
-    with pytest.raises(ValueError, match="Wrong echoed request sequence"):
+    with pytest.raises(ValueError, match="request id"):
         module.parse_response(packet, expected_sequence=1, responding_address=("127.0.0.1", 1), round_trip_ms=1.0)
 
 
@@ -113,7 +129,7 @@ def test_query_runtime_retries_then_succeeds() -> None:
             payload, address = server.recvfrom(64)
             attempts.append(payload)
             if len(attempts) == 2:
-                sequence = int.from_bytes(payload[8:12], "big")
+                sequence = decode_request(payload).request_id
                 server.sendto(_response_bytes(module, sequence=sequence), address)
         server.close()
 
@@ -147,14 +163,16 @@ def test_cli_writes_json_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         return module.DiagnosticResponse(
             responding_address="127.0.0.1",
             responding_port=43674,
-            sequence=88,
-            heartbeat=10,
-            recurring_poll_counter=10,
-            transport_state=21,
-            host_id=0xC0A80164,
-            receive_count=3,
-            last_receive_length=16,
-            echoed_request_preview_hex="00" * 16,
+            request_id=7,
+            selected_protocol_version=1,
+            runtime_capabilities=int(INVENTORY_RUNTIME_CAPABILITIES),
+            accepted_client_capabilities=int(INVENTORY_RUNTIME_CAPABILITIES),
+            session_id=1,
+            runtime_build_id=0x50335731,
+            runtime_build_id_text="P3W1",
+            runtime_mode=22,
+            runtime_metadata_version=1,
+            runtime_name="Prime3 Wii CP3W",
             round_trip_ms=2.5,
         )
 
@@ -181,4 +199,4 @@ def test_cli_writes_json_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["responding_address"] == "127.0.0.1"
-    assert payload["heartbeat"] == 10
+    assert payload["runtime_build_id_text"] == "P3W1"

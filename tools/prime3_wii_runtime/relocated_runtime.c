@@ -179,6 +179,8 @@ enum {
     RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_HANDLE_UNAVAILABLE = 91,
     RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_HANDLE_ERROR = 92,
     RUNTIME_TRANSPORT_PHASE_CP3W_INVENTORY_LOOP_COMPLETE = 93,
+    RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY = 94,
+    RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY = 95,
     RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE = 0xFE,
     RUNTIME_TRANSPORT_PHASE_FAILED = 0xFF,
 };
@@ -268,6 +270,8 @@ enum {
     RUNTIME_UDP_SEND_CAPACITY = 512,
     RUNTIME_PREVIEW_SIZE = 16,
     RUNTIME_WII_SOCKADDR_IN_SIZE = 8,
+    RUNTIME_NETWORK_READY_RETRY_POLL_INTERVAL = 60,
+    RUNTIME_NWC24_RETRY_POLL_INTERVAL = 6,
     RUNTIME_VERIFIED_IOS_IOCTL_ASYNC_ADDRESS = 0x80504FE0,
     RUNTIME_SOCKET_REQUEST_LOGICAL_SIZE = 12,
     RUNTIME_RECEIVE_REQUEST_LOGICAL_SIZE = 8,
@@ -937,6 +941,7 @@ static volatile s32 runtime_transport_cleanup_close_request __attribute_section_
 static void runtime_memzero(volatile void* destination, u32 size) __attribute_section_code__;
 static void runtime_memcpy(volatile void* destination, const volatile void* source, u32 size) __attribute_section_code__;
 static u16 runtime_bswap16(u16 value) __attribute_section_code__;
+static u32 runtime_host_id_is_ready(s32 result) __attribute_section_code__;
 static void runtime_copy_preview(volatile u8* destination, const volatile u8* source, u32 size) __attribute_section_code__;
 static void runtime_copy_sockaddr_in(volatile u8* destination, u32 address_be, u16 port_be) __attribute_section_code__;
 static u16 runtime_read_be16(const volatile u8* source) __attribute_section_code__;
@@ -1130,6 +1135,12 @@ static void runtime_memcpy(volatile void* destination, const volatile void* sour
 static u16 runtime_bswap16(u16 value)
 {
     return (u16)((value >> 8) | (value << 8));
+}
+
+static u32 runtime_host_id_is_ready(s32 result)
+{
+    u32 host_id = (u32)result;
+    return host_id != 0 && (host_id >> 24) != 0xFFU;
 }
 
 static void runtime_copy_preview(volatile u8* destination, const volatile u8* source, u32 size)
@@ -2716,7 +2727,12 @@ static s32 runtime_submit_open(const char* path, u32 operation, u32 next_phase)
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
                 || runtime_transport_uses_receive_mode())
-            || runtime_transport_kd_fd != -1 || runtime_transport_kd_closed == 0 || runtime_transport_ip_fd != -1
+            || runtime_transport_ip_fd != -1
+            || (
+                runtime_transport_uses_receive_mode()
+                    ? (runtime_transport_kd_fd != -1 || runtime_transport_kd_closed != 0)
+                    : (runtime_transport_kd_fd != -1 || runtime_transport_kd_closed == 0)
+            )
         ) {
             runtime_transport_pending_operation = RUNTIME_TRANSPORT_OP_NONE;
             runtime_transport_last_submit_result = -1;
@@ -2782,7 +2798,8 @@ static s32 runtime_submit_close(s32 fd, u32 operation, u32 next_phase)
         || fd < 0
         || fd != runtime_transport_kd_fd
         || runtime_transport_kd_closed != 0
-        || runtime_transport_nwc24_callback_count != 1
+        || runtime_transport_nwc24_callback_count == 0
+        || runtime_transport_nwc24_callback_count != runtime_transport_nwc24_submit_count
         || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
     ) {
         runtime_transport_last_submit_result = -1;
@@ -2920,7 +2937,7 @@ static s32 runtime_submit_ioctl(
             || buffer_io != 0
             || len_io != 0
             || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
-            || runtime_transport_get_host_id_submit_count != 1
+            || runtime_transport_get_host_id_submit_count == 0
             || runtime_transport_kd_fd != -1
             || runtime_transport_kd_closed == 0
             || runtime_transport_service_started == 0
@@ -2967,7 +2984,8 @@ static s32 runtime_submit_ioctl(
             || len_io != 0
             || runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE
             || runtime_transport_socket_submit_count != 1
-            || runtime_transport_get_host_id_callback_count != 1
+            || runtime_transport_get_host_id_callback_count == 0
+            || runtime_transport_get_host_id_callback_count != runtime_transport_get_host_id_submit_count
             || runtime_transport_host_id_available == 0
             || runtime_transport_host_id_ready == 0
             || runtime_transport_service_started == 0
@@ -3025,7 +3043,8 @@ static s32 runtime_submit_ioctl(
             || runtime_transport_bind_submit_count != 1
             || runtime_transport_socket_ready == 0
             || runtime_transport_socket_fd < 0
-            || runtime_transport_get_host_id_callback_count != 1
+            || runtime_transport_get_host_id_callback_count == 0
+            || runtime_transport_get_host_id_callback_count != runtime_transport_get_host_id_submit_count
             || runtime_transport_host_id_ready == 0
             || runtime_transport_service_started == 0
             || runtime_transport_kd_fd != -1
@@ -3472,7 +3491,9 @@ static s32 runtime_wait_completion(void)
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET
         || runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_BIND_SOCKET
     ) {
-        if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET) {
+        if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_STARTUP) {
+            runtime_cache_invalidate(runtime_transport_nwc24_output_buffer, sizeof(runtime_transport_nwc24_output_buffer));
+        } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET) {
             runtime_cache_invalidate(&runtime_transport_socket_request, sizeof(runtime_transport_socket_request));
         } else {
             runtime_cache_invalidate(&runtime_transport_bind_params, sizeof(runtime_transport_bind_params));
@@ -4476,7 +4497,9 @@ void runtime_entry_impl(void)
     runtime_memzero(runtime_transport_send_vectors, sizeof(runtime_transport_send_vectors));
     runtime_transport_cleanup_close_request = -1;
 #if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
-    runtime_transport_phase = RUNTIME_TRANSPORT_PHASE_OPEN_KD;
+    runtime_transport_phase = runtime_transport_uses_receive_mode()
+        ? RUNTIME_TRANSPORT_PHASE_OPEN_IP
+        : RUNTIME_TRANSPORT_PHASE_OPEN_KD;
     runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_INIT;
 #else
     runtime_transport_phase = RUNTIME_TRANSPORT_PHASE_UNINITIALIZED;
@@ -4609,6 +4632,21 @@ void runtime_poll_entry_impl(void)
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
                 goto runtime_poll_exit;
             }
+            if (runtime_transport_last_ios_result < 0) {
+                runtime_record_init_error(runtime_transport_last_ios_result);
+                goto runtime_poll_exit;
+            }
+            if (*(volatile s32*)runtime_transport_nwc24_output_buffer == -29 && runtime_transport_uses_receive_mode()) {
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+                goto runtime_poll_exit;
+            }
+            if (
+                *(volatile s32*)runtime_transport_nwc24_output_buffer < 0
+                && *(volatile s32*)runtime_transport_nwc24_output_buffer != -15
+            ) {
+                runtime_record_init_error(*(volatile s32*)runtime_transport_nwc24_output_buffer);
+                goto runtime_poll_exit;
+            }
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CLOSE_KD, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_KD) {
             if (runtime_transport_last_ios_result < 0) {
@@ -4622,7 +4660,12 @@ void runtime_poll_entry_impl(void)
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
                 goto runtime_poll_exit;
             }
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_IP, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
+            runtime_set_phase(
+                runtime_transport_uses_receive_mode()
+                    ? RUNTIME_TRANSPORT_PHASE_SO_STARTUP
+                    : RUNTIME_TRANSPORT_PHASE_OPEN_IP,
+                RUNTIME_TRANSPORT_POLL_ACTION_INIT
+            );
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_OPEN_IP) {
             if (runtime_transport_last_ios_result < 0) {
                 runtime_record_init_error(runtime_transport_last_ios_result);
@@ -4633,7 +4676,12 @@ void runtime_poll_entry_impl(void)
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
                 goto runtime_poll_exit;
             }
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_SO_STARTUP, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
+            runtime_set_phase(
+                runtime_transport_uses_receive_mode()
+                    ? RUNTIME_TRANSPORT_PHASE_OPEN_KD
+                    : RUNTIME_TRANSPORT_PHASE_SO_STARTUP,
+                RUNTIME_TRANSPORT_POLL_ACTION_INIT
+            );
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP) {
             if (runtime_transport_last_ios_result < 0) {
                 runtime_record_socket_error(runtime_transport_last_ios_result);
@@ -4658,13 +4706,25 @@ void runtime_poll_entry_impl(void)
             runtime_transport_ip_fd_after_get_host_id = runtime_transport_ip_fd;
             runtime_transport_get_host_id_pending_after_completion = runtime_transport_pending_operation;
             runtime_transport_get_host_id_phase_after_completion = runtime_transport_phase;
-            runtime_transport_host_id = (u32)runtime_transport_last_ios_result;
+            runtime_transport_host_id = 0;
             runtime_transport_host_id_available = 0;
             runtime_transport_host_id_ready = 0;
-            if (runtime_transport_host_id == 0) {
+            if (!runtime_host_id_is_ready(runtime_transport_last_ios_result)) {
+                if (runtime_transport_uses_receive_mode()) {
+                    if (runtime_transport_last_ios_result < 0) {
+                        runtime_transport_last_socket_error = runtime_transport_last_ios_result;
+                        runtime_transport_last_error = runtime_transport_last_ios_result;
+                    }
+                    runtime_set_phase(
+                        RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY,
+                        RUNTIME_TRANSPORT_POLL_ACTION_RETRY
+                    );
+                    goto runtime_poll_exit;
+                }
                 runtime_record_socket_error(runtime_transport_last_ios_result);
                 goto runtime_poll_exit;
             }
+            runtime_transport_host_id = (u32)runtime_transport_last_ios_result;
             runtime_transport_host_id_available = 1;
             runtime_transport_host_id_ready = 1;
             if (
@@ -4729,6 +4789,22 @@ void runtime_poll_entry_impl(void)
         }
     }
 
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY) {
+        if ((runtime_poll_counter % RUNTIME_NETWORK_READY_RETRY_POLL_INTERVAL) == 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_GETHOSTID, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        }
+        goto runtime_poll_exit;
+    }
+    if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY) {
+        if ((runtime_poll_counter % RUNTIME_NWC24_RETRY_POLL_INTERVAL) == 0) {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NWC24_STARTUP, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+        } else {
+            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        }
+        goto runtime_poll_exit;
+    }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_OPEN_KD) {
         runtime_transport_open_kd_submit_count += 1;
         if (

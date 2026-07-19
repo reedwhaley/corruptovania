@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -131,7 +132,7 @@ def _bootstrap_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
 
 
 def _relocated_manifest(payload_bytes: bytes) -> Prime3RuntimePayloadManifest:
-    raw = _bootstrap_manifest(payload_bytes).to_json_dict()
+    raw = cast(dict[str, Any], _bootstrap_manifest(payload_bytes).to_json_dict())
     raw["payload_mode"] = "relocated_continue"
     raw["entry_bootstrap"]["mode"] = "relocated_continue"
     raw["entry_bootstrap"]["status_value"] = 0xB0071003
@@ -2001,6 +2002,68 @@ def test_diagnostic_stop_boundary_classifies_create_socket_states() -> None:
     assert ready == "socket_ready"
     assert submission_failed == "create_socket_submission_failed"
     assert callback_failed == "create_socket_callback_failed"
+
+
+@pytest.mark.parametrize(
+    ("last_socket_error", "expected"),
+    [(0, "network_interface_not_ready"), (-6, "network_interface_retry_after_error")],
+)
+def test_diagnostic_stop_boundary_classifies_network_readiness_retry(
+    last_socket_error: int, expected: str
+) -> None:
+    module = _load_module()
+
+    result = module._diagnostic_stop_boundary(
+        diagnostics={"counter_consistency": "consistent", "last_execution_marker_name": "poll_returning"},
+        transport={"phase": 94, "last_socket_error": last_socket_error},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+
+    assert result == expected
+
+
+def test_diagnostic_stop_boundary_classifies_nwc24_retry() -> None:
+    module = _load_module()
+
+    assert module._phase_name(94) == "WAIT_NETWORK_READY"
+    assert module._phase_name(95) == "WAIT_NWC24_READY"
+    result = module._diagnostic_stop_boundary(
+        diagnostics={"counter_consistency": "consistent", "last_execution_marker_name": "poll_returning"},
+        transport={"phase": 95},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+
+    assert result == "nwc24_startup_retry"
+
+
+@pytest.mark.parametrize(
+    ("transport", "expected"),
+    [
+        (
+            {"startup_callback_count": 1, "startup_callback_result": -6, "socket_submit_count": 0},
+            "startup_callback_failed",
+        ),
+        (
+            {"socket_callback_count": 1, "socket_callback_result": -22},
+            "create_socket_callback_failed",
+        ),
+    ],
+)
+def test_diagnostic_stop_boundary_classifies_network_setup_failures(
+    transport: dict[str, int], expected: str
+) -> None:
+    module = _load_module()
+
+    result = module._diagnostic_stop_boundary(
+        diagnostics={"counter_consistency": "consistent", "last_execution_marker_name": "poll_returning"},
+        transport={"phase": 0xFF, **transport},
+        abi_probe=None,
+        recurring_execution_continuing=True,
+    )
+
+    assert result == expected
 
 
 def test_diagnostic_stop_boundary_classifies_bind_and_cleanup_states() -> None:

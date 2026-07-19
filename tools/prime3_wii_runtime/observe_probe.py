@@ -145,6 +145,8 @@ TRANSPORT_PHASE_NAMES = {
     91: "CP3W_INVENTORY_HANDLE_UNAVAILABLE",
     92: "CP3W_INVENTORY_HANDLE_ERROR",
     93: "CP3W_INVENTORY_LOOP_COMPLETE",
+    94: "WAIT_NETWORK_READY",
+    95: "WAIT_NWC24_READY",
     21: "CLOSE_SOCKET_AFTER_BIND_FAILURE",
     22: "WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE",
     23: "BIND_FAILED_CLEANED",
@@ -863,7 +865,7 @@ def _read_probe_state(  # noqa: C901
                     )
                     open_ip_path_bytes_hex = raw_path.hex()
                     open_ip_path_bounded_string = raw_path.split(b"\0", 1)[0].decode("ascii", errors="replace")
-                relocated_runtime["transport"] = {
+                transport_observation: dict[str, object] = {
                 "mode": transport.mode,
                 "initialization_enabled": transport.initialization_enabled,
                 "receive_enabled": transport.receive_enabled,
@@ -1306,6 +1308,7 @@ def _read_probe_state(  # noqa: C901
                 ),
                 "socket_leak_detected": optional_u32(transport.socket_leak_detected_address),
             }
+                relocated_runtime["transport"] = transport_observation
                 if transport.cp3w_game_identity is not None:
                     identity = transport.cp3w_game_identity
                     identity_state = {
@@ -1315,7 +1318,7 @@ def _read_probe_state(  # noqa: C901
                     known_availability_mask = sum(identity.availability_flags.values())
                     command_value = identity.command_value
                     capability_value = identity.capability_value
-                    relocated_runtime["transport"]["cp3w_game_identity"] = {
+                    transport_observation["cp3w_game_identity"] = {
                         **identity.to_json_dict(),
                         "command_name": Prime3WiiCommand(command_value).name,
                         "capability_name": Prime3WiiCapability(capability_value).name,
@@ -1346,7 +1349,7 @@ def _read_probe_state(  # noqa: C901
                     }
                     availability = inventory_state["last_availability"]
                     known_availability_mask = sum(inventory.availability_flags.values())
-                    relocated_runtime["transport"]["cp3w_inventory"] = {
+                    transport_observation["cp3w_inventory"] = {
                         **inventory.to_json_dict(),
                         "command_name": Prime3WiiCommand(inventory.command_value).name,
                         "capability_name": Prime3WiiCapability(inventory.capability_value).name,
@@ -1850,7 +1853,28 @@ def _diagnostic_stop_boundary(  # noqa: C901
             return "bind_failed_cleaned"
         if phase == 24:
             return "failed_socket_leak"
+        if phase == 94:
+            if _object_as_int(transport["last_socket_error"]) < 0:
+                return "network_interface_retry_after_error"
+            return "network_interface_not_ready"
+        if phase == 95:
+            return "nwc24_startup_retry"
         if phase == 0xFF:
+            startup_callback_result = transport.get("startup_callback_result")
+            socket_callback_result = transport.get("socket_callback_result")
+            if (
+                _object_as_int(transport.get("startup_callback_count", 0)) != 0
+                and startup_callback_result is not None
+                and _object_as_int(startup_callback_result) < 0
+                and _object_as_int(transport.get("socket_submit_count", 0)) == 0
+            ):
+                return "startup_callback_failed"
+            if (
+                _object_as_int(transport.get("socket_callback_count", 0)) != 0
+                and socket_callback_result is not None
+                and _object_as_int(socket_callback_result) < 0
+            ):
+                return "create_socket_callback_failed"
             if transport.get("mode") == "retail_wrapper_create_socket_once":
                 if _object_as_int(transport["socket_submit_count"]) == 1:
                     if _object_as_int(transport["socket_submit_result"]) != 0:

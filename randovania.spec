@@ -122,6 +122,7 @@ a = Analysis(
         "randovania.game_connection.connector.prime1_remote_connector",
         "randovania.game_connection.executor.prime3_wii_protocol_artifacts",
         "randovania.lib.checkpoint_report_analysis",
+        "open_prime_rando.dol_patching.prime1.dol_versions",
         "unittest.mock",
     ],
     hookspath=[

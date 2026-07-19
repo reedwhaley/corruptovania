@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError
 from randovania.games.prime3.exporter.runtime_payload import load_prime3_runtime_payload_artifact
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -277,11 +279,21 @@ def test_importing_module_does_not_insert_duplicate_repo_root_entries(monkeypatc
     assert sys.path.count(repo_root_str) == 2
 
 
-def test_direct_invocation_without_toolchain_reports_normal_toolchain_error(tmp_path: Path) -> None:
+def test_direct_invocation_without_toolchain_reports_normal_toolchain_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env.pop("DEVKITPRO", None)
     env.pop("DEVKITPPC", None)
+    if getattr(sys, "frozen", False):
+        monkeypatch.delenv("PYTHONPATH", raising=False)
+        monkeypatch.delenv("DEVKITPRO", raising=False)
+        monkeypatch.delenv("DEVKITPPC", raising=False)
+        monkeypatch.setattr(sys, "argv", [os.fspath(SCRIPT_PATH)])
+        with pytest.raises(Prime3DolPatchError, match="DEVKITPRO and DEVKITPPC must be set"):
+            runpy.run_path(os.fspath(SCRIPT_PATH), run_name="__main__")
+        return
     result = subprocess.run(
         [sys.executable, os.fspath(SCRIPT_PATH)],
         cwd=tmp_path,
@@ -1367,6 +1379,48 @@ def test_cp3w_inventory_service_rearms_without_exchange_limit() -> None:
     assert "!runtime_transport_is_unbounded_cp3w_inventory_service()" in source
     assert "if (command == RUNTIME_CP3W_COMMAND_DISCONNECT)" in source
     assert "dispatch_result == 14" in source
+
+
+def test_continuous_transport_waits_for_hardware_network_readiness() -> None:
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY = 94" in source
+    assert "RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY = 95" in source
+    assert "RUNTIME_NETWORK_READY_RETRY_POLL_INTERVAL = 60" in source
+    assert "RUNTIME_NWC24_RETRY_POLL_INTERVAL = 6" in source
+    assert "runtime_host_id_is_ready(runtime_transport_last_ios_result)" in source
+    assert "runtime_transport_get_host_id_callback_count != runtime_transport_get_host_id_submit_count" in source
+    assert "runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY" in source
+    assert "runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY" in source
+    assert "*(volatile s32*)runtime_transport_nwc24_output_buffer == -29" in source
+    assert "*(volatile s32*)runtime_transport_nwc24_output_buffer != -15" in source
+    assert "? RUNTIME_TRANSPORT_PHASE_OPEN_IP" in source
+    assert "? RUNTIME_TRANSPORT_PHASE_OPEN_KD" in source
+
+
+def test_hardware_host_id_and_bind_address_are_encoded_correctly() -> None:
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    hardware_host_id = int.from_bytes(bytes((192, 168, 50, 19)), "big", signed=False)
+
+    assert hardware_host_id == 0xC0A83213
+    assert hardware_host_id.to_bytes(4, "big") == bytes((192, 168, 50, 19))
+    assert "return host_id != 0 && (host_id >> 24) != 0xFFU;" in source
+    assert "RUNTIME_UDP_PORT = 43674" in source
+    assert "destination[2] = (u8)(port_be >> 8);" in source
+    assert "destination[3] = (u8)port_be;" in source
+    assert "runtime_copy_sockaddr_in(" in source
+    assert "INADDR_ANY," in source
+
+
+def test_runtime_records_startup_socket_bind_and_io_failures() -> None:
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "runtime_transport_startup_callback_result = result;" in source
+    assert "runtime_transport_socket_callback_result = result;" in source
+    assert "runtime_transport_bind_callback_result = result;" in source
+    assert "runtime_transport_last_socket_error = result;" in source
+    assert "runtime_record_receive_error(RUNTIME_TRANSPORT_PHASE_RECEIVE_ASYNC_FAILED" in source
+    assert "runtime_record_send_error(RUNTIME_TRANSPORT_PHASE_SEND_ASYNC_FAILED" in source
 
 
 @pytest.mark.parametrize("count", [0, -1, 101])

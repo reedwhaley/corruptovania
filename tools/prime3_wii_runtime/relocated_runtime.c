@@ -1061,6 +1061,8 @@ static u16 runtime_bswap16(u16 value) __attribute_section_code__;
 static u32 runtime_host_id_is_ready(s32 result) __attribute_section_code__;
 static void runtime_sync_network_diagnostics(void) __attribute_section_code__;
 static void runtime_schedule_retry(u32 error_phase, s32 result, u32 socket_lost) __attribute_section_code__;
+static void runtime_record_endpoint_verification_warning(s32 result) __attribute_section_code__;
+static void runtime_enter_listening_after_bind(u32 endpoint_verified) __attribute_section_code__;
 static void runtime_prepare_heartbeat(void) __attribute_section_code__;
 static void runtime_copy_preview(volatile u8* destination, const volatile u8* source, u32 size) __attribute_section_code__;
 static void runtime_copy_sockaddr_in(volatile u8* destination, u32 address_be, u16 port_be) __attribute_section_code__;
@@ -1402,6 +1404,30 @@ static void runtime_schedule_retry(u32 error_phase, s32 result, u32 socket_lost)
         runtime_transport_retry_deadline = runtime_poll_counter + runtime_network_diagnostics_block.retry_delay_polls;
         runtime_set_phase(RUNTIME_TRANSPORT_PHASE_RETRY_DELAY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
     }
+}
+
+static void runtime_record_endpoint_verification_warning(s32 result)
+{
+    runtime_transport_last_socket_error = result;
+    runtime_transport_last_error = result;
+    runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT;
+}
+
+static void runtime_enter_listening_after_bind(u32 endpoint_verified)
+{
+    if (endpoint_verified != 0) {
+        runtime_transport_bound_port = runtime_transport_actual_bound_port;
+        runtime_transport_bound_address = runtime_transport_actual_bound_address;
+    } else {
+        runtime_transport_actual_bound_port = 0;
+        runtime_transport_actual_bound_address = 0;
+        runtime_transport_bound_port = RUNTIME_UDP_PORT;
+        runtime_transport_bound_address = INADDR_ANY;
+    }
+    runtime_transport_bound_flag = 1;
+    runtime_transport_initialization_success_count += 1;
+    runtime_transport_last_successful_bind_poll = runtime_poll_counter;
+    runtime_set_phase(RUNTIME_TRANSPORT_PHASE_LISTENING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
 }
 
 static void runtime_prepare_heartbeat(void)
@@ -5183,31 +5209,28 @@ void runtime_poll_entry_impl(void)
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_VERIFY_BOUND_ENDPOINT, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
             goto runtime_poll_exit;
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT) {
+            u32 endpoint_structurally_valid;
             runtime_transport_getsockname_result = runtime_transport_last_ios_result;
-            if (
-                runtime_transport_last_ios_result != 0
-                || runtime_transport_getsockname_address[0] != RUNTIME_WII_SOCKADDR_IN_SIZE
-                || runtime_transport_getsockname_address[1] != AF_INET
-            ) {
-                runtime_schedule_retry(
-                    RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT,
-                    runtime_transport_last_ios_result != 0 ? runtime_transport_last_ios_result : -1,
-                    0
-                );
-                goto runtime_poll_exit;
+            endpoint_structurally_valid = runtime_transport_last_ios_result == 0
+                && runtime_transport_getsockname_address[0] == RUNTIME_WII_SOCKADDR_IN_SIZE
+                && runtime_transport_getsockname_address[1] == AF_INET;
+            if (endpoint_structurally_valid != 0) {
+                u32 actual_port = runtime_read_be16(runtime_transport_getsockname_address + 2);
+                if (actual_port != 0) {
+                    runtime_transport_actual_bound_port = actual_port;
+                    runtime_transport_actual_bound_address = runtime_read_be32(runtime_transport_getsockname_address + 4);
+                    if (actual_port != RUNTIME_UDP_PORT) {
+                        runtime_schedule_retry(RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT, -1, 0);
+                        goto runtime_poll_exit;
+                    }
+                    runtime_enter_listening_after_bind(1);
+                    goto runtime_poll_exit;
+                }
             }
-            runtime_transport_actual_bound_port = runtime_read_be16(runtime_transport_getsockname_address + 2);
-            runtime_transport_actual_bound_address = runtime_read_be32(runtime_transport_getsockname_address + 4);
-            if (runtime_transport_actual_bound_port != RUNTIME_UDP_PORT) {
-                runtime_schedule_retry(RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT, -1, 0);
-                goto runtime_poll_exit;
-            }
-            runtime_transport_bound_port = runtime_transport_actual_bound_port;
-            runtime_transport_bound_address = runtime_transport_actual_bound_address;
-            runtime_transport_bound_flag = 1;
-            runtime_transport_initialization_success_count += 1;
-            runtime_transport_last_successful_bind_poll = runtime_poll_counter;
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_LISTENING, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+            runtime_record_endpoint_verification_warning(
+                runtime_transport_last_ios_result != 0 ? runtime_transport_last_ios_result : -1
+            );
+            runtime_enter_listening_after_bind(0);
             goto runtime_poll_exit;
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_AFTER_BIND_FAILURE) {
             if (runtime_transport_last_ios_result != 0) {
@@ -5439,11 +5462,9 @@ void runtime_poll_entry_impl(void)
                 RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT
             ) < 0
         ) {
-            runtime_schedule_retry(
-                RUNTIME_TRANSPORT_PHASE_VERIFY_BOUND_ENDPOINT,
-                runtime_transport_last_submit_result,
-                0
-            );
+            runtime_transport_getsockname_result = runtime_transport_last_submit_result;
+            runtime_record_endpoint_verification_warning(runtime_transport_last_submit_result);
+            runtime_enter_listening_after_bind(0);
         }
         goto runtime_poll_exit;
     }

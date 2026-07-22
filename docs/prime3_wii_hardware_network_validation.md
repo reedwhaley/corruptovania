@@ -4,7 +4,9 @@ CP3W owns UDP port `43674`. Port `43673` and the Skyward Sword protocol are not 
 
 ## Runtime behavior
 
-The native runtime waits 300 recurring-hook polls before its first initialization attempt. It then opens the Wii network devices, starts NWC24 and `/dev/net/ip/top`, obtains the host ID, creates a UDP socket, binds `0.0.0.0:43674`, and verifies the result with IOS `SOGetSockName` before entering the receive loop. The receive is asynchronous and does not block the game thread.
+The native runtime waits 300 recurring-hook polls before its first initialization attempt. It then opens the Wii network devices, starts NWC24 and `/dev/net/ip/top`, obtains the host ID, creates a UDP socket, and binds `0.0.0.0:43674`. IOS `SOGetSockName` remains a diagnostic verification step, but successful `SOBind` is authoritative when it returns an error, malformed output, or port zero. Only a structurally valid nonzero port other than `43674` causes cleanup. The receive is asynchronous and does not block the game thread.
+
+In advisory/unverified mode, `listening=1`, `requested_bind_port=43674`, and the receive loop proceeds, while `actual_bind_address` and `actual_bind_port` remain zero. `getsockname_result` preserves the exact IOS result and `last_error_phase=WAIT_VERIFY_BOUND_ENDPOINT` records the warning. These values must not be interpreted as a verified zero-port bind.
 
 Initialization and socket failures retain their native signed return code and error phase. With automatic retry enabled, failures enter a 120-poll delay. A failed active socket enters `SOCKET_LOST`, closes its descriptor, and recreates and rebinds the socket. A manual restart is deferred until no asynchronous operation is pending, then follows the same descriptor-safe recovery path.
 
@@ -51,7 +53,7 @@ The CLI accepts only port `43674`. A successful report includes the local and re
 2. Record `runtime_build_id` from the desktop HELLO response or the native diagnostic block.
 3. Record IOS version/revision if the loader exposes them; the current native ABI reserves these fields but Prime 3 has no verified IOS-version accessor yet.
 4. Record all native initialization return values and the last error phase.
-5. Confirm requested endpoint `0.0.0.0:43674`, actual port `43674`, and `listening=1`.
+5. Confirm requested endpoint `0.0.0.0:43674` and `listening=1`. Actual port `43674` proves verification; actual port `0` with a verification warning means the successful bind is operating in advisory/unverified mode.
 6. Run the desktop probe while capturing traffic in Wireshark.
 7. Record whether the console returns ICMP Port Unreachable, a CP3W response, or neither.
 8. Set restart request word `0xDC` after the title screen, wait through recovery, and probe again.
@@ -60,4 +62,4 @@ The CLI accepts only port `43674`. A successful report includes the local and re
 11. Compare USB Loader GX and WiiFlow if practical.
 12. Test the original Skyward Sword integration separately as an external control without changing CP3W.
 
-The decisive hardware evidence is the transition sequence and exact signed result values. `bind_result=0`, `getsockname_result=0`, `actual_bind_port=43674`, and `listening=1` prove that the listener existed; a later socket-loss or close counter increase distinguishes subsequent teardown from failure to bind.
+The decisive hardware evidence is the transition sequence and exact signed result values. `bind_result=0`, `actual_bind_port=43674`, and `listening=1` prove a verified listener. `bind_result=0`, `actual_bind_port=0`, `listening=1`, and increasing receive-call counts prove advisory/unverified operation. A later socket-loss or close counter increase distinguishes subsequent teardown from failure to bind.

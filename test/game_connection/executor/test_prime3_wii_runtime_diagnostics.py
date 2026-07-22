@@ -44,6 +44,26 @@ def test_diagnostics_layout_is_fixed_and_parses_signed_results() -> None:
     assert result.build_id_text == "P3W1"
 
 
+def test_diagnostics_preserve_advisory_verification_failure_without_claiming_endpoint() -> None:
+    raw = _diagnostic_bytes(
+        getsockname_result=-22,
+        last_error_phase=98,
+        actual_bind_address=0,
+        actual_bind_port=0,
+        requested_bind_port=43674,
+        listening=1,
+    )
+
+    result = parse_diagnostics(raw)
+
+    assert result["getsockname_result"] == -22
+    assert result["last_error_phase"] == 98
+    assert result["actual_bind_address"] == 0
+    assert result["actual_bind_port"] == 0
+    assert result["requested_bind_port"] == 43674
+    assert result["listening"] == 1
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -67,6 +87,39 @@ def test_heartbeat_payload_is_deterministic() -> None:
 
 def test_wii_sockaddr_encodes_inaddr_any_and_cp3w_port_in_network_order() -> None:
     assert diagnostics.encode_wii_sockaddr().hex() == "0802aa9a00000000"
+
+
+def test_verified_cp3w_endpoint_is_accepted() -> None:
+    assert diagnostics.classify_bound_endpoint(0, diagnostics.encode_wii_sockaddr()) == (
+        diagnostics.EndpointVerification.VERIFIED,
+        0,
+        43674,
+    )
+
+
+@pytest.mark.parametrize(
+    ("result", "sockaddr"),
+    [
+        (0, b"\0" * 8),
+        (0, bytes.fromhex("0802000000000000")),
+        (-22, diagnostics.encode_wii_sockaddr()),
+        (0, bytes.fromhex("0702aa9a00000000")),
+    ],
+)
+def test_unverifiable_endpoint_is_advisory_and_does_not_claim_actual_values(result: int, sockaddr: bytes) -> None:
+    assert diagnostics.classify_bound_endpoint(result, sockaddr) == (
+        diagnostics.EndpointVerification.ADVISORY_UNVERIFIED,
+        0,
+        0,
+    )
+
+
+def test_structurally_valid_wrong_nonzero_port_requires_cleanup() -> None:
+    assert diagnostics.classify_bound_endpoint(0, bytes.fromhex("080212340a000001")) == (
+        diagnostics.EndpointVerification.WRONG_NONZERO_PORT,
+        0x0A000001,
+        0x1234,
+    )
 
 
 @pytest.mark.parametrize(

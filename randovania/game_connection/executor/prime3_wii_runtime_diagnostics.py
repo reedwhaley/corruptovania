@@ -109,6 +109,12 @@ class NetworkPhase(IntEnum):
     FATAL_ERROR = 107
 
 
+class EndpointVerification(IntEnum):
+    ADVISORY_UNVERIFIED = 0
+    VERIFIED = 1
+    WRONG_NONZERO_PORT = 2
+
+
 @dataclasses.dataclass(frozen=True)
 class Prime3WiiRuntimeDiagnostics:
     values: Mapping[str, int]
@@ -158,6 +164,17 @@ def encode_wii_sockaddr(*, address: int = 0, port: int = CP3W_UDP_PORT) -> bytes
     if port != CP3W_UDP_PORT:
         raise ValueError(f"Prime 3 CP3W must bind UDP port {CP3W_UDP_PORT}.")
     return struct.pack(">BBHI", 8, 2, port, address)
+
+
+def classify_bound_endpoint(result: int, sockaddr: bytes) -> tuple[EndpointVerification, int, int]:
+    if result != 0 or len(sockaddr) != 8 or sockaddr[0] != 8 or sockaddr[1] != 2:
+        return EndpointVerification.ADVISORY_UNVERIFIED, 0, 0
+    _length, _family, port, address = struct.unpack(">BBHI", sockaddr)
+    if port == 0:
+        return EndpointVerification.ADVISORY_UNVERIFIED, 0, 0
+    if port != CP3W_UDP_PORT:
+        return EndpointVerification.WRONG_NONZERO_PORT, address, port
+    return EndpointVerification.VERIFIED, address, port
 
 
 def phase_after_failure(*, socket_descriptor: int, auto_retry: bool, socket_lost: bool) -> NetworkPhase:

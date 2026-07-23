@@ -8,10 +8,12 @@ import shutil
 import uuid
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from open_prime_rando.dol_patching.corruption import dol_versions as corruption_dol_versions
 
+import randovania
 from randovania.games.prime3.exporter import hardware_runtime, probe_delivery
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, parse_dol_header
 from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
@@ -166,10 +168,156 @@ def test_packaged_runtime_asset_lookup_rejects_invalid_payload_hash(production_r
         hardware_runtime.load_validated_production_runtime_assets(asset_dir, require_elf=True)
 
 
-def test_pyinstaller_spec_only_consumes_prebuilt_runtime_assets() -> None:
-    spec_text = Path(__file__).resolve().parents[4].joinpath("randovania.spec").read_text(encoding="utf-8")
+@pytest.mark.parametrize("runtime_mode", hardware_runtime.HARDWARE_RUNTIME_MODES)
+def test_frozen_package_contains_selected_runtime_assets(
+    runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode,
+) -> None:
+    if not randovania.is_frozen():
+        pytest.skip("Runtime asset packaging is validated through the frozen executable.")
 
-    assert "load_validated_production_runtime_assets" in spec_text
+    asset_dir = hardware_runtime.runtime_asset_directory(
+        randovania.get_data_path().joinpath("prime3_wii_runtime"), runtime_mode
+    )
+    assets = hardware_runtime.load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=False)
+
+    assert assets.manifest.relocated_runtime is not None
+    assert assets.manifest.relocated_runtime.transport is not None
+    assert assets.manifest.relocated_runtime.transport.mode == runtime_mode.value
+
+
+def test_pyinstaller_spec_only_consumes_prebuilt_runtime_assets() -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    spec_text = repository_root.joinpath("randovania.spec").read_text(encoding="utf-8")
+    workflow_text = repository_root.joinpath(".github", "workflows", "build-test-publish.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "load_validated_hardware_runtime_assets" in spec_text
     assert "build_production_runtime_payload" not in spec_text
+    assert "build_hardware_runtime_payload" not in spec_text
     assert "assets.payload_path" in spec_text
     assert "assets.manifest_path" in spec_text
+    assert "for runtime_mode in HARDWARE_RUNTIME_MODES" in spec_text
+    assert "runtime_asset_directory(base_dir, runtime_mode)" in spec_text
+    assert "path: build/prime3_wii_runtime/production" in workflow_text
+    assert "build/prime3_wii_runtime/production/payload.elf" not in workflow_text
+
+
+@pytest.mark.parametrize("runtime_mode", hardware_runtime.HARDWARE_RUNTIME_MODES)
+def test_hardware_runtime_build_uses_mode_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_build(output_dir: Path, **kwargs: object) -> SimpleNamespace:
+        captured["output_dir"] = output_dir
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(hardware_runtime, "build_prime3_runtime_payload", fake_build)
+
+    hardware_runtime.build_hardware_runtime_payload(tmp_path, runtime_mode)
+
+    production = runtime_mode is hardware_runtime.Prime3HardwareRuntimeMode.PRODUCTION
+    assert captured == {
+        "output_dir": tmp_path,
+        "payload_mode": "relocated_continue",
+        "enable_recurring_hook_diagnostics": not production,
+        "enable_ios_udp_diagnostic": True,
+        "ios_udp_mode": runtime_mode.value,
+        "ios_udp_loop_count": 0 if production else 1,
+        "reserved_high": 0x817E0000,
+        "diagnostic_address": 0x817E0100,
+    }
+
+
+def test_diagnostic_manifest_does_not_require_production_protocol_metadata(production_runtime) -> None:
+    payload, manifest, _ = production_runtime
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = dataclasses.replace(
+        manifest.relocated_runtime.transport,
+        mode=hardware_runtime.Prime3HardwareRuntimeMode.BIND_ONCE.value,
+        receive_enabled=False,
+        send_enabled=False,
+        terminal_phase_value=0x11,
+        terminal_phase_name="BOUND_NO_RECV",
+        cp3w_game_identity=None,
+        cp3w_inventory=None,
+    )
+    relocated = dataclasses.replace(manifest.relocated_runtime, transport=transport)
+    diagnostic = dataclasses.replace(manifest, relocated_runtime=relocated)
+
+    hardware_runtime._validate_hardware_manifest(
+        payload,
+        diagnostic,
+        hardware_runtime.Prime3HardwareRuntimeMode.BIND_ONCE,
+    )
+
+
+def test_selected_runtime_mode_must_match_manifest(production_runtime) -> None:
+    payload, manifest, _ = production_runtime
+
+    with pytest.raises(Prime3DolPatchError, match="does not match selected mode"):
+        hardware_runtime._validate_hardware_manifest(
+            payload,
+            manifest,
+            hardware_runtime.Prime3HardwareRuntimeMode.RECVFROM_ONCE,
+        )
+
+
+def test_production_manifest_still_requires_protocol_metadata(production_runtime) -> None:
+    payload, manifest, _ = production_runtime
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = dataclasses.replace(
+        manifest.relocated_runtime.transport,
+        cp3w_game_identity=None,
+        cp3w_inventory=None,
+    )
+    relocated = dataclasses.replace(manifest.relocated_runtime, transport=transport)
+    invalid = dataclasses.replace(manifest, relocated_runtime=relocated)
+
+    with pytest.raises(Prime3DolPatchError, match="identity"):
+        hardware_runtime._validate_hardware_manifest(
+            payload,
+            invalid,
+            hardware_runtime.Prime3HardwareRuntimeMode.PRODUCTION,
+        )
+
+
+def test_atomic_patcher_loads_selected_runtime_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path.joinpath("main.dol")
+    path.write_bytes(b"original")
+    selected_mode = hardware_runtime.Prime3HardwareRuntimeMode.GET_HOST_ID_ONCE
+    manifest = SimpleNamespace()
+    expected_result = SimpleNamespace()
+    calls: list[tuple[Path, hardware_runtime.Prime3HardwareRuntimeMode]] = []
+
+    def fake_load(
+        output_dir: Path, runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode
+    ) -> tuple[bytes, SimpleNamespace]:
+        calls.append((output_dir, runtime_mode))
+        return b"payload", manifest
+
+    def fake_patch(original_dol: bytes, layout_uuid: uuid.UUID, **kwargs: object) -> tuple[bytes, SimpleNamespace]:
+        assert original_dol == b"original"
+        assert kwargs == {"payload": b"payload", "manifest": manifest, "runtime_mode": selected_mode}
+        return b"patched", expected_result
+
+    monkeypatch.setattr(hardware_runtime, "load_or_build_hardware_runtime", fake_load)
+    monkeypatch.setattr(hardware_runtime, "patch_prime3_hardware_dol", fake_patch)
+    monkeypatch.setattr(hardware_runtime, "atomic_replace_file", lambda target, data: target.write_bytes(data))
+
+    result = hardware_runtime.patch_prime3_hardware_dol_file_atomic(
+        path,
+        uuid.UUID(int=0),
+        runtime_build_dir=tmp_path.joinpath("runtime"),
+        runtime_mode=selected_mode,
+    )
+
+    assert calls == [(tmp_path.joinpath("runtime"), selected_mode)]
+    assert result is expected_result
+    assert path.read_bytes() == b"patched"

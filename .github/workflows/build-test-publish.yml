@@ -256,10 +256,7 @@ jobs:
         with:
           name: Prime 3 CP3W Runtime
           if-no-files-found: error
-          path: |
-            build/prime3_wii_runtime/production/payload.elf
-            build/prime3_wii_runtime/production/payload.bin
-            build/prime3_wii_runtime/production/payload.json
+          path: build/prime3_wii_runtime/production
 
   executable:
     needs: prime3-runtime

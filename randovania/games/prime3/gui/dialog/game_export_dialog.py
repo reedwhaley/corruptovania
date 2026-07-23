@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from randovania.game.game_enum import RandovaniaGame
 from randovania.games.prime3.exporter.game_exporter import CorruptionGameExportParams, CorruptionOutputFormats
+from randovania.games.prime3.exporter.hardware_runtime import Prime3HardwareRuntimeMode
 from randovania.games.prime3.exporter.options import CorruptionPerGameOptions
 from randovania.games.prime3.gui.generated.corruption_game_export_dialog_ui import Ui_CorruptionGameExportDialog
 from randovania.games.prime3.layout.corruption_configuration import CorruptionConfiguration
@@ -23,6 +24,16 @@ from randovania.gui.lib.multi_format_output_mixin import MultiFormatOutputMixin
 if TYPE_CHECKING:
     from randovania.exporter.game_exporter import GameExportParams
     from randovania.interface_common.options import Options, PerGameOptions
+
+
+RUNTIME_MODE_CHOICES = (
+    ("Production CP3W service", Prime3HardwareRuntimeMode.PRODUCTION),
+    ("Stop after SOStartup", Prime3HardwareRuntimeMode.STARTUP_ONCE),
+    ("Stop after SOGetHostID", Prime3HardwareRuntimeMode.GET_HOST_ID_ONCE),
+    ("Stop after socket creation", Prime3HardwareRuntimeMode.CREATE_SOCKET_ONCE),
+    ("Stop after bind", Prime3HardwareRuntimeMode.BIND_ONCE),
+    ("Wait for one UDP datagram", Prime3HardwareRuntimeMode.RECVFROM_ONCE),
+)
 
 
 class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog, MultiFormatOutputMixin):
@@ -59,6 +70,9 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             self.iso_radio.setChecked(True)
 
         self._selected_output_format = self.output_format
+
+        for label, runtime_mode in RUNTIME_MODE_CHOICES:
+            self.runtime_mode_combo.addItem(label, runtime_mode.value)
 
         if per_game.input_path is not None:
             self.input_file_edit.setText(str(per_game.input_path))
@@ -119,6 +133,10 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
         else:
             return CorruptionOutputFormats.ISO.value
 
+    @property
+    def runtime_mode(self) -> Prime3HardwareRuntimeMode:
+        return Prime3HardwareRuntimeMode(self.runtime_mode_combo.currentData())
+
     # Input file
     def _on_input_file_button(self) -> None:
         input_file = prompt_for_input_file(self, self.input_file_edit, self.valid_input_file_types)
@@ -149,4 +167,5 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             output_path=Path(self.output_file),
             output_format=CorruptionOutputFormats(self.output_format),
             mp3_update=CorruptionConfiguration.MP3Update,
+            runtime_mode=self.runtime_mode,
         )

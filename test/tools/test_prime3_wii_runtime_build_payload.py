@@ -432,6 +432,29 @@ def test_build_prime3_runtime_payload_relocated_continue_so_startup_manifest(tmp
     assert manifest.relocated_runtime.transport.service_started_address is not None
 
 
+def test_build_prime3_runtime_payload_relocated_continue_startup_once_manifest(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_startup_once_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="retail_wrapper_startup_once",
+        ios_udp_loop_count=1,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    assert manifest.relocated_runtime.transport.mode == "retail_wrapper_startup_once"
+    assert manifest.relocated_runtime.transport.terminal_phase_value == 0xFE
+    assert manifest.relocated_runtime.transport.terminal_phase_name == "DIAGNOSTIC_COMPLETE"
+
+
 def test_build_prime3_runtime_payload_relocated_continue_create_socket_manifest(tmp_path: Path) -> None:
     module = _load_build_module("prime3_wii_runtime_build_payload_relocated_continue_create_socket_test")
     if not _devkitppc_is_available():

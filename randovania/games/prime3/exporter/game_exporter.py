@@ -13,7 +13,10 @@ from typing import TYPE_CHECKING
 
 import randovania
 from randovania.exporter.game_exporter import GameExporter, GameExportParams
-from randovania.games.prime3.exporter.hardware_runtime import patch_prime3_hardware_dol_file_atomic
+from randovania.games.prime3.exporter.hardware_runtime import (
+    Prime3HardwareRuntimeMode,
+    patch_prime3_hardware_dol_file_atomic,
+)
 from randovania.games.prime3.exporter.toolchain import (
     Prime3Toolchain,
     extract_prime3_disc_image,
@@ -30,6 +33,7 @@ class CorruptionGameExportParams(GameExportParams):
     output_path: Path
     output_format: CorruptionOutputFormats
     mp3_update: bool
+    runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION
 
 
 class CorruptionOutputFormats(Enum):
@@ -102,10 +106,12 @@ class CorruptionGameExporter(GameExporter):
                 main_dol_path,
                 uuid.UUID(patch_data["layout_uuid"]),
                 runtime_build_dir=extract_path.joinpath(".prime3_wii_runtime"),
+                runtime_mode=export_params.runtime_mode,
             )
             validation = hardware_result.validation
             self.logger.info(
-                "Installed CP3W runtime %s for %s at 0x%08x; entry=0x%08x recurring=0x%08x UDP=%d",
+                "Installed CP3W runtime mode=%s payload=%s for %s at 0x%08x; entry=0x%08x recurring=0x%08x UDP=%d",
+                export_params.runtime_mode.value,
                 validation.payload_sha256,
                 validation.version_description,
                 validation.runtime_section_address,

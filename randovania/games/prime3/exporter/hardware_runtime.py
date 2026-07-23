@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import randovania
@@ -37,7 +38,19 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 CP3W_UDP_PORT = 43674
-PRODUCTION_RUNTIME_MODE = "cp3w_inventory_service"
+
+
+class Prime3HardwareRuntimeMode(StrEnum):
+    PRODUCTION = "cp3w_inventory_service"
+    STARTUP_ONCE = "retail_wrapper_startup_once"
+    GET_HOST_ID_ONCE = "retail_wrapper_get_host_id_once"
+    CREATE_SOCKET_ONCE = "retail_wrapper_create_socket_once"
+    BIND_ONCE = "retail_wrapper_bind_once"
+    RECVFROM_ONCE = "retail_wrapper_recvfrom_once"
+
+
+PRODUCTION_RUNTIME_MODE = Prime3HardwareRuntimeMode.PRODUCTION.value
+HARDWARE_RUNTIME_MODES = tuple(Prime3HardwareRuntimeMode)
 PRODUCTION_RESERVED_HIGH = 0x817E0000
 PRODUCTION_DIAGNOSTIC_ADDRESS = 0x817E0100
 PRODUCTION_RUNTIME_ASSET_DIR = os.fspath(
@@ -82,21 +95,36 @@ class Prime3ProductionRuntimeAssets:
     manifest_sha256: str
 
 
-def build_production_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManifest:
+def runtime_asset_directory(base_dir: Path, runtime_mode: Prime3HardwareRuntimeMode) -> Path:
+    if runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION:
+        return base_dir
+    return base_dir.joinpath(runtime_mode.value)
+
+
+def build_hardware_runtime_payload(
+    output_dir: Path,
+    runtime_mode: Prime3HardwareRuntimeMode,
+) -> Prime3RuntimePayloadManifest:
+    production = runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION
     return build_prime3_runtime_payload(
         output_dir,
         payload_mode=PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
-        enable_recurring_hook_diagnostics=False,
+        enable_recurring_hook_diagnostics=not production,
         enable_ios_udp_diagnostic=True,
-        ios_udp_mode=PRODUCTION_RUNTIME_MODE,
-        ios_udp_loop_count=0,
+        ios_udp_mode=runtime_mode.value,
+        ios_udp_loop_count=0 if production else 1,
         reserved_high=PRODUCTION_RESERVED_HIGH,
         diagnostic_address=PRODUCTION_DIAGNOSTIC_ADDRESS,
     )
 
 
-def load_validated_production_runtime_assets(
+def build_production_runtime_payload(output_dir: Path) -> Prime3RuntimePayloadManifest:
+    return build_hardware_runtime_payload(output_dir, Prime3HardwareRuntimeMode.PRODUCTION)
+
+
+def load_validated_hardware_runtime_assets(
     asset_dir: Path,
+    runtime_mode: Prime3HardwareRuntimeMode,
     *,
     require_elf: bool,
 ) -> Prime3ProductionRuntimeAssets:
@@ -116,7 +144,7 @@ def load_validated_production_runtime_assets(
     payload = payload_path.read_bytes()
     manifest_bytes = manifest_path.read_bytes()
     manifest = Prime3RuntimePayloadManifest.from_json_text(manifest_bytes.decode("utf-8"))
-    _validate_production_manifest(payload, manifest)
+    _validate_hardware_manifest(payload, manifest, runtime_mode)
 
     elf_bytes = elf_path.read_bytes() if elf_path.is_file() else None
     if elf_bytes is not None and not elf_bytes.startswith(b"\x7fELF"):
@@ -135,22 +163,43 @@ def load_validated_production_runtime_assets(
     )
 
 
-def load_or_build_production_runtime(
+def load_validated_production_runtime_assets(
+    asset_dir: Path,
+    *,
+    require_elf: bool,
+) -> Prime3ProductionRuntimeAssets:
+    return load_validated_hardware_runtime_assets(
+        asset_dir,
+        Prime3HardwareRuntimeMode.PRODUCTION,
+        require_elf=require_elf,
+    )
+
+
+def load_or_build_hardware_runtime(
     output_dir: Path,
+    runtime_mode: Prime3HardwareRuntimeMode,
 ) -> tuple[bytes, Prime3RuntimePayloadManifest]:
-    packaged_dir = randovania.get_data_path().joinpath("prime3_wii_runtime")
+    packaged_base_dir = randovania.get_data_path().joinpath("prime3_wii_runtime")
+    packaged_dir = runtime_asset_directory(packaged_base_dir, runtime_mode)
     packaged_payload = packaged_dir.joinpath("payload.bin")
     packaged_manifest = packaged_dir.joinpath("payload.json")
     if packaged_payload.is_file() and packaged_manifest.is_file():
-        assets = load_validated_production_runtime_assets(packaged_dir, require_elf=False)
+        assets = load_validated_hardware_runtime_assets(packaged_dir, runtime_mode, require_elf=False)
         manifest = assets.manifest
         payload = assets.payload
     else:
-        manifest = build_production_runtime_payload(output_dir)
-        assets = load_validated_production_runtime_assets(output_dir, require_elf=True)
+        build_dir = runtime_asset_directory(output_dir, runtime_mode)
+        manifest = build_hardware_runtime_payload(build_dir, runtime_mode)
+        assets = load_validated_hardware_runtime_assets(build_dir, runtime_mode, require_elf=True)
         payload = assets.payload
-    _validate_production_manifest(payload, manifest)
+    _validate_hardware_manifest(payload, manifest, runtime_mode)
     return payload, manifest
+
+
+def load_or_build_production_runtime(
+    output_dir: Path,
+) -> tuple[bytes, Prime3RuntimePayloadManifest]:
+    return load_or_build_hardware_runtime(output_dir, Prime3HardwareRuntimeMode.PRODUCTION)
 
 
 def patch_prime3_hardware_dol(
@@ -159,10 +208,11 @@ def patch_prime3_hardware_dol(
     *,
     payload: bytes,
     manifest: Prime3RuntimePayloadManifest,
+    runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
 ) -> tuple[bytes, Prime3HardwarePatchResult]:
     identify_supported_corruption_version(original_dol)
     _reject_existing_or_partial_installation(original_dol, manifest)
-    _validate_production_manifest(payload, manifest)
+    _validate_hardware_manifest(payload, manifest, runtime_mode)
 
     identity_dol, identity_patch = patch_prime3_corruption_dol(original_dol, layout_uuid)
     assert manifest.entry_bootstrap is not None
@@ -174,7 +224,12 @@ def patch_prime3_hardware_dol(
         install_recurring_poll_hook=True,
         enable_ios_udp_diagnostic=True,
     )
-    validation = validate_prime3_hardware_artifact(delivery.probe_dol_bytes, payload=payload, manifest=manifest)
+    validation = validate_prime3_hardware_artifact(
+        delivery.probe_dol_bytes,
+        payload=payload,
+        manifest=manifest,
+        runtime_mode=runtime_mode,
+    )
     return delivery.probe_dol_bytes, Prime3HardwarePatchResult(identity_patch, delivery, validation)
 
 
@@ -183,13 +238,15 @@ def patch_prime3_hardware_dol_file_atomic(
     layout_uuid: uuid.UUID,
     *,
     runtime_build_dir: Path,
+    runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
 ) -> Prime3HardwarePatchResult:
-    payload, manifest = load_or_build_production_runtime(runtime_build_dir)
+    payload, manifest = load_or_build_hardware_runtime(runtime_build_dir, runtime_mode)
     patched_dol, result = patch_prime3_hardware_dol(
         path.read_bytes(),
         layout_uuid,
         payload=payload,
         manifest=manifest,
+        runtime_mode=runtime_mode,
     )
     atomic_replace_file(path, patched_dol)
     return result
@@ -200,9 +257,10 @@ def validate_prime3_hardware_artifact(
     *,
     payload: bytes,
     manifest: Prime3RuntimePayloadManifest,
+    runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
 ) -> Prime3HardwareArtifactValidation:
     version = identify_supported_corruption_version(dol)
-    _validate_production_manifest(payload, manifest)
+    _validate_hardware_manifest(payload, manifest, runtime_mode)
     occurrences = dol.count(payload)
     if occurrences != 1:
         raise Prime3DolPatchError(f"Expected exactly one CP3W runtime payload, found {occurrences}.")
@@ -261,7 +319,11 @@ def validate_prime3_hardware_artifact(
     )
 
 
-def _validate_production_manifest(payload: bytes, manifest: Prime3RuntimePayloadManifest) -> None:
+def _validate_hardware_manifest(
+    payload: bytes,
+    manifest: Prime3RuntimePayloadManifest,
+    runtime_mode: Prime3HardwareRuntimeMode,
+) -> None:
     manifest.validate()
     if len(payload) != manifest.payload_size or hashlib.sha256(payload).hexdigest() != manifest.payload_sha256:
         raise Prime3DolPatchError("Canonical CP3W payload does not match its manifest size and SHA-256.")
@@ -271,10 +333,20 @@ def _validate_production_manifest(payload: bytes, manifest: Prime3RuntimePayload
     if relocated is None or relocated.transport is None:
         raise Prime3DolPatchError("Hardware CP3W payload is missing relocated transport metadata.")
     transport = relocated.transport
-    if transport.mode != PRODUCTION_RUNTIME_MODE or transport.udp_port != CP3W_UDP_PORT:
-        raise Prime3DolPatchError("Hardware CP3W payload is not the unbounded UDP 43674 service.")
-    if transport.cp3w_game_identity is None or transport.cp3w_inventory is None:
+    if transport.mode != runtime_mode.value:
+        raise Prime3DolPatchError(
+            f"Hardware CP3W payload mode {transport.mode!r} does not match selected mode {runtime_mode.value!r}."
+        )
+    if transport.udp_port != CP3W_UDP_PORT:
+        raise Prime3DolPatchError("Prime 3 hardware runtime must use UDP port 43674.")
+    if runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION and (
+        transport.cp3w_game_identity is None or transport.cp3w_inventory is None
+    ):
         raise Prime3DolPatchError("Hardware CP3W payload lacks identity or inventory protocol metadata.")
+
+
+def _validate_production_manifest(payload: bytes, manifest: Prime3RuntimePayloadManifest) -> None:
+    _validate_hardware_manifest(payload, manifest, Prime3HardwareRuntimeMode.PRODUCTION)
 
 
 def _branch_at(dol: bytes, address: int) -> DecodedBranchInstruction:

@@ -958,6 +958,7 @@ class Prime3RuntimeTransportMetadata:
         is_nwc24_close_once = self.mode == "retail_wrapper_nwc24_close_kd_once"
         is_nwc24_close_open_ip_once = self.mode == "retail_wrapper_nwc24_close_open_ip_once"
         is_nwc24_close_open_ip_startup_once = self.mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
+        is_startup_once = self.mode == "retail_wrapper_startup_once"
         is_get_host_id_once = self.mode == "retail_wrapper_get_host_id_once"
         if is_nwc24_ioctl_once:
             if self.kd_close_enabled:
@@ -974,6 +975,8 @@ class Prime3RuntimeTransportMetadata:
             self.terminal_phase_value != 18 or self.terminal_phase_name != "SO_STARTED"
         ):
             raise Prime3DolPatchError("NWC24 close-open-ip-startup metadata must use the SO_STARTED terminal phase.")
+        if is_startup_once and (self.terminal_phase_value != 0xFE or self.terminal_phase_name != "DIAGNOSTIC_COMPLETE"):
+            raise Prime3DolPatchError("Startup-once metadata must use the terminal diagnostic phase.")
         if is_get_host_id_once and (self.terminal_phase_value != 19 or self.terminal_phase_name != "HOST_ID_READY"):
             raise Prime3DolPatchError("GET_HOST_ID metadata must use the HOST_ID_READY terminal phase.")
         if is_recvfrom_once and (self.terminal_phase_value != 27 or self.terminal_phase_name != "RECEIVED_DATAGRAM"):

@@ -1431,6 +1431,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             nwc24_close_once = ios_udp_mode == "retail_wrapper_nwc24_close_kd_once"
             open_ip_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_once"
             so_startup_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
+            startup_once = ios_udp_mode == "retail_wrapper_startup_once"
             get_host_id_once = ios_udp_mode == "retail_wrapper_get_host_id_once"
             create_socket_once = ios_udp_mode == "retail_wrapper_create_socket_once"
             recvfrom_once = ios_udp_mode == "retail_wrapper_recvfrom_once"
@@ -1476,7 +1477,7 @@ def build_prime3_runtime_payload(  # noqa: C901
                     26
                     if cp3w_inventory_service
                     else 0xFE
-                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once
+                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once or startup_once
                     else 18
                     if so_startup_once
                     else 19
@@ -1504,6 +1505,8 @@ def build_prime3_runtime_payload(  # noqa: C901
                 terminal_phase_name=(
                     "WAIT_RECEIVE"
                     if cp3w_inventory_service
+                    else "DIAGNOSTIC_COMPLETE"
+                    if startup_once
                     else "NWC24_COMPLETE"
                     if nwc24_ioctl_once
                     else "KD_CLOSED"

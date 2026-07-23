@@ -12,29 +12,45 @@ if __package__ in {None, ""}:
         sys.path.insert(0, _repository_root_str)
 
 from randovania.games.prime3.exporter.hardware_runtime import (
+    HARDWARE_RUNTIME_MODES,
     PRODUCTION_RUNTIME_ASSET_DIR,
-    build_production_runtime_payload,
-    load_validated_production_runtime_assets,
+    Prime3HardwareRuntimeMode,
+    build_hardware_runtime_payload,
+    load_validated_hardware_runtime_assets,
+    runtime_asset_directory,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build and validate the production Prime 3 CP3W runtime assets.")
+    parser = argparse.ArgumentParser(description="Build and validate selectable Prime 3 CP3W hardware runtime assets.")
     parser.add_argument("--output-dir", type=Path, default=Path(PRODUCTION_RUNTIME_ASSET_DIR))
+    parser.add_argument(
+        "--mode",
+        type=Prime3HardwareRuntimeMode,
+        choices=HARDWARE_RUNTIME_MODES,
+        action="append",
+        help="Build only this mode; repeat for multiple modes. The default builds all hardware modes.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    build_production_runtime_payload(args.output_dir)
-    assets = load_validated_production_runtime_assets(args.output_dir, require_elf=True)
     print(f"DEVKITPRO={os.environ.get('DEVKITPRO', '')}")
     print(f"DEVKITPPC={os.environ.get('DEVKITPPC', '')}")
-    print(f"payload.elf sha256={assets.elf_sha256}")
-    print(f"payload.bin sha256={assets.payload_sha256}")
-    print(f"payload.json sha256={assets.manifest_sha256}")
-    print(f"mode={assets.manifest.relocated_runtime.transport.mode}")
-    print(f"udp_port={assets.manifest.relocated_runtime.transport.udp_port}")
+    modes = tuple(args.mode) if args.mode else HARDWARE_RUNTIME_MODES
+    for runtime_mode in modes:
+        asset_dir = runtime_asset_directory(args.output_dir, runtime_mode)
+        build_hardware_runtime_payload(asset_dir, runtime_mode)
+        assets = load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=True)
+        assert assets.manifest.relocated_runtime is not None
+        transport = assets.manifest.relocated_runtime.transport
+        assert transport is not None
+        print(f"[{runtime_mode.value}] output_dir={asset_dir}")
+        print(f"[{runtime_mode.value}] payload.elf sha256={assets.elf_sha256}")
+        print(f"[{runtime_mode.value}] payload.bin sha256={assets.payload_sha256}")
+        print(f"[{runtime_mode.value}] payload.json sha256={assets.manifest_sha256}")
+        print(f"[{runtime_mode.value}] udp_port={transport.udp_port}")
     print("validation=passed")
 
 

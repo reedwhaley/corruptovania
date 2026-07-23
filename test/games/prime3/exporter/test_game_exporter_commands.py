@@ -14,6 +14,7 @@ from randovania.games.prime3.exporter.game_exporter import (
     _build_wit_command,
     _run_process,
 )
+from randovania.games.prime3.exporter.hardware_runtime import Prime3HardwareRuntimeMode
 from randovania.games.prime3.exporter.toolchain import Prime3Toolchain
 
 
@@ -87,6 +88,7 @@ def test_build_wit_command() -> None:
 
     command = _build_wit_command(_toolchain(), Path("DATA"), export_params)
     assert command == ("wit", "COPY", "-B", "-z", "--trunc", "--auto-split", "--overwrite", "DATA", "out.wbfs")
+    assert export_params.runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION
 
 
 def test_run_process_wraps_tool_failures(monkeypatch: pytest.MonkeyPatch) -> None:

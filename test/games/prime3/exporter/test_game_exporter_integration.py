@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from randovania.games.prime3.exporter.game_exporter import (
     CorruptionGameExportParams,
     CorruptionOutputFormats,
 )
+from randovania.games.prime3.exporter.hardware_runtime import Prime3HardwareRuntimeMode
 from randovania.games.prime3.exporter.toolchain import Prime3Toolchain
 from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
 
@@ -94,13 +96,17 @@ def _patch_data(*, enable_networking: bool, layout_uuid: str) -> dict:
     }
 
 
-def _export_params(tmp_path: Path) -> CorruptionGameExportParams:
+def _export_params(
+    tmp_path: Path,
+    runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
+) -> CorruptionGameExportParams:
     return CorruptionGameExportParams(
         spoiler_output=None,
         input_path=tmp_path.joinpath("input.iso"),
         output_path=tmp_path.joinpath("output.iso"),
         output_format=CorruptionOutputFormats.ISO,
         mp3_update=False,
+        runtime_mode=runtime_mode,
     )
 
 
@@ -115,7 +121,7 @@ def _configure_export_environment(
     paks_path.mkdir()
     toolchain = _toolchain()
     calls: list[tuple[str, ...]] = []
-    hardware_calls: list[tuple[Path, uuid.UUID, Path]] = []
+    hardware_calls: list[tuple[Path, uuid.UUID, Path, Prime3HardwareRuntimeMode]] = []
 
     def fake_extract_prime3_disc_image(_toolchain_arg, _input_path, destination: Path, _progress_update) -> None:
         _write_prime3_extract_tree(destination, main_dol_bytes)
@@ -124,8 +130,14 @@ def _configure_export_environment(
         del env
         calls.append(command)
 
-    def fake_patch_hardware(path: Path, layout_uuid: uuid.UUID, *, runtime_build_dir: Path):
-        hardware_calls.append((path, layout_uuid, runtime_build_dir))
+    def fake_patch_hardware(
+        path: Path,
+        layout_uuid: uuid.UUID,
+        *,
+        runtime_build_dir: Path,
+        runtime_mode: Prime3HardwareRuntimeMode,
+    ):
+        hardware_calls.append((path, layout_uuid, runtime_build_dir, runtime_mode))
         patched, _ = dol_patcher.patch_prime3_corruption_dol(path.read_bytes(), layout_uuid)
         path.write_bytes(patched)
         validation = SimpleNamespace(
@@ -197,6 +209,30 @@ def test_export_networking_enabled_patches_working_copy_only(tmp_path: Path, mon
     assert patched_bytes[patched_offset + 6 : patched_offset + 22] == layout_uuid.bytes
     assert source_main_dol == _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
     assert hardware_calls[0][1] == layout_uuid
+    assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.PRODUCTION
+
+
+def test_export_propagates_selected_runtime_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    version = corruption_dol_versions.ALL_VERSIONS[0]
+    main_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
+    _extract_path, _paks_path, _patcher_root, _calls, hardware_calls = _configure_export_environment(
+        tmp_path, monkeypatch, main_dol
+    )
+
+    exporter = CorruptionGameExporter()
+    caplog.set_level(logging.INFO)
+    exporter._do_export_game(
+        _patch_data(enable_networking=True, layout_uuid="12345678-1234-5678-1234-567812345678"),
+        _export_params(tmp_path, Prime3HardwareRuntimeMode.BIND_ONCE),
+        lambda _message, _progress: None,
+    )
+
+    assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.BIND_ONCE
+    assert "mode=retail_wrapper_bind_once payload=" + "a" * 64 in caplog.text
 
 
 def test_export_networking_enabled_rejects_unsupported_dol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

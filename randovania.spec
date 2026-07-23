@@ -8,8 +8,11 @@ from PyInstaller.utils.hooks import copy_metadata
 import randovania
 from randovania.game.game_enum import RandovaniaGame
 from randovania.games.prime3.exporter.hardware_runtime import (
+    HARDWARE_RUNTIME_MODES,
     PRODUCTION_RUNTIME_ASSET_DIR,
-    load_validated_production_runtime_assets,
+    Prime3HardwareRuntimeMode,
+    load_validated_hardware_runtime_assets,
+    runtime_asset_directory,
 )
 
 block_cipher = None
@@ -28,11 +31,21 @@ game_assets = [
 
 
 def collect_prime3_runtime_assets():
-    assets = load_validated_production_runtime_assets(Path(PRODUCTION_RUNTIME_ASSET_DIR), require_elf=True)
-    return [
-        (os.fspath(assets.payload_path), "data/prime3_wii_runtime"),
-        (os.fspath(assets.manifest_path), "data/prime3_wii_runtime"),
-    ]
+    base_dir = Path(PRODUCTION_RUNTIME_ASSET_DIR)
+    result = []
+    for runtime_mode in HARDWARE_RUNTIME_MODES:
+        asset_dir = runtime_asset_directory(base_dir, runtime_mode)
+        assets = load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=True)
+        destination = Path("data/prime3_wii_runtime")
+        if runtime_mode is not Prime3HardwareRuntimeMode.PRODUCTION:
+            destination = destination.joinpath(runtime_mode.value)
+        result.extend(
+            [
+                (os.fspath(assets.payload_path), os.fspath(destination)),
+                (os.fspath(assets.manifest_path), os.fspath(destination)),
+            ]
+        )
+    return result
 
 
 def collect_prime3_macos_assets():

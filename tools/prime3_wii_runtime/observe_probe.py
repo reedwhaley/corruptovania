@@ -89,6 +89,14 @@ TRANSPORT_PHASE_NAMES = {
     105: "SUBMIT_HEARTBEAT",
     106: "WAIT_HEARTBEAT",
     107: "FATAL_ERROR",
+    108: "NATIVE_BOOTSTRAP",
+    109: "NATIVE_WAIT_HOST_ID",
+    110: "NATIVE_HOST_ID_TIMEOUT",
+    111: "NATIVE_CREATE_BEACON_SOCKET",
+    112: "NATIVE_WAIT_BEACON_INTERVAL",
+    113: "NATIVE_SUBMIT_BEACON",
+    114: "NATIVE_WAIT_BEACON",
+    115: "NATIVE_BEACON_COMPLETE",
     25: "SUBMIT_RECEIVE_ONCE",
     26: "WAIT_RECEIVE",
     27: "RECEIVED_DATAGRAM",
@@ -1307,6 +1315,15 @@ def _read_probe_state(  # noqa: C901
                     "build_id_text": network_diagnostics.build_id_text,
                     "current_phase_name": _phase_name(network_diagnostics["current_phase"]),
                     "previous_phase_name": _phase_name(network_diagnostics["previous_phase"]),
+                    **(
+                        {
+                            "native_execution_canary": network_diagnostics.native_execution_canary,
+                            "native_execution_stage": network_diagnostics.native_execution_stage,
+                            "native_recurring_hook_count": network_diagnostics.native_recurring_hook_count,
+                        }
+                        if transport.mode == "native_wc24_bootstrap_beacon_once"
+                        else {}
+                    ),
                 }
             if transport.cp3w_game_identity is not None:
                 identity = transport.cp3w_game_identity

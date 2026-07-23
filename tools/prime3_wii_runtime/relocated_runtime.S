@@ -4,9 +4,16 @@
 #define PRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS 0
 #endif
 
+#ifndef PRIME3_IOS_UDP_DIAGNOSTIC_MODE
+#define PRIME3_IOS_UDP_DIAGNOSTIC_MODE 0
+#endif
+
 .global runtime_entry
 .global runtime_poll_entry
 .global runtime_poll_hook_wrapper
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+.global runtime_native_post_copy_wrapper
+#endif
 .global runtime_call_retail_ios_open_async
 .global runtime_call_retail_ios_close_async
 .global runtime_call_retail_read_async
@@ -23,6 +30,9 @@
 .type runtime_entry, @function
 .type runtime_poll_entry, @function
 .type runtime_poll_hook_wrapper, @function
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+.type runtime_native_post_copy_wrapper, @function
+#endif
 .type runtime_call_retail_ios_open_async, @function
 .type runtime_call_retail_ios_close_async, @function
 .type runtime_call_retail_read_async, @function
@@ -185,6 +195,33 @@ runtime_poll_hook_wrapper:
     bctr
 
 .size runtime_poll_hook_wrapper, . - runtime_poll_hook_wrapper
+
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+runtime_native_post_copy_wrapper:
+    stwu    1, -0x20(1)
+    mflr    0
+    stw     0, 0x1C(1)
+    stw     2, 0x18(1)
+    stw     13, 0x14(1)
+    lis     12, 0x804D
+    ori     12, 12, 0x2644
+    mtctr   12
+    bctrl
+    mr      3, 30
+    bl      runtime_native_overlay_draw_destination
+    lwz     13, 0x14(1)
+    lwz     2, 0x18(1)
+    lwz     0, 0x1C(1)
+    mtlr    0
+    addi    1, 1, 0x20
+    lwz     0, 0x14(1)
+    lis     12, 0x8037
+    ori     12, 12, 0x2464
+    mtctr   12
+    bctr
+
+.size runtime_native_post_copy_wrapper, . - runtime_native_post_copy_wrapper
+#endif
 
 retail_call_veneer runtime_call_retail_ios_open_async, PRIME3_RETAIL_IOS_OPEN_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_ios_close_async, PRIME3_RETAIL_IOS_CLOSE_ASYNC_ADDRESS

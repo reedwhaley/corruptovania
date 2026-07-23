@@ -1483,6 +1483,7 @@ def test_native_wc24_bootstrap_beacon_manifest_and_state_machine(tmp_path: Path)
     assert native_block.index("runtime_call_retail_network_bootstrap()") < native_block.index(
         "runtime_read_retail_so_fd()"
     )
+    assert native_block.index("runtime_read_retail_so_fd()") < native_block.index("RUNTIME_TRANSPORT_PHASE_OPEN_KD")
     assert "runtime_submit_close" not in native_block
     assert "RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID" in native_block
     assert "runtime_transport_cleanup_deferred_count += 1" in source
@@ -1493,6 +1494,7 @@ def test_native_wc24_host_id_readiness_polling_is_bounded_and_spaced() -> None:
 
     assert "RUNTIME_NATIVE_HOST_ID_RETRY_POLL_INTERVAL = 30" in source
     assert "RUNTIME_NATIVE_HOST_ID_ATTEMPT_LIMIT = 20" in source
+    assert "RUNTIME_NATIVE_INTERVAL_TIMEBASE_TICKS = 30375000" in source
     wait_block = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID)", 1)[
         1
     ].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET)", 1)[0]
@@ -1508,6 +1510,7 @@ def test_native_wc24_host_id_readiness_polling_is_bounded_and_spaced() -> None:
         completion_block.index("RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID")
     )
     assert "runtime_poll_counter + RUNTIME_NATIVE_HOST_ID_RETRY_POLL_INTERVAL" in completion_block
+    assert "runtime_native_read_timebase() + RUNTIME_NATIVE_INTERVAL_TIMEBASE_TICKS" in completion_block
     assert completion_block.index("runtime_transport_host_id_ready = 1") < completion_block.index(
         "RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET"
     )
@@ -1521,12 +1524,86 @@ def test_native_wc24_does_not_create_socket_before_valid_host_id() -> None:
 
     assert "RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET" not in native_bootstrap
     assert native_bootstrap.index("runtime_read_retail_so_fd()") < native_bootstrap.index(
-        "RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID"
+        "RUNTIME_TRANSPORT_PHASE_OPEN_KD"
     )
+    assert "RUNTIME_TRANSPORT_PHASE_SO_STARTUP" not in native_bootstrap
+    startup_completion = source.split(
+        "} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP)", 1
+    )[1].split("} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_GETHOSTID)", 1)[0]
+    assert "RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID" in startup_completion
     assert (
         "runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_INIT);"
         in source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET)", 1)[1]
     )
+
+
+def test_native_wc24_startup_submission_preserves_verified_ioctl_guards() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    submit_ioctl = source.rsplit("static s32 runtime_submit_ioctl(", 1)[1]
+    startup_guard = (
+        submit_ioctl.split("if (operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP) {", 1)[1]
+        .split("} else if (operation == RUNTIME_TRANSPORT_OP_STARTUP) {", 1)[1]
+        .split("} else if (operation == RUNTIME_TRANSPORT_OP_GETHOSTID) {", 1)[0]
+    )
+
+    assert "runtime_transport_is_native_wc24_bootstrap_mode()" in startup_guard
+    assert "fd != runtime_transport_ip_fd" in startup_guard
+    assert "ioctl != IOCTL_SO_STARTUP" in startup_guard
+    assert "buffer_in != 0" in startup_guard
+    assert "buffer_io != 0" in startup_guard
+    assert "runtime_transport_pending_operation != RUNTIME_TRANSPORT_OP_NONE" in startup_guard
+    assert "runtime_transport_service_started != 0" in startup_guard
+    assert "runtime_call_retail_ios_ioctl_async(" in source
+
+
+def test_native_wc24_recovery_reuses_retained_so_descriptor() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    close_completion = source.split("} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_KD)", 1)[
+        1
+    ].split("} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_OPEN_IP)", 1)[0]
+
+    assert "runtime_transport_is_native_wc24_bootstrap_mode()" in close_completion
+    assert "RUNTIME_TRANSPORT_PHASE_SO_STARTUP" in close_completion
+    assert "RUNTIME_TRANSPORT_PHASE_OPEN_IP" in close_completion
+    assert (
+        "runtime_transport_is_native_wc24_bootstrap_mode()"
+        in source.rsplit("static s32 runtime_submit_ioctl(", 1)[1].split(
+            "} else if (operation == RUNTIME_TRANSPORT_OP_STARTUP) {", 1
+        )[1]
+    )
+    assert source.count("runtime_call_retail_network_bootstrap()") == 2
+
+
+def test_native_wc24_duplicate_startup_failure_preserves_warning_and_polls_host() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    warning_helper = source.split("static void runtime_native_continue_after_startup_warning", 1)[1].split(
+        "static void runtime_native_record_beacon_completion_failure", 1
+    )[0]
+
+    assert "runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP;" in warning_helper
+    assert "runtime_transport_last_error = result;" in warning_helper
+    assert "runtime_transport_service_started = 1;" in warning_helper
+    assert "RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID" in warning_helper
+    assert "RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET" not in warning_helper
+    assert source.count("runtime_native_continue_after_startup_warning(runtime_transport_last_ios_result);") == 2
+    assert "runtime_native_low_level_recovery_active == 0" in source
+
+
+def test_native_wc24_host_timeout_replaces_failed_native_descriptor_once() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    wait_block = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID)", 1)[
+        1
+    ].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET)", 1)[0]
+
+    assert "runtime_native_low_level_recovery_active == 0" in wait_block
+    assert "runtime_transport_kd_fd = runtime_transport_ip_fd;" in wait_block
+    assert "runtime_transport_ip_fd = -1;" in wait_block
+    assert "runtime_transport_get_host_id_submit_count = 0;" in wait_block
+    assert "runtime_transport_get_host_id_callback_count = 0;" in wait_block
+    assert "runtime_transport_get_host_id_callback_exit_count = 0;" in wait_block
+    assert "RUNTIME_TRANSPORT_PHASE_CLOSE_KD" in wait_block
+    assert "RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT" in wait_block
+    assert "runtime_native_low_level_recovery_active = 2;" in source
 
 
 def test_native_wc24_beacons_are_serialized_and_spaced() -> None:
@@ -1552,6 +1629,7 @@ def test_native_wc24_beacons_are_serialized_and_spaced() -> None:
     completion_block = source.split("if (native_beacon != 0) {", 7)[-1].split("if (heartbeat != 0)", 1)[0]
     assert "runtime_native_beacon_success_count += 1" in completion_block
     assert "runtime_poll_counter + RUNTIME_NATIVE_BEACON_RETRY_POLL_INTERVAL" in completion_block
+    assert "runtime_native_read_timebase() + RUNTIME_NATIVE_INTERVAL_TIMEBASE_TICKS" in completion_block
     assert completion_block.index("RUNTIME_NATIVE_BEACON_ATTEMPT_LIMIT") < completion_block.index(
         "RUNTIME_TRANSPORT_PHASE_NATIVE_BEACON_COMPLETE"
     )
@@ -1581,7 +1659,7 @@ def test_native_wc24_failure_stages_preserve_final_overlay_evidence() -> None:
 
     assert native_bootstrap.count("runtime_native_record_fatal_error(RUNTIME_TRANSPORT_PHASE_NATIVE_BOOTSTRAP") == 3
     assert "runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID;" in source
-    assert "runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT" in source
+    assert "RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT" in source
     assert "RUNTIME_TRANSPORT_PHASE_GETHOSTID,\n                    runtime_transport_last_submit_result" in source
     assert (
         source.count("RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET,\n                    runtime_transport_last_submit_result")
@@ -1599,7 +1677,7 @@ def test_native_wc24_failure_stages_preserve_final_overlay_evidence() -> None:
 
 def test_native_wc24_overlay_reports_live_and_terminal_values() -> None:
     source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
-    overlay = source.split("static void runtime_native_overlay_draw(void)", 1)[1].split(
+    overlay = source.split("static void runtime_native_overlay_draw_xfb", 1)[1].split(
         "void runtime_poll_entry_impl(void)", 1
     )[0]
 
@@ -1625,8 +1703,82 @@ def test_native_wc24_overlay_reports_live_and_terminal_values() -> None:
     assert "runtime_transport_last_error_phase" in overlay
     assert "runtime_transport_last_error" in overlay
     assert "runtime_transport_host_id_ready != 0" in overlay
+    assert '"STAGE "' in overlay
+    assert '" POLL "' in overlay
     poll_exit = source.split("runtime_poll_exit:", 1)[1]
     assert poll_exit.index("runtime_sync_network_diagnostics();") < poll_exit.index("runtime_native_overlay_draw();")
+
+
+def test_native_wc24_immediate_canary_and_stage_transitions_are_persistent() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "RUNTIME_NATIVE_EXECUTION_CANARY = 0x4E415431" in source
+    assert "runtime_network_diagnostics_block.ios_version = RUNTIME_NATIVE_EXECUTION_CANARY;" in source
+    assert "runtime_network_diagnostics_block.ios_revision = RUNTIME_NATIVE_STAGE_RELOCATED_INITIALIZED;" in source
+    assert "runtime_network_diagnostics_block.shutdown_call_count += 1;" in source
+    expected_stages = {
+        "RELOCATED_INITIALIZED": 1,
+        "RECURRING_HOOK_ENTERED": 2,
+        "MODE_RECOGNIZED": 3,
+        "STARTUP_DELAY": 4,
+        "BOOTSTRAP_ENTERED": 5,
+        "BOOTSTRAP_RETURNED": 6,
+        "HOST_ID": 7,
+        "SOCKET": 8,
+        "BEACON_SUBMIT": 9,
+        "BEACON_COMPLETE": 10,
+        "TERMINAL_FAILURE": 15,
+    }
+    for name, value in expected_stages.items():
+        assert f"RUNTIME_NATIVE_STAGE_{name} = {value}," in source
+
+
+def test_native_wc24_overlay_uses_live_vi_xfbs_and_preserves_ycbcr_pairs() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    overlay = source.split("typedef struct runtime_native_xfb", 1)[1].split("void runtime_poll_entry_impl(void)", 1)[0]
+
+    assert "0xCC002000U" in overlay
+    assert "register_values[0]" in overlay
+    assert "register_values[1]" in overlay
+    assert "page_offsets[0]" in overlay
+    assert "picture_configuration" in overlay
+    assert "vertical_timing" in overlay
+    assert "0x01800000U" in overlay
+    assert "0x10000000U" in overlay
+    assert "0x14000000U" in overlay
+    assert "stride > 2048U" in overlay
+    assert "xfb->address[(y * xfb->stride + x) * 2U] = luma;" in overlay
+    assert "if (x < xfb->width && y < xfb->height)" in overlay
+    assert "runtime_cache_flush(" in overlay
+    assert "(flush_bottom - 8U) * xfb->stride * 2U" in overlay
+    assert "runtime_native_overlay_draw_destination" in overlay
+    assert "destination & 0x3FFFFFFFU" in overlay
+    assert "physical_address += width * 2U;" in overlay
+
+    ycbcr = bytearray((10, 20, 30, 40, 50, 60, 70, 80))
+    ycbcr[(0 * 2 + 1) * 2] = 235
+    assert ycbcr == bytearray((10, 20, 235, 40, 50, 60, 70, 80))
+
+
+def test_native_wc24_installs_guarded_post_copy_overlay_hook() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    assembly = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.S").read_text()
+    installer = source.split("static void runtime_native_install_post_copy_hook(void)", 1)[1].split("#endif", 1)[0]
+
+    assert "RUNTIME_NATIVE_POST_COPY_HOOK_ADDRESS = 0x80372460" in source
+    assert "RUNTIME_NATIVE_POST_COPY_HOOK_EXPECTED = 0x80010014" in source
+    assert "*hook != RUNTIME_NATIVE_POST_COPY_HOOK_EXPECTED" in installer
+    assert "runtime_native_post_copy_hook_result = -1;" in installer
+    assert "runtime_instruction_cache_sync(hook, sizeof(*hook));" in installer
+    assert "runtime_native_post_copy_hook_result = 1;" in installer
+    assert "#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23" in assembly
+    assert "runtime_native_post_copy_wrapper:" in assembly
+    assert "lis     12, 0x804D" in assembly
+    assert "ori     12, 12, 0x2644" in assembly
+    assert assembly.index("ori     12, 12, 0x2644") < assembly.index("bl      runtime_native_overlay_draw_destination")
+    assert "bl      runtime_native_overlay_draw_destination" in assembly
+    assert "lwz     0, 0x14(1)" in assembly
+    assert "ori     12, 12, 0x2464" in assembly
 
 
 def test_native_wc24_diagnostics_reuse_fixed_cp3d_abi() -> None:
@@ -1642,6 +1794,9 @@ def test_native_wc24_diagnostics_reuse_fixed_cp3d_abi() -> None:
     assert "diagnostics->send_call_count = runtime_native_beacon_attempt_count;" in sync
     assert "diagnostics->packets_sent = runtime_native_beacon_success_count;" in sync
     assert "runtime_native_beacon_submission_failure_count + runtime_native_beacon_completion_failure_count" in sync
+    assert "diagnostics->ios_version" not in sync
+    assert "diagnostics->ios_revision" not in sync
+    assert "diagnostics->shutdown_call_count" not in sync
 
 
 def test_native_wc24_phase_values_are_appended_without_renumbering() -> None:

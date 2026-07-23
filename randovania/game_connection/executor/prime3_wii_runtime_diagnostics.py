@@ -14,6 +14,7 @@ DIAGNOSTICS_WORD_COUNT = 64
 DIAGNOSTICS_SIZE = DIAGNOSTICS_WORD_COUNT * 4
 CP3W_UDP_PORT = 43674
 HEARTBEAT_PREFIX = b"CP3W-DIAG-HEARTBEAT"
+NATIVE_EXECUTION_CANARY = 0x4E415431  # NAT1
 
 DIAGNOSTIC_FIELDS = (
     "magic",
@@ -125,6 +126,22 @@ class Prime3WiiRuntimeDiagnostics:
     @property
     def build_id_text(self) -> str:
         return self.values["build_id"].to_bytes(4, "big").decode("ascii", errors="replace")
+
+    @property
+    def native_execution_canary(self) -> int:
+        return self.values["ios_version"]
+
+    @property
+    def native_execution_stage(self) -> int:
+        return self.values["ios_revision"]
+
+    @property
+    def native_recurring_hook_count(self) -> int:
+        return self.values["shutdown_call_count"]
+
+    @property
+    def native_post_copy_hook_result(self) -> int:
+        return _as_signed(self.values["overlay_page"])
 
 
 def _as_signed(value: int) -> int:

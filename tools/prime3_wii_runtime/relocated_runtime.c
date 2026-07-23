@@ -371,6 +371,10 @@ enum {
     RUNTIME_NATIVE_HOST_ID_ATTEMPT_LIMIT = 20,
     RUNTIME_NATIVE_BEACON_RETRY_POLL_INTERVAL = 30,
     RUNTIME_NATIVE_BEACON_ATTEMPT_LIMIT = 10,
+    RUNTIME_NATIVE_INTERVAL_TIMEBASE_TICKS = 30375000,
+    RUNTIME_NATIVE_EXECUTION_CANARY = 0x4E415431,
+    RUNTIME_NATIVE_POST_COPY_HOOK_ADDRESS = 0x80372460,
+    RUNTIME_NATIVE_POST_COPY_HOOK_EXPECTED = 0x80010014,
     RUNTIME_INITIAL_DELAY_POLL_INTERVAL = 300,
     RUNTIME_RETRY_DELAY_POLL_INTERVAL = 120,
     RUNTIME_DIAGNOSTICS_MAGIC = 0x43503344,
@@ -460,6 +464,22 @@ enum {
     RUNTIME_CP3W_ERROR_HEADER_SIZE = 6,
     RUNTIME_CP3W_MAX_PING_PAYLOAD_LENGTH = 44,
 };
+
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+enum {
+    RUNTIME_NATIVE_STAGE_RELOCATED_INITIALIZED = 1,
+    RUNTIME_NATIVE_STAGE_RECURRING_HOOK_ENTERED = 2,
+    RUNTIME_NATIVE_STAGE_MODE_RECOGNIZED = 3,
+    RUNTIME_NATIVE_STAGE_STARTUP_DELAY = 4,
+    RUNTIME_NATIVE_STAGE_BOOTSTRAP_ENTERED = 5,
+    RUNTIME_NATIVE_STAGE_BOOTSTRAP_RETURNED = 6,
+    RUNTIME_NATIVE_STAGE_HOST_ID = 7,
+    RUNTIME_NATIVE_STAGE_SOCKET = 8,
+    RUNTIME_NATIVE_STAGE_BEACON_SUBMIT = 9,
+    RUNTIME_NATIVE_STAGE_BEACON_COMPLETE = 10,
+    RUNTIME_NATIVE_STAGE_TERMINAL_FAILURE = 15,
+};
+#endif
 
 static const char runtime_kd_path[] __attribute_section_rodata__ = "/dev/net/kd/request";
 static const char runtime_ip_path[] __attribute_section_rodata__ = "/dev/net/ip/top";
@@ -595,8 +615,11 @@ volatile u32 runtime_transport_phase __attribute_section_state__ __attribute_use
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
 volatile u32 runtime_native_beacon_ipv4 __attribute_section_state__ __attribute_used__ = PRIME3_NATIVE_BEACON_IPV4;
 volatile u32 runtime_native_next_host_id_poll __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_next_host_id_timebase __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_low_level_recovery_active __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_native_first_valid_host_id_poll __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_native_next_beacon_poll __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_next_beacon_timebase __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_native_beacon_attempt_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_native_beacon_success_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_native_beacon_submission_failure_count __attribute_section_state__ __attribute_used__ = 0;
@@ -605,6 +628,11 @@ volatile u32 runtime_native_first_successful_beacon_poll __attribute_section_sta
 volatile u32 runtime_native_last_successful_beacon_poll __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_native_last_beacon_submit_result __attribute_section_state__ __attribute_used__ = 0;
 volatile s32 runtime_native_last_beacon_completion_result __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_overlay_top_register __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_overlay_bottom_register __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_overlay_geometry __attribute_section_state__ __attribute_used__ = 0;
+volatile u32 runtime_native_overlay_render_count __attribute_section_state__ __attribute_used__ = 0;
+volatile s32 runtime_native_post_copy_hook_result __attribute_section_state__ __attribute_used__ = 0;
 #else
 #define runtime_native_beacon_ipv4 PRIME3_NATIVE_BEACON_IPV4
 #endif
@@ -1169,6 +1197,10 @@ static void runtime_transport_prepare_cp3w_error_response(
 ) __attribute_section_code__;
 static void runtime_cache_flush(const volatile void* address, u32 size) __attribute_section_code__;
 static void runtime_cache_invalidate(const volatile void* address, u32 size) __attribute_section_code__;
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+extern void runtime_native_post_copy_wrapper(void) __attribute_section_code__;
+void runtime_native_overlay_draw_destination(u32 destination) __attribute_section_code__;
+#endif
 extern s32 runtime_call_retail_ios_open_async(
     const char* filepath,
     u32 mode,
@@ -1296,6 +1328,25 @@ static u32 runtime_host_id_is_ready(s32 result)
     u32 host_id = (u32)result;
     return host_id != 0 && (host_id >> 24) != 0xFFU;
 }
+
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+static u32 runtime_native_read_timebase(void)
+{
+    u32 value;
+    __asm__ volatile("mftb %0" : "=r"(value));
+    return value;
+}
+
+static u32 runtime_native_deadline_reached(u32 deadline)
+{
+    return deadline == 0 || (s32)(runtime_native_read_timebase() - deadline) >= 0;
+}
+
+static void runtime_native_set_stage(u32 stage)
+{
+    runtime_network_diagnostics_block.ios_revision = stage;
+}
+#endif
 
 static void runtime_copy_preview(volatile u8* destination, const volatile u8* source, u32 size)
 {
@@ -1429,6 +1480,11 @@ static void runtime_sync_network_diagnostics(void)
     diagnostics->last_successful_bind_poll = runtime_native_first_successful_beacon_poll;
     diagnostics->last_packet_send_poll = runtime_native_last_successful_beacon_poll;
     diagnostics->receive_loop_iteration_count = RUNTIME_NATIVE_BEACON_ATTEMPT_LIMIT;
+    diagnostics->last_received_command = runtime_native_overlay_top_register;
+    diagnostics->last_received_packet_size = runtime_native_overlay_bottom_register;
+    diagnostics->last_sender_ip = runtime_native_overlay_geometry;
+    diagnostics->last_sender_port = runtime_native_overlay_render_count;
+    diagnostics->overlay_page = (u32)runtime_native_post_copy_hook_result;
 #endif
 }
 
@@ -1467,7 +1523,25 @@ static void runtime_native_record_fatal_error(u32 error_phase, s32 result)
     runtime_transport_last_error = result;
     runtime_transport_last_socket_error = result;
     runtime_transport_last_ios_result = result;
+    runtime_native_set_stage(RUNTIME_NATIVE_STAGE_TERMINAL_FAILURE);
     runtime_set_phase(RUNTIME_TRANSPORT_PHASE_FAILED, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+}
+
+static void runtime_native_continue_after_startup_warning(s32 result)
+{
+    runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP;
+    runtime_transport_last_error = result;
+    runtime_transport_last_socket_error = result;
+    runtime_transport_service_started = 1;
+    runtime_transport_startup_service_started_after_completion = 1;
+    runtime_transport_ip_fd_after_startup = runtime_transport_ip_fd;
+    runtime_native_set_stage(RUNTIME_NATIVE_STAGE_HOST_ID);
+    runtime_native_next_host_id_poll = runtime_poll_counter;
+    runtime_native_next_host_id_timebase = 0;
+    runtime_set_phase(
+        RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID,
+        RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+    );
 }
 
 static void runtime_native_record_beacon_completion_failure(u32 error_phase, s32 result)
@@ -2876,6 +2950,46 @@ static void runtime_cache_invalidate(const volatile void* address, u32 size)
     __asm__ volatile("sync" ::: "memory");
 }
 
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+static void runtime_instruction_cache_sync(const volatile void* address, u32 size)
+{
+    u32 aligned = (u32)address & ~31U;
+    u32 end = ((u32)address + size + 31U) & ~31U;
+    while (aligned < end) {
+        __asm__ volatile("dcbf 0,%0" : : "r"(aligned) : "memory");
+        aligned += 32;
+    }
+    __asm__ volatile("sync" ::: "memory");
+    aligned = (u32)address & ~31U;
+    while (aligned < end) {
+        __asm__ volatile("icbi 0,%0" : : "r"(aligned) : "memory");
+        aligned += 32;
+    }
+    __asm__ volatile("sync; isync" ::: "memory");
+}
+
+static void runtime_native_install_post_copy_hook(void)
+{
+    volatile u32* hook = (volatile u32*)RUNTIME_NATIVE_POST_COPY_HOOK_ADDRESS;
+    s32 displacement = (s32)((u32)runtime_native_post_copy_wrapper - RUNTIME_NATIVE_POST_COPY_HOOK_ADDRESS);
+    if (*hook != RUNTIME_NATIVE_POST_COPY_HOOK_EXPECTED) {
+        runtime_native_post_copy_hook_result = -1;
+        return;
+    }
+    if (
+        (displacement & 3) != 0
+        || displacement < -0x02000000
+        || displacement > 0x01FFFFFC
+    ) {
+        runtime_native_post_copy_hook_result = -2;
+        return;
+    }
+    *hook = 0x48000000U | ((u32)displacement & 0x03FFFFFCU);
+    runtime_instruction_cache_sync(hook, sizeof(*hook));
+    runtime_native_post_copy_hook_result = 1;
+}
+#endif
+
 static volatile runtime_operation_context* runtime_context_for_operation(u32 operation)
 {
     if (operation == RUNTIME_TRANSPORT_OP_NWC24_STARTUP) {
@@ -3045,6 +3159,7 @@ static s32 runtime_submit_open(const char* path, u32 operation, u32 next_phase)
                 || runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
+                || runtime_transport_is_native_wc24_bootstrap_mode()
                 || runtime_transport_uses_receive_mode())
             || runtime_transport_ip_fd != -1
             || (
@@ -3107,11 +3222,12 @@ static s32 runtime_submit_close(s32 fd, u32 operation, u32 next_phase)
     }
 
     if (
-        !(runtime_transport_is_nwc24_close_kd_once_mode() || runtime_transport_is_nwc24_close_open_ip_once_mode()
+            !(runtime_transport_is_nwc24_close_kd_once_mode() || runtime_transport_is_nwc24_close_open_ip_once_mode()
             || runtime_transport_is_nwc24_close_open_ip_startup_once_mode()
             || runtime_transport_is_get_host_id_once_mode()
             || runtime_transport_is_create_socket_once_mode()
             || runtime_transport_is_bind_once_mode()
+            || runtime_transport_is_native_wc24_bootstrap_mode()
             || runtime_transport_uses_receive_mode())
         || operation != RUNTIME_TRANSPORT_OP_CLOSE_KD
         || fd < 0
@@ -3180,6 +3296,7 @@ static s32 runtime_submit_ioctl(
                 || runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
+                || runtime_transport_is_native_wc24_bootstrap_mode()
                 || runtime_transport_uses_receive_mode())
             || fd < 0
             || ioctl != IOCTL_NWC24_STARTUP
@@ -3202,6 +3319,7 @@ static s32 runtime_submit_ioctl(
                 || runtime_transport_is_get_host_id_once_mode()
                 || runtime_transport_is_create_socket_once_mode()
                 || runtime_transport_is_bind_once_mode()
+                || runtime_transport_is_native_wc24_bootstrap_mode()
                 || runtime_transport_uses_receive_mode())
             || fd < 0
             || fd != runtime_transport_ip_fd
@@ -4110,6 +4228,7 @@ static s32 runtime_consume_send_completion(void)
         runtime_native_beacon_success_count += 1;
         runtime_native_last_beacon_completion_result = runtime_transport_last_ios_result;
         runtime_transport_last_heartbeat_result = runtime_transport_last_ios_result;
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_BEACON_COMPLETE);
         if (runtime_native_first_successful_beacon_poll == 0) {
             runtime_native_first_successful_beacon_poll = runtime_poll_counter;
         }
@@ -4121,6 +4240,8 @@ static s32 runtime_consume_send_completion(void)
         } else {
             runtime_native_next_beacon_poll =
                 runtime_poll_counter + RUNTIME_NATIVE_BEACON_RETRY_POLL_INTERVAL;
+            runtime_native_next_beacon_timebase =
+                runtime_native_read_timebase() + RUNTIME_NATIVE_INTERVAL_TIMEBASE_TICKS;
             runtime_set_phase(
                 RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_BEACON_INTERVAL,
                 RUNTIME_TRANSPORT_POLL_ACTION_WAIT
@@ -4999,6 +5120,8 @@ void runtime_entry_impl(void)
     runtime_network_diagnostics_block.byte_order_applied = 1;
     runtime_network_diagnostics_block.auto_retry_enabled = 1;
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+    runtime_network_diagnostics_block.ios_version = RUNTIME_NATIVE_EXECUTION_CANARY;
+    runtime_network_diagnostics_block.ios_revision = RUNTIME_NATIVE_STAGE_RELOCATED_INITIALIZED;
     runtime_network_diagnostics_block.overlay_enabled = 1;
 #endif
     runtime_network_diagnostics_block.last_close_descriptor = -1;
@@ -5025,8 +5148,11 @@ void runtime_entry_impl(void)
     runtime_transport_last_heartbeat_result = 0;
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
     runtime_native_next_host_id_poll = 0;
+    runtime_native_next_host_id_timebase = 0;
+    runtime_native_low_level_recovery_active = 0;
     runtime_native_first_valid_host_id_poll = 0;
     runtime_native_next_beacon_poll = 0;
+    runtime_native_next_beacon_timebase = 0;
     runtime_native_beacon_attempt_count = 0;
     runtime_native_beacon_success_count = 0;
     runtime_native_beacon_submission_failure_count = 0;
@@ -5035,6 +5161,12 @@ void runtime_entry_impl(void)
     runtime_native_last_successful_beacon_poll = 0;
     runtime_native_last_beacon_submit_result = 0;
     runtime_native_last_beacon_completion_result = 0;
+    runtime_native_overlay_top_register = 0;
+    runtime_native_overlay_bottom_register = 0;
+    runtime_native_overlay_geometry = 0;
+    runtime_native_overlay_render_count = 0;
+    runtime_native_post_copy_hook_result = 0;
+    runtime_native_install_post_copy_hook();
 #endif
     runtime_transport_cleanup_close_request = -1;
 #if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
@@ -5170,7 +5302,140 @@ static const char* runtime_native_overlay_phase_name(u32 phase)
     }
 }
 
-static void runtime_native_overlay_draw_line(volatile u8* framebuffer, u32 y, const u8* line, u32 length)
+typedef struct runtime_native_xfb {
+    volatile u8* address;
+    u32 physical_address;
+    u32 width;
+    u32 height;
+    u32 stride;
+} runtime_native_xfb;
+
+static u32 runtime_native_xfb_range_valid(u32 physical_address, u32 byte_size);
+
+static u32 runtime_native_decode_xfb_physical(
+    u32 physical_address,
+    u32 width,
+    u32 height,
+    u32 stride,
+    runtime_native_xfb* xfb
+)
+{
+    u32 row_bytes = stride * 2U;
+    u32 byte_size;
+    if (
+        width < 320U || width > 720U || stride < width || stride > 2048U
+        || height < 200U || height > 576U
+    ) {
+        return 0;
+    }
+    byte_size = (height - 1U) * row_bytes + width * 2U;
+    if (!runtime_native_xfb_range_valid(physical_address, byte_size)) {
+        return 0;
+    }
+    xfb->physical_address = physical_address;
+    xfb->address = (volatile u8*)(0x80000000U | physical_address);
+    xfb->width = width;
+    xfb->height = height;
+    xfb->stride = stride;
+    return 1;
+}
+
+static u32 runtime_native_xfb_range_valid(u32 physical_address, u32 byte_size)
+{
+    u32 end = physical_address + byte_size;
+    if (end < physical_address) {
+        return 0;
+    }
+    return (physical_address >= 0x00001000U && end <= 0x01800000U)
+        || (physical_address >= 0x10000000U && end <= 0x14000000U);
+}
+
+static u32 runtime_native_decode_xfb(
+    u32 register_value,
+    u32 page_offset,
+    u32 width,
+    u32 height,
+    u32 stride,
+    runtime_native_xfb* xfb
+)
+{
+    u32 physical_address = register_value & 0x00FFFFFFU;
+    if (page_offset != 0) {
+        physical_address <<= 5;
+    }
+    return runtime_native_decode_xfb_physical(physical_address, width, height, stride, xfb);
+}
+
+static void runtime_native_overlay_set_luma(
+    const runtime_native_xfb* xfb,
+    u32 x,
+    u32 y,
+    u8 luma
+)
+{
+    if (x < xfb->width && y < xfb->height) {
+        xfb->address[(y * xfb->stride + x) * 2U] = luma;
+    }
+}
+
+static void runtime_native_overlay_fill_rect(
+    const runtime_native_xfb* xfb,
+    u32 left,
+    u32 top,
+    u32 width,
+    u32 height,
+    u8 luma
+)
+{
+    u32 y = top;
+    u32 bottom = top + height;
+    u32 right = left + width;
+    if (bottom > xfb->height) {
+        bottom = xfb->height;
+    }
+    if (right > xfb->width) {
+        right = xfb->width;
+    }
+    while (y < bottom) {
+        u32 x = left;
+        while (x < right) {
+            runtime_native_overlay_set_luma(xfb, x, y, luma);
+            x += 1;
+        }
+        y += 1;
+    }
+}
+
+static void runtime_native_overlay_border_rect(
+    const runtime_native_xfb* xfb,
+    u32 left,
+    u32 top,
+    u32 width,
+    u32 height,
+    u8 luma
+)
+{
+    u32 x = left;
+    u32 y = top;
+    while (x < left + width) {
+        runtime_native_overlay_set_luma(xfb, x, top, luma);
+        runtime_native_overlay_set_luma(xfb, x, top + height - 1U, luma);
+        x += 1;
+    }
+    while (y < top + height) {
+        runtime_native_overlay_set_luma(xfb, left, y, luma);
+        runtime_native_overlay_set_luma(xfb, left + width - 1U, y, luma);
+        y += 1;
+    }
+}
+
+static void runtime_native_overlay_draw_line(
+    const runtime_native_xfb* xfb,
+    u32 x_origin,
+    u32 y,
+    const u8* line,
+    u32 length
+)
 {
     u32 index = 0;
     while (index < length) {
@@ -5185,8 +5450,8 @@ static void runtime_native_overlay_draw_line(volatile u8* framebuffer, u32 y, co
                     while (scale_y < 2) {
                         u32 scale_x = 0;
                         while (scale_x < 2) {
-                            u32 x = 16 + index * 8 + column * 2 + scale_x;
-                            framebuffer[((y + row * 2 + scale_y) * 640 + x) * 2] = 235;
+                            u32 x = x_origin + index * 8 + column * 2 + scale_x;
+                            runtime_native_overlay_set_luma(xfb, x, y + row * 2 + scale_y, 235);
                             scale_x += 1;
                         }
                         scale_y += 1;
@@ -5200,36 +5465,34 @@ static void runtime_native_overlay_draw_line(volatile u8* framebuffer, u32 y, co
     }
 }
 
-static void runtime_native_overlay_draw(void)
+static void runtime_native_overlay_draw_xfb(const runtime_native_xfb* xfb)
 {
-    u32 framebuffer_register = *(volatile u32*)0xCC00201CU;
-    u32 physical_address = (framebuffer_register & 0x00FFFFFFU) << 5;
-    volatile u8* framebuffer;
     u8 line[64];
     u32 line_number = 0;
-    if (physical_address < 0x1000U || physical_address + 640U * 480U * 2U > 0x01800000U) {
-        return;
-    }
-    framebuffer = (volatile u8*)(0x80000000U | physical_address);
-    {
-        u32 y = 10;
-        while (y < 154) {
-            u32 x = 10;
-            while (x < 458) {
-                framebuffer[(y * 640 + x) * 2] = 32;
-                x += 1;
-            }
-            y += 1;
-        }
-    }
+    u32 panel_width = xfb->width > 466U ? 456U : xfb->width - 10U;
+    u32 panel_height = xfb->height > 190U ? 180U : xfb->height - 10U;
+    u32 flush_bottom = panel_height + 8U;
+    runtime_native_overlay_fill_rect(xfb, 8, 8, panel_width, panel_height, 32);
+    runtime_native_overlay_border_rect(xfb, 8, 8, panel_width, panel_height, 235);
+    runtime_native_overlay_fill_rect(xfb, 12, 12, 180, 18, 80);
+    runtime_native_overlay_border_rect(xfb, 12, 12, 180, 18, 235);
 #define RUNTIME_OVERLAY_BEGIN(label) \
     do { \
         line_number = 0; \
         runtime_native_overlay_append_text(line, &line_number, label); \
     } while (0)
-#define RUNTIME_OVERLAY_DRAW(row) runtime_native_overlay_draw_line(framebuffer, 16 + (row) * 12, line, line_number)
+#define RUNTIME_OVERLAY_DRAW(row) runtime_native_overlay_draw_line(xfb, 16, 38 + (row) * 12, line, line_number)
+    RUNTIME_OVERLAY_BEGIN("STAGE ");
+    runtime_native_overlay_append_u32(line, &line_number, runtime_network_diagnostics_block.ios_revision);
+    runtime_native_overlay_append_text(line, &line_number, " POLL ");
+    runtime_native_overlay_append_u32(
+        line,
+        &line_number,
+        runtime_network_diagnostics_block.shutdown_call_count % 10000U
+    );
+    runtime_native_overlay_draw_line(xfb, 18, 16, line, line_number);
     RUNTIME_OVERLAY_BEGIN("WC24 OPEN: ");
-    runtime_native_overlay_append_s32(line, &line_number, *(volatile s32*)runtime_transport_nwc24_output_buffer);
+    runtime_native_overlay_append_s32(line, &line_number, runtime_transport_nwc24_synchronous_result);
     RUNTIME_OVERLAY_DRAW(0);
     RUNTIME_OVERLAY_BEGIN("NATIVE BOOTSTRAP: ");
     runtime_native_overlay_append_s32(line, &line_number, runtime_transport_startup_callback_result);
@@ -5274,7 +5537,94 @@ static void runtime_native_overlay_draw(void)
     RUNTIME_OVERLAY_DRAW(11);
 #undef RUNTIME_OVERLAY_DRAW
 #undef RUNTIME_OVERLAY_BEGIN
-    runtime_cache_flush(framebuffer + 10 * 640 * 2, (154 - 10) * 640 * 2);
+    if (flush_bottom > xfb->height) {
+        flush_bottom = xfb->height;
+    }
+    runtime_cache_flush(
+        xfb->address + 8U * xfb->stride * 2U,
+        (flush_bottom - 8U) * xfb->stride * 2U
+    );
+}
+
+static void runtime_native_overlay_draw(void)
+{
+    volatile u16* vi = (volatile u16*)0xCC002000U;
+    u32 control = vi[1];
+    u32 vertical_timing = vi[0];
+    u32 picture_configuration = vi[0x48U / 2U];
+    u32 width = ((picture_configuration >> 8) & 0x7FU) * 16U;
+    u32 stride = (picture_configuration & 0xFFU) * 16U;
+    u32 height = (vertical_timing >> 4) & 0x3FFU;
+    u32 register_values[4];
+    u32 page_offsets[4];
+    runtime_native_xfb xfb;
+    u32 index = 0;
+    u32 rendered_addresses[4] = {0, 0, 0, 0};
+    u32 rendered_count = 0;
+    register_values[0] = ((u32)vi[0x1CU / 2U] << 16) | vi[0x1EU / 2U];
+    register_values[1] = ((u32)vi[0x24U / 2U] << 16) | vi[0x26U / 2U];
+    register_values[2] = ((u32)vi[0x20U / 2U] << 16) | vi[0x22U / 2U];
+    register_values[3] = ((u32)vi[0x28U / 2U] << 16) | vi[0x2AU / 2U];
+    page_offsets[0] = (register_values[0] >> 28) & 1U;
+    page_offsets[1] = page_offsets[0];
+    page_offsets[2] = (register_values[2] >> 28) & 1U;
+    page_offsets[3] = page_offsets[2];
+    runtime_native_overlay_top_register = register_values[0];
+    runtime_native_overlay_bottom_register = register_values[1];
+    runtime_native_overlay_geometry = (picture_configuration << 16) | vertical_timing;
+    while (index < 4U) {
+        u32 duplicate = 0;
+        u32 rendered_index = 0;
+        if (index >= 2U && (control & 8U) == 0) {
+            index += 1;
+            continue;
+        }
+        if (!runtime_native_decode_xfb(
+                register_values[index],
+                page_offsets[index],
+                width,
+                height,
+                stride,
+                &xfb
+            )) {
+            index += 1;
+            continue;
+        }
+        while (rendered_index < rendered_count) {
+            if (rendered_addresses[rendered_index] == xfb.physical_address) {
+                duplicate = 1;
+                break;
+            }
+            rendered_index += 1;
+        }
+        if (duplicate == 0) {
+            runtime_native_overlay_draw_xfb(&xfb);
+            rendered_addresses[rendered_count] = xfb.physical_address;
+            rendered_count += 1;
+        }
+        index += 1;
+    }
+    runtime_native_overlay_render_count = rendered_count;
+}
+
+void runtime_native_overlay_draw_destination(u32 destination)
+{
+    volatile u16* vi = (volatile u16*)0xCC002000U;
+    u32 vertical_timing = vi[0];
+    u32 picture_configuration = vi[0x48U / 2U];
+    u32 width = ((picture_configuration >> 8) & 0x7FU) * 16U;
+    u32 stride = (picture_configuration & 0xFFU) * 16U;
+    u32 height = (vertical_timing >> 4) & 0x3FFU;
+    u32 physical_address = destination & 0x3FFFFFFFU;
+    runtime_native_xfb xfb;
+    if (runtime_native_decode_xfb_physical(physical_address, width, height, stride, &xfb)) {
+        runtime_native_overlay_draw_xfb(&xfb);
+    }
+    physical_address += width * 2U;
+    if (runtime_native_decode_xfb_physical(physical_address, width, height, stride, &xfb)) {
+        runtime_native_overlay_draw_xfb(&xfb);
+    }
+    runtime_native_overlay_draw();
 }
 #undef RUNTIME_GLYPH5
 #endif
@@ -5288,6 +5638,15 @@ void runtime_poll_entry_impl(void)
     runtime_diag_increment(&runtime_poll_entry_count);
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_POLL_ENTRY);
 
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+    if (runtime_network_diagnostics_block.ios_version == RUNTIME_NATIVE_EXECUTION_CANARY) {
+        runtime_network_diagnostics_block.shutdown_call_count += 1;
+        if (runtime_network_diagnostics_block.ios_revision < RUNTIME_NATIVE_STAGE_RECURRING_HOOK_ENTERED) {
+            runtime_native_set_stage(RUNTIME_NATIVE_STAGE_RECURRING_HOOK_ENTERED);
+        }
+    }
+#endif
+
 #if !PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
     runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
     goto runtime_poll_exit;
@@ -5297,6 +5656,15 @@ void runtime_poll_entry_impl(void)
     runtime_diag_increment(&runtime_state_machine_entry_count);
     runtime_diag_store_marker(RUNTIME_DIAGNOSTIC_MARKER_STATE_MACHINE_ENTRY);
     state_machine_entered = 1;
+
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+    if (
+        runtime_transport_is_native_wc24_bootstrap_mode()
+        && runtime_network_diagnostics_block.ios_revision < RUNTIME_NATIVE_STAGE_MODE_RECOGNIZED
+    ) {
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_MODE_RECOGNIZED);
+    }
+#endif
 
     if (runtime_network_diagnostics_block.reset_counters_request != 0) {
         runtime_network_diagnostics_block.reset_counters_request = 0;
@@ -5392,6 +5760,11 @@ void runtime_poll_entry_impl(void)
     }
 
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_INITIAL_DELAY) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+        if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+            runtime_native_set_stage(RUNTIME_NATIVE_STAGE_STARTUP_DELAY);
+        }
+#endif
         if (runtime_poll_counter >= runtime_network_diagnostics_block.initial_delay_polls) {
             runtime_set_phase(
                 runtime_transport_is_native_wc24_bootstrap_mode()
@@ -5408,6 +5781,7 @@ void runtime_poll_entry_impl(void)
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
         s32 nwc24_result;
         s32 bootstrap_result;
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_BOOTSTRAP_ENTERED);
         runtime_transport_open_ip_submit_count += 1;
         nwc24_result = runtime_call_retail_nwc24_open_lib();
         *(volatile s32*)runtime_transport_nwc24_output_buffer = nwc24_result;
@@ -5429,9 +5803,11 @@ void runtime_poll_entry_impl(void)
         }
         runtime_transport_kd_fd = -1;
         runtime_transport_kd_closed = 1;
-        runtime_transport_service_started = 1;
+        runtime_transport_service_started = 0;
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_BOOTSTRAP_RETURNED);
         runtime_native_next_host_id_poll = runtime_poll_counter;
-        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
+        runtime_native_next_host_id_timebase = 0;
+        runtime_set_phase(RUNTIME_TRANSPORT_PHASE_OPEN_KD, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
 #else
         s32 nwc24_result;
         s32 bootstrap_result;
@@ -5463,23 +5839,50 @@ void runtime_poll_entry_impl(void)
     }
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID) {
-        if (runtime_poll_counter < runtime_native_next_host_id_poll) {
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_HOST_ID);
+        if (
+            runtime_poll_counter < runtime_native_next_host_id_poll
+            || !runtime_native_deadline_reached(runtime_native_next_host_id_timebase)
+        ) {
             runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_WAIT;
         } else if (runtime_transport_get_host_id_submit_count >= RUNTIME_NATIVE_HOST_ID_ATTEMPT_LIMIT) {
             runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID;
             runtime_transport_last_error = runtime_transport_get_host_id_callback_result;
-            runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT, RUNTIME_TRANSPORT_POLL_ACTION_ERROR);
+            if (runtime_native_low_level_recovery_active == 0 && runtime_transport_ip_fd >= 0) {
+                runtime_native_low_level_recovery_active = 1;
+                runtime_transport_get_host_id_submit_count = 0;
+                runtime_transport_get_host_id_callback_count = 0;
+                runtime_transport_get_host_id_callback_exit_count = 0;
+                runtime_transport_get_host_id_submit_generation = 0;
+                runtime_transport_get_host_id_callback_generation = 0;
+                runtime_transport_host_id_ready = 0;
+                runtime_transport_service_started = 0;
+                runtime_transport_kd_fd = runtime_transport_ip_fd;
+                runtime_transport_ip_fd = -1;
+                runtime_transport_kd_closed = 0;
+                runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CLOSE_KD, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
+            } else {
+                runtime_native_set_stage(RUNTIME_NATIVE_STAGE_TERMINAL_FAILURE);
+                runtime_set_phase(
+                    RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT,
+                    RUNTIME_TRANSPORT_POLL_ACTION_ERROR
+                );
+            }
         } else {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_GETHOSTID, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
         }
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET) {
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_SOCKET);
         runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
         goto runtime_poll_exit;
     }
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_BEACON_INTERVAL) {
-        if (runtime_poll_counter < runtime_native_next_beacon_poll) {
+        if (
+            runtime_poll_counter < runtime_native_next_beacon_poll
+            || !runtime_native_deadline_reached(runtime_native_next_beacon_timebase)
+        ) {
             runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_WAIT;
         } else {
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NATIVE_SUBMIT_BEACON, RUNTIME_TRANSPORT_POLL_ACTION_SEND);
@@ -5579,6 +5982,13 @@ void runtime_poll_entry_impl(void)
             if (wait_result < 0) {
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
                 if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                    if (
+                        waiting_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP
+                        && runtime_native_low_level_recovery_active == 0
+                    ) {
+                        runtime_native_continue_after_startup_warning(runtime_transport_last_ios_result);
+                        goto runtime_poll_exit;
+                    }
                     if (runtime_transport_phase != RUNTIME_TRANSPORT_PHASE_FAILED) {
                         runtime_native_record_fatal_error(waiting_phase, runtime_transport_last_ios_result);
                     }
@@ -5597,6 +6007,15 @@ void runtime_poll_entry_impl(void)
 
         if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_OPEN_KD) {
             if (runtime_transport_last_ios_result < 0) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                    runtime_native_record_fatal_error(
+                        RUNTIME_TRANSPORT_PHASE_WAIT_OPEN_KD,
+                        runtime_transport_last_ios_result
+                    );
+                    goto runtime_poll_exit;
+                }
+#endif
                 runtime_record_init_error(runtime_transport_last_ios_result);
                 goto runtime_poll_exit;
             }
@@ -5616,7 +6035,15 @@ void runtime_poll_entry_impl(void)
                 runtime_record_init_error(runtime_transport_last_ios_result);
                 goto runtime_poll_exit;
             }
-            if (*(volatile s32*)runtime_transport_nwc24_output_buffer == -29 && runtime_transport_uses_receive_mode()) {
+            if (
+                *(volatile s32*)runtime_transport_nwc24_output_buffer == -29
+                && (
+                    runtime_transport_uses_receive_mode()
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                    || runtime_transport_is_native_wc24_bootstrap_mode()
+#endif
+                )
+            ) {
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_READY, RUNTIME_TRANSPORT_POLL_ACTION_RETRY);
                 goto runtime_poll_exit;
             }
@@ -5624,12 +6051,30 @@ void runtime_poll_entry_impl(void)
                 *(volatile s32*)runtime_transport_nwc24_output_buffer < 0
                 && *(volatile s32*)runtime_transport_nwc24_output_buffer != -15
             ) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                    runtime_native_record_fatal_error(
+                        RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_STARTUP,
+                        *(volatile s32*)runtime_transport_nwc24_output_buffer
+                    );
+                    goto runtime_poll_exit;
+                }
+#endif
                 runtime_record_init_error(*(volatile s32*)runtime_transport_nwc24_output_buffer);
                 goto runtime_poll_exit;
             }
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CLOSE_KD, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_KD) {
             if (runtime_transport_last_ios_result < 0) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                    runtime_native_record_fatal_error(
+                        RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_KD,
+                        runtime_transport_last_ios_result
+                    );
+                    goto runtime_poll_exit;
+                }
+#endif
                 runtime_record_init_error(runtime_transport_last_ios_result);
                 goto runtime_poll_exit;
             }
@@ -5641,7 +6086,14 @@ void runtime_poll_entry_impl(void)
                 goto runtime_poll_exit;
             }
             runtime_set_phase(
-                runtime_transport_uses_receive_mode()
+                (runtime_transport_uses_receive_mode()
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                    || (
+                        runtime_transport_is_native_wc24_bootstrap_mode()
+                        && runtime_native_low_level_recovery_active != 1
+                    )
+#endif
+                )
                     ? RUNTIME_TRANSPORT_PHASE_SO_STARTUP
                     : RUNTIME_TRANSPORT_PHASE_OPEN_IP,
                 RUNTIME_TRANSPORT_POLL_ACTION_INIT
@@ -5652,18 +6104,40 @@ void runtime_poll_entry_impl(void)
                 goto runtime_poll_exit;
             }
             runtime_transport_ip_fd = runtime_transport_last_ios_result;
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+            if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                runtime_native_low_level_recovery_active = 2;
+            }
+#endif
             if (runtime_transport_is_open_ip_once_mode() || runtime_transport_is_nwc24_close_open_ip_once_mode()) {
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
                 goto runtime_poll_exit;
             }
             runtime_set_phase(
-                runtime_transport_uses_receive_mode()
+                (runtime_transport_uses_receive_mode()
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                    || runtime_transport_is_native_wc24_bootstrap_mode()
+#endif
+                )
                     ? RUNTIME_TRANSPORT_PHASE_OPEN_KD
                     : RUNTIME_TRANSPORT_PHASE_SO_STARTUP,
                 RUNTIME_TRANSPORT_POLL_ACTION_INIT
             );
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP) {
             if (runtime_transport_last_ios_result < 0) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+                if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                    if (runtime_native_low_level_recovery_active == 0) {
+                        runtime_native_continue_after_startup_warning(runtime_transport_last_ios_result);
+                    } else {
+                        runtime_native_record_fatal_error(
+                            RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP,
+                            runtime_transport_last_ios_result
+                        );
+                    }
+                    goto runtime_poll_exit;
+                }
+#endif
                 runtime_record_socket_error(runtime_transport_last_ios_result);
                 goto runtime_poll_exit;
             }
@@ -5680,6 +6154,18 @@ void runtime_poll_entry_impl(void)
                 runtime_set_phase(RUNTIME_TRANSPORT_PHASE_DIAGNOSTIC_COMPLETE, RUNTIME_TRANSPORT_POLL_ACTION_WAIT);
                 goto runtime_poll_exit;
             }
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+            if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                runtime_native_set_stage(RUNTIME_NATIVE_STAGE_HOST_ID);
+                runtime_native_next_host_id_poll = runtime_poll_counter;
+                runtime_native_next_host_id_timebase = 0;
+                runtime_set_phase(
+                    RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID,
+                    RUNTIME_TRANSPORT_POLL_ACTION_WAIT
+                );
+                goto runtime_poll_exit;
+            }
+#endif
             runtime_set_phase(RUNTIME_TRANSPORT_PHASE_GETHOSTID, RUNTIME_TRANSPORT_POLL_ACTION_INIT);
         } else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_GETHOSTID) {
             runtime_transport_get_host_id_service_started_after_completion = runtime_transport_service_started;
@@ -5694,6 +6180,8 @@ void runtime_poll_entry_impl(void)
                 if (runtime_transport_is_native_wc24_bootstrap_mode()) {
                     runtime_native_next_host_id_poll =
                         runtime_poll_counter + RUNTIME_NATIVE_HOST_ID_RETRY_POLL_INTERVAL;
+                    runtime_native_next_host_id_timebase =
+                        runtime_native_read_timebase() + RUNTIME_NATIVE_INTERVAL_TIMEBASE_TICKS;
                     runtime_set_phase(
                         RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID,
                         RUNTIME_TRANSPORT_POLL_ACTION_WAIT
@@ -5721,6 +6209,7 @@ void runtime_poll_entry_impl(void)
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
             if (runtime_transport_is_native_wc24_bootstrap_mode()) {
                 runtime_native_first_valid_host_id_poll = runtime_poll_counter;
+                runtime_native_set_stage(RUNTIME_NATIVE_STAGE_SOCKET);
                 runtime_set_phase(
                     RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET,
                     RUNTIME_TRANSPORT_POLL_ACTION_INIT
@@ -5777,6 +6266,7 @@ void runtime_poll_entry_impl(void)
                 runtime_prepare_heartbeat();
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
                 runtime_native_next_beacon_poll = runtime_poll_counter;
+                runtime_native_next_beacon_timebase = 0;
                 runtime_set_phase(
                     RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_BEACON_INTERVAL,
                     RUNTIME_TRANSPORT_POLL_ACTION_WAIT
@@ -5895,7 +6385,17 @@ void runtime_poll_entry_impl(void)
                 RUNTIME_TRANSPORT_PHASE_WAIT_OPEN_KD
             ) < 0
         ) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+            if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                runtime_native_record_fatal_error(
+                    RUNTIME_TRANSPORT_PHASE_OPEN_KD,
+                    runtime_transport_last_submit_result
+                );
+            } else
+#endif
+            {
             runtime_record_init_error(runtime_transport_last_submit_result);
+            }
         }
         goto runtime_poll_exit;
     }
@@ -5921,7 +6421,17 @@ void runtime_poll_entry_impl(void)
                 RUNTIME_TRANSPORT_PHASE_WAIT_NWC24_STARTUP
             ) < 0
         ) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+            if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                runtime_native_record_fatal_error(
+                    RUNTIME_TRANSPORT_PHASE_NWC24_STARTUP,
+                    runtime_transport_last_submit_result
+                );
+            } else
+#endif
+            {
             runtime_record_init_error(runtime_transport_last_submit_result);
+            }
         }
         goto runtime_poll_exit;
     }
@@ -5937,7 +6447,17 @@ void runtime_poll_entry_impl(void)
                 RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_KD
             ) < 0
         ) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+            if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                runtime_native_record_fatal_error(
+                    RUNTIME_TRANSPORT_PHASE_CLOSE_KD,
+                    runtime_transport_last_submit_result
+                );
+            } else
+#endif
+            {
             runtime_record_init_error(runtime_transport_last_submit_result);
+            }
         }
         goto runtime_poll_exit;
     }
@@ -5968,7 +6488,17 @@ void runtime_poll_entry_impl(void)
                 RUNTIME_TRANSPORT_PHASE_WAIT_SO_STARTUP
             ) < 0
         ) {
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+            if (runtime_transport_is_native_wc24_bootstrap_mode()) {
+                runtime_native_record_fatal_error(
+                    RUNTIME_TRANSPORT_PHASE_SO_STARTUP,
+                    runtime_transport_last_submit_result
+                );
+            } else
+#endif
+            {
             runtime_record_socket_error(runtime_transport_last_submit_result);
+            }
         }
         goto runtime_poll_exit;
     }
@@ -6143,6 +6673,7 @@ void runtime_poll_entry_impl(void)
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
     if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_SUBMIT_BEACON) {
         s32 submit_result;
+        runtime_native_set_stage(RUNTIME_NATIVE_STAGE_BEACON_SUBMIT);
         runtime_native_beacon_attempt_count += 1;
         runtime_transport_send_submit_count += 1;
         submit_result = runtime_submit_ioctlv_send(RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_BEACON);

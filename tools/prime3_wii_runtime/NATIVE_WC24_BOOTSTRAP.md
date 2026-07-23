@@ -16,7 +16,21 @@ specific to that executable.
 | `0x80500684` | Retail SO initializer | Opens the SO resource, stores its descriptor at `-26024(r13)`, and initializes the retail SO work arena. |
 
 The direct native call sequence is therefore NWC24 library open, retail network bootstrap,
-read the retail SO descriptor, poll SOGetHostID, create a socket, and send diagnostic UDP beacons. It does not
+and read the retail SO descriptor. The retail bootstrap can return zero after logging and
+swallowing an internal KD/network setup failure. Live Dolphin evidence showed both 20
+`SOGetHostID` results of `-101` after trusting that result and an IOS `-101` result when
+`SOStartup` was submitted immediately on the retained descriptor.
+
+The diagnostic recovery retains that descriptor, reruns the proven low-level KD open,
+NWC24 startup, and KD close sequence, and only then submits the verified SOStartup command.
+If that duplicate startup still completes with the observed `-101`, the diagnostic preserves
+it as a startup warning and proceeds only to the bounded host-ID readiness gate. It does not
+create a socket unless SOGetHostID subsequently returns a valid nonzero address.
+If all 20 reads fail, one explicit low-level recovery closes only the unusable retained SO
+descriptor, opens a fresh `/dev/net/ip/top` descriptor, and repeats KD startup, KD close,
+SOStartup, and the bounded readiness gate. The native bootstrap itself is not called again.
+A startup failure or second host-ID timeout after descriptor replacement is terminal.
+It then polls SOGetHostID, creates a socket, and sends diagnostic UDP beacons. It does not
 enter friend-list, mailbox, voucher, recipient-selection, or menu code. Calls use the
 game's verified `r2` and `r13` values through the existing retail-call veneer ABI.
 
@@ -29,11 +43,13 @@ close path; successful diagnostic ownership is retained instead.
 ## Diagnostic mode
 
 `native_wc24_bootstrap_beacon_once` waits for the recurring hook's normal initial delay and
-runs the native sequence once. It polls SOGetHostID at 30-poll intervals for up to 20
-attempts. A valid nonzero host ID advances to socket creation; otherwise the mode remains
-terminally in `NATIVE_HOST_ID_TIMEOUT` after an additional 30-poll timeout interval. It then
+runs the native sequence once. It polls SOGetHostID at intervals of at least 30 recurring-hook
+calls and 0.5 seconds for up to 20 attempts. The timebase requirement is necessary because the
+selected retail hook can execute thousands of times per second, so poll counts alone do not
+provide a useful network-readiness window. A valid nonzero host ID advances to socket creation;
+otherwise the mode remains terminally in `NATIVE_HOST_ID_TIMEOUT`. It then
 submits 10 UDP beacons, waits for each asynchronous completion, and waits at least 30
-recurring-hook polls after each completion before the next submission. Successful completion
+recurring-hook polls and 0.5 seconds after each completion before the next submission. Successful completion
 enters `NATIVE_BEACON_COMPLETE`. Submission, asynchronous completion, socket, and bootstrap
 failures enter terminal `FAILED` without routing through generic receive-mode recovery.
 
@@ -45,14 +61,37 @@ Packaged assets contain `192.168.50.248` as a guarded placeholder. The export di
 an IPv4 destination and patches only that copied four-byte field. UDP port `43674` is fixed and
 cannot be overridden.
 
-An allocation-free 3x5 debug font is drawn at the upper-left of the active 640x480 XFB after
-each recurring-hook poll. It changes luminance bytes only, uses a compact `448x144` background,
-and remains visible in terminal success and failure phases. This renderer is compiled only
-for mode 23; production and the other diagnostic modes contain no overlay code.
+An allocation-free 3x5 debug font is drawn after every recurring-hook poll. The renderer reads
+the VI top/bottom XFB registers, honors the register's page-offset bit, derives width and stride
+from VI picture configuration, derives field height from VI vertical timing, accepts validated
+MEM1 and MEM2 ranges, and draws every distinct active field (plus right-eye fields when 3D mode
+is active). It changes only the Y bytes in Wii YCbCr 4:2:2 pairs, clips every write, and flushes
+the complete modified row range. A bordered upper-left marker reports the execution stage and
+poll count before the full diagnostic text. This renderer is compiled only for mode 23;
+production and the other diagnostic modes contain no overlay code.
 
-The existing fixed `CP3D` block at `0x817E0100` remains version 1 and size `0x100`. Fields
-unused by this non-listening mode have the following mode-specific meanings:
+The recurring hook at `0x800BB71C` is a high-frequency game accessor and runs before Prime 3's
+frame copy, so its direct XFB writes can be replaced by the later EFB-to-XFB operation. The
+retail SDK `GXCopyDisp` implementation is `0x804D3624`; its sole wrapper calls it at
+`0x8037245C`, then executes `lwz r0, 0x14(r1)` at `0x80372460`. Native mode verifies that exact
+instruction before replacing it with a branch to the relocated post-copy overlay wrapper. The
+wrapper draws both fields of the copied destination and every live VI XFB, executes the
+verified synchronous `GXDrawDone` path at `0x804D2644` before drawing, executes the displaced
+instruction, and resumes at `0x80372464`. Waiting for draw completion is required because
+`GXCopyDisp` only submits the GPU copy; drawing immediately after submission races and can be
+overwritten by the later copy-to-RAM operation. Installation flushes the changed data-cache
+line and invalidates the corresponding instruction-cache line. A mismatch fails closed without
+patching retail code. No post-copy wrapper is compiled or installed for any other mode.
 
+The relocated runtime's manifest-declared `CP3D` block remains version 1 and size `0x100`.
+`0x817E0100` is the separate entry-bootstrap canary block; it is not the network diagnostics
+block. Fields unused by this non-listening mode have the following mode-specific meanings:
+
+- IOS version: execution canary `NAT1` (`0x4E415431`)
+- IOS revision: execution stage (`1` through `10`, or `15` for terminal failure)
+- shutdown call count: recurring-hook execution count
+- overlay page: signed post-copy hook result (`1` installed, `-1` instruction mismatch,
+  `-2` unreachable or unaligned wrapper)
 - initialization attempt count: native bootstrap calls
 - NWC24 result: native library-open result
 - network initialization result: retail network-bootstrap result
@@ -71,6 +110,22 @@ unused by this non-listening mode have the following mode-specific meanings:
 - last heartbeat result: last asynchronous beacon completion result
 - cleanup call count: successful cleanup suppressions or deferrals
 - current phase and error fields: exact terminal or failed operation state
+
+The execution stages are:
+
+| Value | Stage |
+| ---: | --- |
+| 1 | relocated runtime initialized |
+| 2 | recurring hook entered |
+| 3 | native mode recognized |
+| 4 | startup delay active |
+| 5 | native bootstrap entered |
+| 6 | native bootstrap returned |
+| 7 | host-ID polling |
+| 8 | socket creation |
+| 9 | beacon submission |
+| 10 | beacon completion |
+| 15 | terminal failure |
 
 The appended native phases preserve every older numeric value:
 

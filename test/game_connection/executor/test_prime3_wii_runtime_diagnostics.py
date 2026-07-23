@@ -44,6 +44,23 @@ def test_diagnostics_layout_is_fixed_and_parses_signed_results() -> None:
     assert result.build_id_text == "P3W1"
 
 
+def test_native_execution_aliases_reuse_unused_v1_fields() -> None:
+    raw = _diagnostic_bytes(
+        ios_version=diagnostics.NATIVE_EXECUTION_CANARY,
+        ios_revision=7,
+        shutdown_call_count=1234,
+        overlay_page=-1,
+    )
+
+    result = parse_diagnostics(raw)
+
+    assert len(raw) == DIAGNOSTICS_SIZE
+    assert result.native_execution_canary == diagnostics.NATIVE_EXECUTION_CANARY
+    assert result.native_execution_stage == 7
+    assert result.native_recurring_hook_count == 1234
+    assert result.native_post_copy_hook_result == -1
+
+
 def test_diagnostics_preserve_advisory_verification_failure_without_claiming_endpoint() -> None:
     raw = _diagnostic_bytes(
         getsockname_result=-22,

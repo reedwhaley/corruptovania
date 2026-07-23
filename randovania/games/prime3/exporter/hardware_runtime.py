@@ -33,12 +33,12 @@ from randovania.games.prime3.exporter.runtime_payload import (
 )
 from tools.prime3_wii_runtime.build_payload import (
     DEFAULT_NATIVE_BEACON_IPV4,
-    DEFAULT_NATIVE_BEACON_PORT,
     build_prime3_runtime_payload,
 )
 
 if TYPE_CHECKING:
     import uuid
+    from ipaddress import IPv4Address
     from pathlib import Path
 
 CP3W_UDP_PORT = 43674
@@ -111,7 +111,6 @@ def build_hardware_runtime_payload(
     runtime_mode: Prime3HardwareRuntimeMode,
     *,
     native_beacon_ipv4: int = DEFAULT_NATIVE_BEACON_IPV4,
-    native_beacon_port: int = DEFAULT_NATIVE_BEACON_PORT,
 ) -> Prime3RuntimePayloadManifest:
     production = runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION
     return build_prime3_runtime_payload(
@@ -122,7 +121,6 @@ def build_hardware_runtime_payload(
         ios_udp_mode=runtime_mode.value,
         ios_udp_loop_count=0 if production else 1,
         native_beacon_ipv4=native_beacon_ipv4,
-        native_beacon_port=native_beacon_port,
         reserved_high=PRODUCTION_RESERVED_HIGH,
         diagnostic_address=PRODUCTION_DIAGNOSTIC_ADDRESS,
     )
@@ -188,6 +186,8 @@ def load_validated_production_runtime_assets(
 def load_or_build_hardware_runtime(
     output_dir: Path,
     runtime_mode: Prime3HardwareRuntimeMode,
+    *,
+    beacon_ipv4: IPv4Address | None = None,
 ) -> tuple[bytes, Prime3RuntimePayloadManifest]:
     packaged_base_dir = randovania.get_data_path().joinpath("prime3_wii_runtime")
     packaged_dir = runtime_asset_directory(packaged_base_dir, runtime_mode)
@@ -203,6 +203,12 @@ def load_or_build_hardware_runtime(
         assets = load_validated_hardware_runtime_assets(build_dir, runtime_mode, require_elf=True)
         payload = assets.payload
     _validate_hardware_manifest(payload, manifest, runtime_mode)
+    if runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
+        if beacon_ipv4 is None:
+            raise Prime3DolPatchError("Native WiiConnect24 bootstrap beacon mode requires a destination IPv4 address.")
+        payload, manifest = patch_native_beacon_ipv4(payload, manifest, beacon_ipv4)
+    elif beacon_ipv4 is not None:
+        raise Prime3DolPatchError("Beacon destination IPv4 is only valid for native WiiConnect24 bootstrap mode.")
     return payload, manifest
 
 
@@ -249,8 +255,13 @@ def patch_prime3_hardware_dol_file_atomic(
     *,
     runtime_build_dir: Path,
     runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
+    beacon_ipv4: IPv4Address | None = None,
 ) -> Prime3HardwarePatchResult:
-    payload, manifest = load_or_build_hardware_runtime(runtime_build_dir, runtime_mode)
+    payload, manifest = load_or_build_hardware_runtime(
+        runtime_build_dir,
+        runtime_mode,
+        beacon_ipv4=beacon_ipv4,
+    )
     patched_dol, result = patch_prime3_hardware_dol(
         path.read_bytes(),
         layout_uuid,
@@ -349,6 +360,16 @@ def _validate_hardware_manifest(
         )
     if transport.udp_port != CP3W_UDP_PORT:
         raise Prime3DolPatchError("Prime 3 hardware runtime must use UDP port 43674.")
+    patch_field = manifest.beacon_ipv4_patch
+    if runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
+        if patch_field is None:
+            raise Prime3DolPatchError("Native beacon runtime manifest is missing IPv4 patch metadata.")
+        expected = bytes.fromhex(patch_field.expected_original_bytes)
+        start = patch_field.payload_offset
+        if payload[start : start + patch_field.field_size] != expected:
+            raise Prime3DolPatchError("Native beacon IPv4 field does not match the manifest expected bytes.")
+    elif patch_field is not None:
+        raise Prime3DolPatchError("Beacon IPv4 patch metadata is only valid for native bootstrap mode.")
     if runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION and (
         transport.cp3w_game_identity is None or transport.cp3w_inventory is None
     ):
@@ -357,6 +378,41 @@ def _validate_hardware_manifest(
 
 def _validate_production_manifest(payload: bytes, manifest: Prime3RuntimePayloadManifest) -> None:
     _validate_hardware_manifest(payload, manifest, Prime3HardwareRuntimeMode.PRODUCTION)
+
+
+def patch_native_beacon_ipv4(
+    payload: bytes,
+    manifest: Prime3RuntimePayloadManifest,
+    beacon_ipv4: IPv4Address,
+) -> tuple[bytes, Prime3RuntimePayloadManifest]:
+    runtime_mode = Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
+    _validate_hardware_manifest(payload, manifest, runtime_mode)
+    patch_field = manifest.beacon_ipv4_patch
+    relocated = manifest.relocated_runtime
+    assert patch_field is not None
+    assert relocated is not None
+
+    replacement = beacon_ipv4.packed
+    patched = bytearray(payload)
+    start = patch_field.payload_offset
+    patched[start : start + patch_field.field_size] = replacement
+    patched_payload = bytes(patched)
+
+    blob_start = relocated.embedded_runtime_blob_offset
+    blob_end = blob_start + relocated.embedded_runtime_blob_size
+    patched_relocated = dataclasses.replace(
+        relocated,
+        embedded_runtime_blob_sha256=hashlib.sha256(patched_payload[blob_start:blob_end]).hexdigest(),
+    )
+    patched_field = dataclasses.replace(patch_field, expected_original_bytes=replacement.hex())
+    patched_manifest = dataclasses.replace(
+        manifest,
+        payload_sha256=hashlib.sha256(patched_payload).hexdigest(),
+        relocated_runtime=patched_relocated,
+        beacon_ipv4_patch=patched_field,
+    )
+    _validate_hardware_manifest(patched_payload, patched_manifest, runtime_mode)
+    return patched_payload, patched_manifest
 
 
 def _branch_at(dol: bytes, address: int) -> DecodedBranchInstruction:

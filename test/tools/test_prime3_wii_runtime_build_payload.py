@@ -1450,7 +1450,6 @@ def test_native_wc24_bootstrap_beacon_manifest_and_state_machine(tmp_path: Path)
         ios_udp_mode="native_wc24_bootstrap_beacon_once",
         ios_udp_loop_count=1,
         native_beacon_ipv4=0xC0000201,
-        native_beacon_port=45678,
         reserved_high=0x817E0000,
         diagnostic_address=0x817E0100,
     )
@@ -1463,8 +1462,16 @@ def test_native_wc24_bootstrap_beacon_manifest_and_state_machine(tmp_path: Path)
     assert transport.send_enabled is True
     assert transport.kd_close_enabled is False
     assert transport.socket_close_on_success is False
-    assert transport.terminal_phase_value == 0xFE
-    assert transport.terminal_phase_name == "DIAGNOSTIC_COMPLETE"
+    assert transport.terminal_phase_value == 115
+    assert transport.terminal_phase_name == "NATIVE_BEACON_COMPLETE"
+    assert transport.udp_port == 43674
+    assert manifest.beacon_ipv4_patch is not None
+    assert manifest.beacon_ipv4_patch.field_size == 4
+    assert manifest.beacon_ipv4_patch.byte_order == "big"
+    assert manifest.beacon_ipv4_patch.expected_original_bytes == "c0000201"
+    payload = tmp_path.joinpath("payload.bin").read_bytes()
+    offset = manifest.beacon_ipv4_patch.payload_offset
+    assert payload[offset : offset + 4] == bytes.fromhex("c0000201")
 
     source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
     native_block = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_BOOTSTRAP)", 1)[1].split(
@@ -1477,15 +1484,187 @@ def test_native_wc24_bootstrap_beacon_manifest_and_state_machine(tmp_path: Path)
         "runtime_read_retail_so_fd()"
     )
     assert "runtime_submit_close" not in native_block
-    assert "RUNTIME_TRANSPORT_PHASE_GETHOSTID" in native_block
+    assert "RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID" in native_block
     assert "runtime_transport_cleanup_deferred_count += 1" in source
+
+
+def test_native_wc24_host_id_readiness_polling_is_bounded_and_spaced() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "RUNTIME_NATIVE_HOST_ID_RETRY_POLL_INTERVAL = 30" in source
+    assert "RUNTIME_NATIVE_HOST_ID_ATTEMPT_LIMIT = 20" in source
+    wait_block = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID)", 1)[
+        1
+    ].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET)", 1)[0]
+    assert wait_block.index("runtime_poll_counter < runtime_native_next_host_id_poll") < wait_block.index(
+        "runtime_transport_get_host_id_submit_count >= RUNTIME_NATIVE_HOST_ID_ATTEMPT_LIMIT"
+    )
+    assert "RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT" in wait_block
+
+    completion_block = source.split("} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_GETHOSTID)", 1)[
+        1
+    ].split("} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET)", 1)[0]
+    assert completion_block.index("if (!runtime_host_id_is_ready(runtime_transport_last_ios_result))") < (
+        completion_block.index("RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID")
+    )
+    assert "runtime_poll_counter + RUNTIME_NATIVE_HOST_ID_RETRY_POLL_INTERVAL" in completion_block
+    assert completion_block.index("runtime_transport_host_id_ready = 1") < completion_block.index(
+        "RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET"
+    )
+
+
+def test_native_wc24_does_not_create_socket_before_valid_host_id() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    native_bootstrap = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_BOOTSTRAP)", 1)[
+        1
+    ].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID)", 1)[0]
+
+    assert "RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET" not in native_bootstrap
+    assert native_bootstrap.index("runtime_read_retail_so_fd()") < native_bootstrap.index(
+        "RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID"
+    )
+    assert (
+        "runtime_set_phase(RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET, RUNTIME_TRANSPORT_POLL_ACTION_INIT);"
+        in source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_CREATE_BEACON_SOCKET)", 1)[1]
+    )
+
+
+def test_native_wc24_beacons_are_serialized_and_spaced() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    assert "RUNTIME_NATIVE_BEACON_RETRY_POLL_INTERVAL = 30" in source
+    assert "RUNTIME_NATIVE_BEACON_ATTEMPT_LIMIT = 10" in source
+    interval_block = source.split(
+        "if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_BEACON_INTERVAL)", 1
+    )[1].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RESTART_REQUESTED)", 1)[0]
+    assert interval_block.index("runtime_poll_counter < runtime_native_next_beacon_poll") < interval_block.index(
+        "RUNTIME_TRANSPORT_PHASE_NATIVE_SUBMIT_BEACON"
+    )
+
+    submit_block = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_SUBMIT_BEACON)", 1)[
+        1
+    ].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_SUBMIT_HEARTBEAT)", 1)[0]
+    assert submit_block.index("runtime_native_beacon_attempt_count += 1") < submit_block.index(
+        "runtime_submit_ioctlv_send(RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_BEACON)"
+    )
+    assert "runtime_native_beacon_submission_failure_count += 1" in submit_block
+
+    completion_block = source.split("if (native_beacon != 0) {", 7)[-1].split("if (heartbeat != 0)", 1)[0]
+    assert "runtime_native_beacon_success_count += 1" in completion_block
+    assert "runtime_poll_counter + RUNTIME_NATIVE_BEACON_RETRY_POLL_INTERVAL" in completion_block
+    assert completion_block.index("RUNTIME_NATIVE_BEACON_ATTEMPT_LIMIT") < completion_block.index(
+        "RUNTIME_TRANSPORT_PHASE_NATIVE_BEACON_COMPLETE"
+    )
+
+
+def test_native_wc24_beacon_failures_are_terminal_without_generic_recovery() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    fatal_helper = source.split("static void runtime_native_record_fatal_error", 1)[1].split(
+        "static void runtime_native_record_beacon_completion_failure", 1
+    )[0]
+    completion_failure = source.split("static void runtime_native_record_beacon_completion_failure", 1)[1].split(
+        "static void runtime_enter_listening_after_bind", 1
+    )[0]
+
+    assert "RUNTIME_TRANSPORT_PHASE_FAILED" in fatal_helper
+    assert "runtime_schedule_retry" not in fatal_helper
+    assert "runtime_transport_socket_fd = -1" not in fatal_helper
+    assert "runtime_native_beacon_completion_failure_count += 1" in completion_failure
+    assert "runtime_native_last_beacon_completion_result = result" in completion_failure
+
+
+def test_native_wc24_failure_stages_preserve_final_overlay_evidence() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    native_bootstrap = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_BOOTSTRAP)", 1)[
+        1
+    ].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID)", 1)[0]
+
+    assert native_bootstrap.count("runtime_native_record_fatal_error(RUNTIME_TRANSPORT_PHASE_NATIVE_BOOTSTRAP") == 3
+    assert "runtime_transport_last_error_phase = RUNTIME_TRANSPORT_PHASE_NATIVE_WAIT_HOST_ID;" in source
+    assert "runtime_set_phase(RUNTIME_TRANSPORT_PHASE_NATIVE_HOST_ID_TIMEOUT" in source
+    assert "RUNTIME_TRANSPORT_PHASE_GETHOSTID,\n                    runtime_transport_last_submit_result" in source
+    assert (
+        source.count("RUNTIME_TRANSPORT_PHASE_CREATE_SOCKET,\n                    runtime_transport_last_submit_result")
+        == 1
+    )
+    assert (
+        "RUNTIME_TRANSPORT_PHASE_WAIT_CREATE_SOCKET,\n                        runtime_transport_last_ios_result"
+        in source
+    )
+    assert (
+        "RUNTIME_TRANSPORT_PHASE_NATIVE_SUBMIT_BEACON,\n                runtime_transport_send_submit_result" in source
+    )
+    assert "runtime_native_record_beacon_completion_failure(" in source
+
+
+def test_native_wc24_overlay_reports_live_and_terminal_values() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    overlay = source.split("static void runtime_native_overlay_draw(void)", 1)[1].split(
+        "void runtime_poll_entry_impl(void)", 1
+    )[0]
+
+    expected_labels = (
+        "WC24 OPEN: ",
+        "NATIVE BOOTSTRAP: ",
+        "SO DESCRIPTOR: ",
+        "HOST ATTEMPTS: ",
+        "HOST RESULT: ",
+        "SOCKET RESULT: ",
+        "BEACON ATTEMPTS: ",
+        "SUBMIT RESULT: ",
+        "SEND RESULT: ",
+        "PHASE: ",
+        "ERROR PHASE: ",
+        "LAST ERROR: ",
+    )
+    for label in expected_labels:
+        assert f'"{label}"' in overlay
+
+    assert "runtime_native_last_beacon_submit_result" in overlay
+    assert "runtime_native_last_beacon_completion_result" in overlay
+    assert "runtime_transport_last_error_phase" in overlay
+    assert "runtime_transport_last_error" in overlay
+    assert "runtime_transport_host_id_ready != 0" in overlay
+    poll_exit = source.split("runtime_poll_exit:", 1)[1]
+    assert poll_exit.index("runtime_sync_network_diagnostics();") < poll_exit.index("runtime_native_overlay_draw();")
+
+
+def test_native_wc24_diagnostics_reuse_fixed_cp3d_abi() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    sync = source.split("static void runtime_sync_network_diagnostics(void)\n{", 1)[1].split(
+        "static void runtime_schedule_retry", 1
+    )[0]
+
+    assert "RUNTIME_DIAGNOSTICS_VERSION = 1" in source
+    assert "RUNTIME_DIAGNOSTICS_SIZE = 0x100" in source
+    assert "runtime_network_diagnostics_size_must_be_0x100" in source
+    assert "diagnostics->receive_call_count = runtime_transport_get_host_id_submit_count;" in sync
+    assert "diagnostics->send_call_count = runtime_native_beacon_attempt_count;" in sync
+    assert "diagnostics->packets_sent = runtime_native_beacon_success_count;" in sync
+    assert "runtime_native_beacon_submission_failure_count + runtime_native_beacon_completion_failure_count" in sync
+
+
+def test_native_wc24_phase_values_are_appended_without_renumbering() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    expected = {
+        "NATIVE_BOOTSTRAP": 108,
+        "NATIVE_WAIT_HOST_ID": 109,
+        "NATIVE_HOST_ID_TIMEOUT": 110,
+        "NATIVE_CREATE_BEACON_SOCKET": 111,
+        "NATIVE_WAIT_BEACON_INTERVAL": 112,
+        "NATIVE_SUBMIT_BEACON": 113,
+        "NATIVE_WAIT_BEACON": 114,
+        "NATIVE_BEACON_COMPLETE": 115,
+    }
+    for name, value in expected.items():
+        assert f"RUNTIME_TRANSPORT_PHASE_{name} = {value}," in source
 
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
         ({"native_beacon_ipv4": 0}, "nonzero IPv4"),
-        ({"native_beacon_port": 0}, "between 1 and 65535"),
     ],
 )
 def test_native_beacon_configuration_is_validated_before_toolchain(

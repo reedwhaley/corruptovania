@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import uuid
 from enum import Enum
+from ipaddress import IPv4Address
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,14 @@ class CorruptionGameExportParams(GameExportParams):
     output_format: CorruptionOutputFormats
     mp3_update: bool
     runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION
+    beacon_ipv4: IPv4Address | None = None
+
+    def __post_init__(self) -> None:
+        native_mode = self.runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
+        if native_mode and self.beacon_ipv4 is None:
+            raise ValueError("Native WiiConnect24 bootstrap beacon mode requires a destination IPv4 address.")
+        if not native_mode and self.beacon_ipv4 is not None:
+            raise ValueError("Beacon destination IPv4 is only valid for native WiiConnect24 bootstrap mode.")
 
 
 class CorruptionOutputFormats(Enum):
@@ -107,6 +116,7 @@ class CorruptionGameExporter(GameExporter):
                 uuid.UUID(patch_data["layout_uuid"]),
                 runtime_build_dir=extract_path.joinpath(".prime3_wii_runtime"),
                 runtime_mode=export_params.runtime_mode,
+                beacon_ipv4=export_params.beacon_ipv4,
             )
             validation = hardware_result.validation
             self.logger.info(
@@ -119,6 +129,12 @@ class CorruptionGameExporter(GameExporter):
                 validation.recurring_hook_target,
                 validation.udp_port,
             )
+            if export_params.beacon_ipv4 is not None:
+                self.logger.info(
+                    "Prime 3 native beacon destination=%s UDP=%d",
+                    export_params.beacon_ipv4,
+                    validation.udp_port,
+                )
 
             if patch_data["mp3_update"]:
                 progress_update("Applying Update...", 0.4)

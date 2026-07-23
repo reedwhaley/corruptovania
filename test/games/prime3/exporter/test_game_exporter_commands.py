@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from ipaddress import IPv4Address
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,33 @@ def test_build_wit_command() -> None:
     command = _build_wit_command(_toolchain(), Path("DATA"), export_params)
     assert command == ("wit", "COPY", "-B", "-z", "--trunc", "--auto-split", "--overwrite", "DATA", "out.wbfs")
     assert export_params.runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION
+
+
+def test_native_beacon_export_params_require_ipv4() -> None:
+    def create(
+        runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
+        beacon_ipv4: IPv4Address | None = None,
+    ) -> CorruptionGameExportParams:
+        return CorruptionGameExportParams(
+            spoiler_output=None,
+            input_path=Path("input.iso"),
+            output_path=Path("out.iso"),
+            output_format=CorruptionOutputFormats.ISO,
+            mp3_update=False,
+            runtime_mode=runtime_mode,
+            beacon_ipv4=beacon_ipv4,
+        )
+
+    with pytest.raises(ValueError, match="requires a destination IPv4"):
+        create(Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE)
+    with pytest.raises(ValueError, match="only valid"):
+        create(beacon_ipv4=IPv4Address("192.0.2.1"))
+
+    params = create(
+        Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
+        IPv4Address("192.0.2.1"),
+    )
+    assert params.beacon_ipv4 == IPv4Address("192.0.2.1")
 
 
 def test_run_process_wraps_tool_failures(monkeypatch: pytest.MonkeyPatch) -> None:

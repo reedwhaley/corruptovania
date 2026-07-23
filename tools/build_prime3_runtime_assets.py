@@ -20,7 +20,7 @@ from randovania.games.prime3.exporter.hardware_runtime import (
     load_validated_hardware_runtime_assets,
     runtime_asset_directory,
 )
-from tools.prime3_wii_runtime.build_payload import DEFAULT_NATIVE_BEACON_IPV4, DEFAULT_NATIVE_BEACON_PORT
+from tools.prime3_wii_runtime.build_payload import DEFAULT_NATIVE_BEACON_IPV4
 
 
 def _parse_ipv4(value: str) -> int:
@@ -44,13 +44,6 @@ def parse_args() -> argparse.Namespace:
         metavar="ADDRESS",
         help="Development IPv4 destination for the native bootstrap beacon.",
     )
-    parser.add_argument(
-        "--native-beacon-port",
-        type=int,
-        default=DEFAULT_NATIVE_BEACON_PORT,
-        metavar="PORT",
-        help="Development UDP destination port for the native bootstrap beacon.",
-    )
     return parser.parse_args()
 
 
@@ -65,7 +58,6 @@ def main() -> None:
             asset_dir,
             runtime_mode,
             native_beacon_ipv4=args.native_beacon_ipv4,
-            native_beacon_port=args.native_beacon_port,
         )
         assets = load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=True)
         assert assets.manifest.relocated_runtime is not None

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import hashlib
 import io
 import json
 import shutil
 import uuid
 import zipfile
+from ipaddress import IPv4Address
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +18,10 @@ from open_prime_rando.dol_patching.corruption import dol_versions as corruption_
 import randovania
 from randovania.games.prime3.exporter import hardware_runtime, probe_delivery
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, parse_dol_header
+from randovania.games.prime3.exporter.runtime_payload import (
+    Prime3RuntimePayloadManifest,
+    Prime3RuntimePayloadPatchField,
+)
 from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
 
 
@@ -39,6 +45,43 @@ def _supported_dol() -> bytes:
         ],
         entry_point=probe_delivery.EXPECTED_ENTRYPOINT,
     )
+
+
+def _native_runtime_fixture(production_runtime) -> tuple[bytes, Prime3RuntimePayloadManifest]:
+    payload, manifest, _ = production_runtime
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    relocated = manifest.relocated_runtime
+    offset = relocated.embedded_runtime_blob_offset + 16
+    patch_field = Prime3RuntimePayloadPatchField(
+        payload_offset=offset,
+        expected_original_bytes=payload[offset : offset + 4].hex(),
+        field_size=4,
+        byte_order="big",
+    )
+    transport = dataclasses.replace(
+        relocated.transport,
+        mode=hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE.value,
+        receive_enabled=False,
+        send_enabled=True,
+        kd_close_enabled=False,
+        terminal_phase_value=115,
+        terminal_phase_name="NATIVE_BEACON_COMPLETE",
+        cp3w_game_identity=None,
+        cp3w_inventory=None,
+    )
+    native_relocated = dataclasses.replace(relocated, transport=transport)
+    native_manifest = dataclasses.replace(
+        manifest,
+        relocated_runtime=native_relocated,
+        beacon_ipv4_patch=patch_field,
+    )
+    hardware_runtime._validate_hardware_manifest(
+        payload,
+        native_manifest,
+        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
+    )
+    return payload, native_manifest
 
 
 @pytest.fixture(scope="module")
@@ -229,7 +272,6 @@ def test_hardware_runtime_build_uses_mode_configuration(
         "ios_udp_mode": runtime_mode.value,
         "ios_udp_loop_count": 0 if production else 1,
         "native_beacon_ipv4": 0xC0A832F8,
-        "native_beacon_port": 43674,
         "reserved_high": 0x817E0000,
         "diagnostic_address": 0x817E0100,
     }
@@ -248,11 +290,9 @@ def test_native_bootstrap_beacon_endpoint_is_configurable(tmp_path: Path, monkey
         tmp_path,
         hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
         native_beacon_ipv4=0xC0000201,
-        native_beacon_port=45678,
     )
 
     assert captured["native_beacon_ipv4"] == 0xC0000201
-    assert captured["native_beacon_port"] == 45678
 
 
 def test_diagnostic_manifest_does_not_require_production_protocol_metadata(production_runtime) -> None:
@@ -319,8 +359,12 @@ def test_atomic_patcher_loads_selected_runtime_mode(tmp_path: Path, monkeypatch:
     calls: list[tuple[Path, hardware_runtime.Prime3HardwareRuntimeMode]] = []
 
     def fake_load(
-        output_dir: Path, runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode
+        output_dir: Path,
+        runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode,
+        *,
+        beacon_ipv4: IPv4Address | None,
     ) -> tuple[bytes, SimpleNamespace]:
+        assert beacon_ipv4 is None
         calls.append((output_dir, runtime_mode))
         return b"payload", manifest
 
@@ -343,3 +387,88 @@ def test_atomic_patcher_loads_selected_runtime_mode(tmp_path: Path, monkeypatch:
     assert calls == [(tmp_path.joinpath("runtime"), selected_mode)]
     assert result is expected_result
     assert path.read_bytes() == b"patched"
+
+
+def test_native_beacon_payload_patch_changes_only_ipv4_field(production_runtime) -> None:
+    payload, manifest = _native_runtime_fixture(production_runtime)
+    address = IPv4Address("203.0.113.27")
+
+    patched, patched_manifest = hardware_runtime.patch_native_beacon_ipv4(payload, manifest, address)
+
+    assert manifest.beacon_ipv4_patch is not None
+    offset = manifest.beacon_ipv4_patch.payload_offset
+    assert payload[offset : offset + 4] != address.packed
+    assert patched[offset : offset + 4] == address.packed
+    assert payload[:offset] == patched[:offset]
+    assert payload[offset + 4 :] == patched[offset + 4 :]
+    assert patched_manifest.payload_sha256 == hashlib.sha256(patched).hexdigest()
+    assert manifest.payload_sha256 == hashlib.sha256(payload).hexdigest()
+
+
+def test_native_beacon_payload_patch_rejects_expected_byte_mismatch(production_runtime) -> None:
+    payload, manifest = _native_runtime_fixture(production_runtime)
+    assert manifest.beacon_ipv4_patch is not None
+    invalid = dataclasses.replace(
+        manifest,
+        beacon_ipv4_patch=dataclasses.replace(
+            manifest.beacon_ipv4_patch,
+            expected_original_bytes="00000000",
+        ),
+    )
+
+    with pytest.raises(Prime3DolPatchError, match="expected bytes"):
+        hardware_runtime.patch_native_beacon_ipv4(payload, invalid, IPv4Address("192.0.2.1"))
+
+
+@pytest.mark.parametrize(
+    ("field_size", "byte_order", "message"),
+    [(3, "big", "exactly 4 bytes"), (4, "little", "big-endian")],
+)
+def test_native_beacon_payload_patch_rejects_invalid_metadata(
+    production_runtime, field_size: int, byte_order: str, message: str
+) -> None:
+    payload, manifest = _native_runtime_fixture(production_runtime)
+    assert manifest.beacon_ipv4_patch is not None
+    invalid = dataclasses.replace(
+        manifest,
+        beacon_ipv4_patch=dataclasses.replace(
+            manifest.beacon_ipv4_patch,
+            field_size=field_size,
+            byte_order=byte_order,
+        ),
+    )
+
+    with pytest.raises(Prime3DolPatchError, match=message):
+        hardware_runtime.patch_native_beacon_ipv4(payload, invalid, IPv4Address("192.0.2.1"))
+
+
+def test_packaged_native_beacon_patch_needs_no_toolchain(
+    production_runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload, manifest = _native_runtime_fixture(production_runtime)
+    packaged = tmp_path.joinpath(
+        "prime3_wii_runtime",
+        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE.value,
+    )
+    packaged.mkdir(parents=True)
+    packaged.joinpath("payload.bin").write_bytes(payload)
+    packaged.joinpath("payload.json").write_text(manifest.to_json_text(), encoding="utf-8")
+    original_payload = packaged.joinpath("payload.bin").read_bytes()
+    monkeypatch.setattr(hardware_runtime.randovania, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(
+        hardware_runtime,
+        "build_hardware_runtime_payload",
+        lambda *_args, **_kwargs: pytest.fail("packaged export must not compile"),
+    )
+
+    patched, patched_manifest = hardware_runtime.load_or_build_hardware_runtime(
+        tmp_path.joinpath("build"),
+        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
+        beacon_ipv4=IPv4Address("198.51.100.9"),
+    )
+
+    assert packaged.joinpath("payload.bin").read_bytes() == original_payload
+    assert patched != original_payload
+    assert patched_manifest.relocated_runtime is not None
+    assert patched_manifest.relocated_runtime.transport is not None
+    assert patched_manifest.relocated_runtime.transport.udp_port == 43674

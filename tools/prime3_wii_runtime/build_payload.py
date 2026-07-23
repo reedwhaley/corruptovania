@@ -68,6 +68,7 @@ from randovania.games.prime3.exporter.runtime_payload import (
     Prime3RuntimeGameIdentityMetadata,
     Prime3RuntimeInventoryMetadata,
     Prime3RuntimePayloadManifest,
+    Prime3RuntimePayloadPatchField,
     Prime3RuntimeTransportMetadata,
     compute_cache_range,
     compute_source_digest,
@@ -217,6 +218,7 @@ RUNTIME_DIAGNOSTIC_CALLBACK_RESULT_SYMBOL = "runtime_callback_result"
 RUNTIME_VERIFIED_GAME_R2_SYMBOL = "runtime_verified_game_r2"
 RUNTIME_VERIFIED_GAME_R13_SYMBOL = "runtime_verified_game_r13"
 RUNTIME_TRANSPORT_PHASE_SYMBOL = "runtime_transport_phase"
+RUNTIME_NATIVE_BEACON_IPV4_SYMBOL = "runtime_native_beacon_ipv4"
 RUNTIME_TRANSPORT_LAST_ERROR_SYMBOL = "runtime_transport_last_error"
 RUNTIME_TRANSPORT_LAST_SOCKET_ERROR_SYMBOL = "runtime_transport_last_socket_error"
 RUNTIME_TRANSPORT_LAST_IOS_RESULT_SYMBOL = "runtime_transport_last_ios_result"
@@ -563,6 +565,7 @@ class RelocatedRuntimeBuildResult:
     state_start: int
     state_end: int
     network_diagnostics_address: int
+    native_beacon_ipv4_address: int | None
     canary_address: int
     canary_size: int
     canary_sha256: str
@@ -1025,7 +1028,6 @@ def build_prime3_runtime_payload(  # noqa: C901
     ios_udp_mode: str = "normal",
     ios_udp_loop_count: int = 3,
     native_beacon_ipv4: int = DEFAULT_NATIVE_BEACON_IPV4,
-    native_beacon_port: int = DEFAULT_NATIVE_BEACON_PORT,
     reserved_high: int | None = None,
     diagnostic_address: int | None = None,
     runtime_destination: int | None = None,
@@ -1068,8 +1070,6 @@ def build_prime3_runtime_payload(  # noqa: C901
         raise RuntimeError("ios_udp_loop_count must be between 1 and 100.")
     if not 0 < native_beacon_ipv4 <= 0xFFFFFFFF:
         raise RuntimeError("native_beacon_ipv4 must be a nonzero IPv4 address encoded as a 32-bit integer.")
-    if not 0 < native_beacon_port <= 0xFFFF:
-        raise RuntimeError("native_beacon_port must be between 1 and 65535.")
     if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
     if ios_udp_mode != "normal" and not enable_ios_udp_diagnostic:
@@ -1107,7 +1107,6 @@ def build_prime3_runtime_payload(  # noqa: C901
             ios_udp_mode=ios_udp_mode,
             ios_udp_loop_count=ios_udp_loop_count,
             native_beacon_ipv4=native_beacon_ipv4,
-            native_beacon_port=native_beacon_port,
         )
         _write_runtime_blob_object(
             toolchain=toolchain,
@@ -1494,8 +1493,10 @@ def build_prime3_runtime_payload(  # noqa: C901
                 terminal_phase_value=(
                     26
                     if cp3w_inventory_service
+                    else 115
+                    if native_wc24_bootstrap
                     else 0xFE
-                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once or startup_once or native_wc24_bootstrap
+                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once or startup_once
                     else 18
                     if so_startup_once
                     else 19
@@ -1523,8 +1524,10 @@ def build_prime3_runtime_payload(  # noqa: C901
                 terminal_phase_name=(
                     "WAIT_RECEIVE"
                     if cp3w_inventory_service
+                    else "NATIVE_BEACON_COMPLETE"
+                    if native_wc24_bootstrap
                     else "DIAGNOSTIC_COMPLETE"
-                    if startup_once or native_wc24_bootstrap
+                    if startup_once
                     else "NWC24_COMPLETE"
                     if nwc24_ioctl_once
                     else "KD_CLOSED"
@@ -2326,6 +2329,25 @@ def build_prime3_runtime_payload(  # noqa: C901
             retail_ios_wrapper=_prime3_ntsc_retail_ios_wrapper_metadata() if enable_ios_udp_diagnostic else None,
         )
 
+    beacon_ipv4_patch = None
+    if ios_udp_mode == "native_wc24_bootstrap_beacon_once":
+        assert relocated_runtime is not None
+        assert relocated_runtime.native_beacon_ipv4_address is not None
+        assert runtime_destination is not None
+        assert embedded_runtime_start_offset is not None
+        beacon_ipv4_offset = (
+            embedded_runtime_start_offset + relocated_runtime.native_beacon_ipv4_address - runtime_destination
+        )
+        expected_beacon_bytes = native_beacon_ipv4.to_bytes(4, "big")
+        if payload_bytes[beacon_ipv4_offset : beacon_ipv4_offset + 4] != expected_beacon_bytes:
+            raise RuntimeError("Linked native beacon IPv4 field does not contain the configured original bytes.")
+        beacon_ipv4_patch = Prime3RuntimePayloadPatchField(
+            payload_offset=beacon_ipv4_offset,
+            expected_original_bytes=expected_beacon_bytes.hex(),
+            field_size=4,
+            byte_order="big",
+        )
+
     manifest = Prime3RuntimePayloadManifest(
         schema_version=PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION,
         target_architecture=PRIME3_RUNTIME_TARGET_ARCHITECTURE,
@@ -2351,6 +2373,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         counter_size=4 if counter_offset is not None else None,
         entry_bootstrap=entry_bootstrap,
         relocated_runtime=relocated_runtime_metadata,
+        beacon_ipv4_patch=beacon_ipv4_patch,
     )
     manifest.validate()
     manifest_path.write_text(manifest.to_json_text(), encoding="utf-8")
@@ -2367,7 +2390,6 @@ def _build_relocated_runtime(
     ios_udp_mode: str,
     ios_udp_loop_count: int,
     native_beacon_ipv4: int,
-    native_beacon_port: int,
 ) -> RelocatedRuntimeBuildResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     asm_object_path = output_dir.joinpath("relocated_runtime_asm.o")
@@ -2401,7 +2423,7 @@ def _build_relocated_runtime(
         f"-DPRIME3_RETAIL_NETWORK_BOOTSTRAP_ADDRESS=0x{PRIME3_NTSC_NETWORK_BOOTSTRAP_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_SO_FD_SDA_OFFSET={PRIME3_NTSC_SO_FD_SDA_OFFSET}",
         f"-DPRIME3_NATIVE_BEACON_IPV4=0x{native_beacon_ipv4:08X}",
-        f"-DPRIME3_NATIVE_BEACON_PORT={native_beacon_port}",
+        f"-DPRIME3_NATIVE_BEACON_PORT={DEFAULT_NATIVE_BEACON_PORT}",
         f"-DPRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS={1 if enable_recurring_hook_diagnostics else 0}",
         f"-DPRIME3_ENABLE_IOS_UDP_DIAGNOSTIC={1 if enable_ios_udp_diagnostic else 0}",
         (
@@ -2629,6 +2651,11 @@ def _build_relocated_runtime(
         readelf_symbols, RUNTIME_ABI_PROBE_EXPECTED_RETURN_VALUE_SYMBOL
     )
     transport_phase_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_PHASE_SYMBOL)
+    native_beacon_ipv4_address = (
+        _extract_symbol_address(readelf_symbols, RUNTIME_NATIVE_BEACON_IPV4_SYMBOL)
+        if ios_udp_mode == "native_wc24_bootstrap_beacon_once"
+        else None
+    )
     transport_last_error_address = _extract_symbol_address(readelf_symbols, RUNTIME_TRANSPORT_LAST_ERROR_SYMBOL)
     transport_last_socket_error_address = _extract_symbol_address(
         readelf_symbols, RUNTIME_TRANSPORT_LAST_SOCKET_ERROR_SYMBOL
@@ -3416,6 +3443,7 @@ def _build_relocated_runtime(
         state_start=state_start,
         state_end=state_end,
         network_diagnostics_address=network_diagnostics_address,
+        native_beacon_ipv4_address=native_beacon_ipv4_address,
         canary_address=canary_start,
         canary_size=canary_end - canary_start,
         canary_sha256=hashlib.sha256(RELOCATED_RUNTIME_CANARY_BYTES).hexdigest(),

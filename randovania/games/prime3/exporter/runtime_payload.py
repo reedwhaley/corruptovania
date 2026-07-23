@@ -966,8 +966,9 @@ class Prime3RuntimeTransportMetadata:
         if is_nwc24_ioctl_once or is_native_wc24_bootstrap:
             if self.kd_close_enabled:
                 raise Prime3DolPatchError("Retained NWC24 metadata must not enable kd close.")
-            expected_phase_name = "DIAGNOSTIC_COMPLETE" if is_native_wc24_bootstrap else "NWC24_COMPLETE"
-            if self.terminal_phase_value != 0xFE or self.terminal_phase_name != expected_phase_name:
+            expected_phase_value = 115 if is_native_wc24_bootstrap else 0xFE
+            expected_phase_name = "NATIVE_BEACON_COMPLETE" if is_native_wc24_bootstrap else "NWC24_COMPLETE"
+            if self.terminal_phase_value != expected_phase_value or self.terminal_phase_name != expected_phase_name:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must use the terminal diagnostic phase.")
         elif not self.kd_close_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable kd close.")
@@ -3316,6 +3317,50 @@ class Prime3RelocatedRuntimeMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3RuntimePayloadPatchField:
+    payload_offset: int
+    expected_original_bytes: str
+    field_size: int
+    byte_order: str
+
+    def validate(self, *, payload_size: int) -> None:
+        if self.field_size != 4:
+            raise Prime3DolPatchError("Beacon IPv4 patch field must be exactly 4 bytes.")
+        if self.byte_order != "big":
+            raise Prime3DolPatchError("Beacon IPv4 patch field must use big-endian byte ordering.")
+        _validate_optional_range(
+            payload_size=payload_size,
+            field_name="beacon_ipv4_patch.payload_offset",
+            start=self.payload_offset,
+            size=self.field_size,
+        )
+        try:
+            expected = bytes.fromhex(self.expected_original_bytes)
+        except ValueError as exc:
+            raise Prime3DolPatchError("Beacon IPv4 patch expected bytes must be hexadecimal.") from exc
+        if len(expected) != self.field_size:
+            raise Prime3DolPatchError("Beacon IPv4 patch expected bytes must match the declared field size.")
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object], *, payload_size: int) -> Prime3RuntimePayloadPatchField:
+        required_keys = {"payload_offset", "expected_original_bytes", "field_size", "byte_order"}
+        unknown_keys = set(data) - required_keys
+        if unknown_keys:
+            raise Prime3DolPatchError(f"Unknown beacon IPv4 patch metadata keys: {sorted(unknown_keys)}")
+        metadata = cls(
+            payload_offset=_json_int(data, "payload_offset"),
+            expected_original_bytes=_json_string(data, "expected_original_bytes"),
+            field_size=_json_int(data, "field_size"),
+            byte_order=_json_string(data, "byte_order"),
+        )
+        metadata.validate(payload_size=payload_size)
+        return metadata
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3RuntimePayloadManifest:
     schema_version: int
     target_architecture: str
@@ -3341,6 +3386,7 @@ class Prime3RuntimePayloadManifest:
     counter_size: int | None = None
     entry_bootstrap: Prime3EntryBootstrapMetadata | None = None
     relocated_runtime: Prime3RelocatedRuntimeMetadata | None = None
+    beacon_ipv4_patch: Prime3RuntimePayloadPatchField | None = None
 
     def validate(self) -> None:
         if self.schema_version != PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION:
@@ -3416,6 +3462,8 @@ class Prime3RuntimePayloadManifest:
             )
             if self.payload_mode != self.relocated_runtime.mode:
                 raise Prime3DolPatchError("Payload mode does not match relocated runtime metadata mode.")
+        if self.beacon_ipv4_patch is not None:
+            self.beacon_ipv4_patch.validate(payload_size=self.payload_size)
 
         Prime3PayloadArtifact.create(
             payload_bytes=b"\x00" * self.payload_size,
@@ -3459,6 +3507,8 @@ class Prime3RuntimePayloadManifest:
             result["entry_bootstrap"] = self.entry_bootstrap.to_json_dict()
         if self.relocated_runtime is not None:
             result["relocated_runtime"] = self.relocated_runtime.to_json_dict()
+        if self.beacon_ipv4_patch is not None:
+            result["beacon_ipv4_patch"] = self.beacon_ipv4_patch.to_json_dict()
         return result
 
     def to_json_text(self) -> str:
@@ -3491,6 +3541,7 @@ class Prime3RuntimePayloadManifest:
             "counter_size",
             "entry_bootstrap",
             "relocated_runtime",
+            "beacon_ipv4_patch",
         }
         unknown_keys = set(data) - required_keys
         if unknown_keys:
@@ -3522,6 +3573,11 @@ class Prime3RuntimePayloadManifest:
             counter_size=_json_optional_int(data, "counter_size"),
             entry_bootstrap=_json_optional_entry_bootstrap(data, "entry_bootstrap", payload_size=payload_size),
             relocated_runtime=_json_optional_relocated_runtime(data, "relocated_runtime"),
+            beacon_ipv4_patch=_json_optional_payload_patch_field(
+                data,
+                "beacon_ipv4_patch",
+                payload_size=payload_size,
+            ),
         )
         manifest.validate()
         return manifest
@@ -3676,6 +3732,20 @@ def _json_optional_relocated_runtime(
     if not isinstance(value, dict):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
     return Prime3RelocatedRuntimeMetadata.from_json_dict(value)
+
+
+def _json_optional_payload_patch_field(
+    data: dict[str, object],
+    key: str,
+    *,
+    payload_size: int,
+) -> Prime3RuntimePayloadPatchField | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    return Prime3RuntimePayloadPatchField.from_json_dict(value, payload_size=payload_size)
 
 
 def _json_optional_runtime_transport(

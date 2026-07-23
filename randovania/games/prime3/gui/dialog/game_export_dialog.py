@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from randovania.gui.dialog.game_export_dialog import (
     prompt_for_input_file,
     prompt_for_output_file,
     spoiler_path_for,
+    update_validation,
 )
 from randovania.gui.lib.multi_format_output_mixin import MultiFormatOutputMixin
 
@@ -74,6 +76,8 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
 
         for label, runtime_mode in RUNTIME_MODE_CHOICES:
             self.runtime_mode_combo.addItem(label, runtime_mode.value)
+        self.runtime_mode_combo.currentIndexChanged.connect(self._on_runtime_mode_changed)
+        self.beacon_ip_edit.textChanged.connect(self._on_beacon_ip_changed)
 
         if per_game.input_path is not None:
             self.input_file_edit.setText(str(per_game.input_path))
@@ -90,8 +94,10 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             fields={
                 self.input_file_edit: lambda: is_file_validator(self.input_file),
                 self.output_file_edit: lambda: output_file_validator(self.output_file),
+                self.beacon_ip_edit: self._beacon_ipv4_has_error,
             },
         )
+        self._on_runtime_mode_changed()
 
     def update_per_game_options(self, per_game: PerGameOptions) -> PerGameOptions:
         assert isinstance(per_game, CorruptionPerGameOptions)
@@ -138,6 +144,36 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
     def runtime_mode(self) -> Prime3HardwareRuntimeMode:
         return Prime3HardwareRuntimeMode(self.runtime_mode_combo.currentData())
 
+    @property
+    def beacon_ipv4(self) -> ipaddress.IPv4Address | None:
+        if self.runtime_mode is not Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
+            return None
+        return ipaddress.IPv4Address(self.beacon_ip_edit.text())
+
+    def _beacon_ipv4_has_error(self) -> bool:
+        if self.runtime_mode is not Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
+            return False
+        try:
+            ipaddress.IPv4Address(self.beacon_ip_edit.text())
+        except ipaddress.AddressValueError:
+            return True
+        return False
+
+    def _on_runtime_mode_changed(self) -> None:
+        native_mode = self.runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
+        invalid = native_mode and self._beacon_ipv4_has_error()
+        self.beacon_ip_label.setVisible(native_mode)
+        self.beacon_ip_edit.setVisible(native_mode)
+        self.beacon_port_label.setVisible(native_mode)
+        self.beacon_validation_label.setVisible(invalid)
+        update_validation(self.beacon_ip_edit)
+
+    def _on_beacon_ip_changed(self) -> None:
+        self.beacon_validation_label.setVisible(
+            self.runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
+            and self._beacon_ipv4_has_error()
+        )
+
     # Input file
     def _on_input_file_button(self) -> None:
         input_file = prompt_for_input_file(self, self.input_file_edit, self.valid_input_file_types)
@@ -169,4 +205,5 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             output_format=CorruptionOutputFormats(self.output_format),
             mp3_update=CorruptionConfiguration.MP3Update,
             runtime_mode=self.runtime_mode,
+            beacon_ipv4=self.beacon_ipv4,
         )

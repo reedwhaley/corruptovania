@@ -909,6 +909,7 @@ class Prime3RuntimeTransportMetadata:
         is_cp3w_game_identity = self.mode == "cp3w_game_identity"
         is_cp3w_inventory_service = self.mode == "cp3w_inventory_service"
         is_cp3w_inventory = self.mode in {"cp3w_inventory", "cp3w_inventory_service"}
+        is_native_wc24_bootstrap = self.mode == "native_wc24_bootstrap_beacon_once"
         if self.receive_enabled and not is_recvfrom_once:
             if (
                 not is_recv_send_once
@@ -940,6 +941,7 @@ class Prime3RuntimeTransportMetadata:
             and not is_cp3w_hello_session
             and not is_cp3w_game_identity
             and not is_cp3w_inventory
+            and not is_native_wc24_bootstrap
         ):
             raise Prime3DolPatchError("Initialization-only transport metadata must not enable send.")
         if (
@@ -950,6 +952,7 @@ class Prime3RuntimeTransportMetadata:
             or is_cp3w_hello_session
             or is_cp3w_game_identity
             or is_cp3w_inventory
+            or is_native_wc24_bootstrap
         ) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
         if not self.nwc24_startup_enabled:
@@ -960,10 +963,11 @@ class Prime3RuntimeTransportMetadata:
         is_nwc24_close_open_ip_startup_once = self.mode == "retail_wrapper_nwc24_close_open_ip_startup_once"
         is_startup_once = self.mode == "retail_wrapper_startup_once"
         is_get_host_id_once = self.mode == "retail_wrapper_get_host_id_once"
-        if is_nwc24_ioctl_once:
+        if is_nwc24_ioctl_once or is_native_wc24_bootstrap:
             if self.kd_close_enabled:
-                raise Prime3DolPatchError("NWC24 ioctl-once metadata must not enable kd close.")
-            if self.terminal_phase_value != 0xFE or self.terminal_phase_name != "NWC24_COMPLETE":
+                raise Prime3DolPatchError("Retained NWC24 metadata must not enable kd close.")
+            expected_phase_name = "DIAGNOSTIC_COMPLETE" if is_native_wc24_bootstrap else "NWC24_COMPLETE"
+            if self.terminal_phase_value != 0xFE or self.terminal_phase_name != expected_phase_name:
                 raise Prime3DolPatchError("NWC24 ioctl-once metadata must use the terminal diagnostic phase.")
         elif not self.kd_close_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable kd close.")

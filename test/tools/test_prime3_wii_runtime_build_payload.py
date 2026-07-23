@@ -1437,6 +1437,76 @@ def test_hardware_host_id_and_bind_address_are_encoded_correctly() -> None:
     assert "INADDR_ANY," in source
 
 
+def test_native_wc24_bootstrap_beacon_manifest_and_state_machine(tmp_path: Path) -> None:
+    module = _load_build_module("prime3_wii_runtime_native_wc24_bootstrap_test")
+    if not _devkitppc_is_available():
+        pytest.skip("devkitPPC is not available in this environment")
+
+    manifest = module.build_prime3_runtime_payload(
+        tmp_path,
+        payload_mode="relocated_continue",
+        enable_recurring_hook_diagnostics=True,
+        enable_ios_udp_diagnostic=True,
+        ios_udp_mode="native_wc24_bootstrap_beacon_once",
+        ios_udp_loop_count=1,
+        native_beacon_ipv4=0xC0000201,
+        native_beacon_port=45678,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+    )
+
+    assert manifest.relocated_runtime is not None
+    assert manifest.relocated_runtime.transport is not None
+    transport = manifest.relocated_runtime.transport
+    assert transport.mode == "native_wc24_bootstrap_beacon_once"
+    assert transport.receive_enabled is False
+    assert transport.send_enabled is True
+    assert transport.kd_close_enabled is False
+    assert transport.socket_close_on_success is False
+    assert transport.terminal_phase_value == 0xFE
+    assert transport.terminal_phase_name == "DIAGNOSTIC_COMPLETE"
+
+    source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    native_block = source.split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_NATIVE_BOOTSTRAP)", 1)[1].split(
+        "if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_RESTART_REQUESTED)", 1
+    )[0]
+    assert native_block.index("runtime_call_retail_nwc24_open_lib()") < native_block.index(
+        "runtime_call_retail_network_bootstrap()"
+    )
+    assert native_block.index("runtime_call_retail_network_bootstrap()") < native_block.index(
+        "runtime_read_retail_so_fd()"
+    )
+    assert "runtime_submit_close" not in native_block
+    assert "RUNTIME_TRANSPORT_PHASE_GETHOSTID" in native_block
+    assert "runtime_transport_cleanup_deferred_count += 1" in source
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"native_beacon_ipv4": 0}, "nonzero IPv4"),
+        ({"native_beacon_port": 0}, "between 1 and 65535"),
+    ],
+)
+def test_native_beacon_configuration_is_validated_before_toolchain(
+    tmp_path: Path, kwargs: dict[str, int], message: str
+) -> None:
+    module = _load_build_module("prime3_wii_runtime_native_beacon_configuration_test")
+
+    with pytest.raises(RuntimeError, match=message):
+        module.build_prime3_runtime_payload(
+            tmp_path,
+            payload_mode="relocated_continue",
+            enable_recurring_hook_diagnostics=True,
+            enable_ios_udp_diagnostic=True,
+            ios_udp_mode="native_wc24_bootstrap_beacon_once",
+            ios_udp_loop_count=1,
+            reserved_high=0x817E0000,
+            diagnostic_address=0x817E0100,
+            **kwargs,
+        )
+
+
 def test_runtime_records_startup_socket_bind_and_io_failures() -> None:
     source = (Path(__file__).parents[2] / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
 

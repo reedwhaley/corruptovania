@@ -13,6 +13,9 @@
 .global runtime_call_retail_write_async
 .global runtime_call_retail_ios_ioctl_async
 .global runtime_call_retail_ios_ioctlv_async
+.global runtime_call_retail_nwc24_open_lib
+.global runtime_call_retail_network_bootstrap
+.global runtime_read_retail_so_fd
 .global runtime_call_retail_veneer_selftest
 .global runtime_canary_start
 .global runtime_canary_end
@@ -26,6 +29,9 @@
 .type runtime_call_retail_write_async, @function
 .type runtime_call_retail_ios_ioctl_async, @function
 .type runtime_call_retail_ios_ioctlv_async, @function
+.type runtime_call_retail_nwc24_open_lib, @function
+.type runtime_call_retail_network_bootstrap, @function
+.type runtime_read_retail_so_fd, @function
 .type runtime_call_retail_veneer_selftest, @function
 
 runtime_entry:
@@ -186,7 +192,20 @@ retail_call_veneer runtime_call_retail_read_async, PRIME3_RETAIL_IOS_READ_ASYNC_
 retail_call_veneer runtime_call_retail_write_async, PRIME3_RETAIL_IOS_WRITE_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_ios_ioctl_async, PRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS
 retail_call_veneer runtime_call_retail_ios_ioctlv_async, PRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS
+retail_call_veneer runtime_call_retail_nwc24_open_lib, PRIME3_RETAIL_NWC24_OPEN_LIB_ADDRESS
+retail_call_veneer runtime_call_retail_network_bootstrap, PRIME3_RETAIL_NETWORK_BOOTSTRAP_ADDRESS
 retail_call_veneer runtime_call_retail_veneer_selftest, runtime_local_veneer_selftest_target
+
+runtime_read_retail_so_fd:
+    stwu    1, -0x10(1)
+    stw     13, 0x08(1)
+    install_verified_game_sda_registers
+    lwz     3, PRIME3_RETAIL_SO_FD_SDA_OFFSET(13)
+    lwz     13, 0x08(1)
+    addi    1, 1, 0x10
+    blr
+
+.size runtime_read_retail_so_fd, . - runtime_read_retail_so_fd
 
 .section .runtime_state.canary, "aw", @progbits
 .balign 32

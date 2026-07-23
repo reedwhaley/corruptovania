@@ -9,6 +9,10 @@ from randovania.games.prime3.gui.dialog.game_export_dialog import RUNTIME_MODE_C
 def test_hardware_runtime_mode_choices_are_complete_and_production_first() -> None:
     assert tuple(mode for _label, mode in RUNTIME_MODE_CHOICES) == HARDWARE_RUNTIME_MODES
     assert RUNTIME_MODE_CHOICES[0] == ("Production CP3W service", Prime3HardwareRuntimeMode.PRODUCTION)
+    assert RUNTIME_MODE_CHOICES[-1] == (
+        "Native WiiConnect24 bootstrap beacon",
+        Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
+    )
 
 
 def test_hardware_runtime_mode_combo_is_in_ui_file() -> None:

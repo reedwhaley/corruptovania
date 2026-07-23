@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
 import sys
 from pathlib import Path
@@ -19,6 +20,11 @@ from randovania.games.prime3.exporter.hardware_runtime import (
     load_validated_hardware_runtime_assets,
     runtime_asset_directory,
 )
+from tools.prime3_wii_runtime.build_payload import DEFAULT_NATIVE_BEACON_IPV4, DEFAULT_NATIVE_BEACON_PORT
+
+
+def _parse_ipv4(value: str) -> int:
+    return int(ipaddress.IPv4Address(value))
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +37,20 @@ def parse_args() -> argparse.Namespace:
         action="append",
         help="Build only this mode; repeat for multiple modes. The default builds all hardware modes.",
     )
+    parser.add_argument(
+        "--native-beacon-ipv4",
+        type=_parse_ipv4,
+        default=DEFAULT_NATIVE_BEACON_IPV4,
+        metavar="ADDRESS",
+        help="Development IPv4 destination for the native bootstrap beacon.",
+    )
+    parser.add_argument(
+        "--native-beacon-port",
+        type=int,
+        default=DEFAULT_NATIVE_BEACON_PORT,
+        metavar="PORT",
+        help="Development UDP destination port for the native bootstrap beacon.",
+    )
     return parser.parse_args()
 
 
@@ -41,7 +61,12 @@ def main() -> None:
     modes = tuple(args.mode) if args.mode else HARDWARE_RUNTIME_MODES
     for runtime_mode in modes:
         asset_dir = runtime_asset_directory(args.output_dir, runtime_mode)
-        build_hardware_runtime_payload(asset_dir, runtime_mode)
+        build_hardware_runtime_payload(
+            asset_dir,
+            runtime_mode,
+            native_beacon_ipv4=args.native_beacon_ipv4,
+            native_beacon_port=args.native_beacon_port,
+        )
         assets = load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=True)
         assert assets.manifest.relocated_runtime is not None
         transport = assets.manifest.relocated_runtime.transport

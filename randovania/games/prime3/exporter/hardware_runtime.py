@@ -31,7 +31,11 @@ from randovania.games.prime3.exporter.runtime_payload import (
     PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
     Prime3RuntimePayloadManifest,
 )
-from tools.prime3_wii_runtime.build_payload import build_prime3_runtime_payload
+from tools.prime3_wii_runtime.build_payload import (
+    DEFAULT_NATIVE_BEACON_IPV4,
+    DEFAULT_NATIVE_BEACON_PORT,
+    build_prime3_runtime_payload,
+)
 
 if TYPE_CHECKING:
     import uuid
@@ -47,6 +51,7 @@ class Prime3HardwareRuntimeMode(StrEnum):
     CREATE_SOCKET_ONCE = "retail_wrapper_create_socket_once"
     BIND_ONCE = "retail_wrapper_bind_once"
     RECVFROM_ONCE = "retail_wrapper_recvfrom_once"
+    NATIVE_WC24_BOOTSTRAP_BEACON_ONCE = "native_wc24_bootstrap_beacon_once"
 
 
 PRODUCTION_RUNTIME_MODE = Prime3HardwareRuntimeMode.PRODUCTION.value
@@ -104,6 +109,9 @@ def runtime_asset_directory(base_dir: Path, runtime_mode: Prime3HardwareRuntimeM
 def build_hardware_runtime_payload(
     output_dir: Path,
     runtime_mode: Prime3HardwareRuntimeMode,
+    *,
+    native_beacon_ipv4: int = DEFAULT_NATIVE_BEACON_IPV4,
+    native_beacon_port: int = DEFAULT_NATIVE_BEACON_PORT,
 ) -> Prime3RuntimePayloadManifest:
     production = runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION
     return build_prime3_runtime_payload(
@@ -113,6 +121,8 @@ def build_hardware_runtime_payload(
         enable_ios_udp_diagnostic=True,
         ios_udp_mode=runtime_mode.value,
         ios_udp_loop_count=0 if production else 1,
+        native_beacon_ipv4=native_beacon_ipv4,
+        native_beacon_port=native_beacon_port,
         reserved_high=PRODUCTION_RESERVED_HIGH,
         diagnostic_address=PRODUCTION_DIAGNOSTIC_ADDRESS,
     )

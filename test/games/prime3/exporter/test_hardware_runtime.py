@@ -228,9 +228,31 @@ def test_hardware_runtime_build_uses_mode_configuration(
         "enable_ios_udp_diagnostic": True,
         "ios_udp_mode": runtime_mode.value,
         "ios_udp_loop_count": 0 if production else 1,
+        "native_beacon_ipv4": 0xC0A832F8,
+        "native_beacon_port": 43674,
         "reserved_high": 0x817E0000,
         "diagnostic_address": 0x817E0100,
     }
+
+
+def test_native_bootstrap_beacon_endpoint_is_configurable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_build(output_dir: Path, **kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(hardware_runtime, "build_prime3_runtime_payload", fake_build)
+
+    hardware_runtime.build_hardware_runtime_payload(
+        tmp_path,
+        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
+        native_beacon_ipv4=0xC0000201,
+        native_beacon_port=45678,
+    )
+
+    assert captured["native_beacon_ipv4"] == 0xC0000201
+    assert captured["native_beacon_port"] == 45678
 
 
 def test_diagnostic_manifest_does_not_require_production_protocol_metadata(production_runtime) -> None:

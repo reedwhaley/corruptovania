@@ -136,6 +136,11 @@ PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_ASYNC_ADDRESS = 0x80505384
 PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_SYNC_ADDRESS = 0x80505468
 PRIME3_NTSC_IOS_SUBMIT_HELPER_ADDRESS = 0x8050441C
 PRIME3_NTSC_IOS_REQUEST_ALLOCATOR_ADDRESS = 0x80505960
+PRIME3_NTSC_NWC24_OPEN_LIB_ADDRESS = 0x805541B8
+PRIME3_NTSC_NETWORK_BOOTSTRAP_ADDRESS = 0x80508DD4
+PRIME3_NTSC_SO_FD_SDA_OFFSET = -26024
+DEFAULT_NATIVE_BEACON_IPV4 = 0xC0A832F8
+DEFAULT_NATIVE_BEACON_PORT = 43674
 PRIME3_NTSC_IOS_OPEN_ASYNC_GUARD_WORDS = (
     0x9421FFD0,
     0x7C0802A6,
@@ -151,6 +156,8 @@ RUNTIME_RETAIL_READ_ASYNC_VENEER_SYMBOL = "runtime_call_retail_read_async"
 RUNTIME_RETAIL_WRITE_ASYNC_VENEER_SYMBOL = "runtime_call_retail_write_async"
 RUNTIME_RETAIL_IOS_IOCTL_ASYNC_VENEER_SYMBOL = "runtime_call_retail_ios_ioctl_async"
 RUNTIME_RETAIL_IOS_IOCTLV_ASYNC_VENEER_SYMBOL = "runtime_call_retail_ios_ioctlv_async"
+RUNTIME_RETAIL_NWC24_OPEN_LIB_VENEER_SYMBOL = "runtime_call_retail_nwc24_open_lib"
+RUNTIME_RETAIL_NETWORK_BOOTSTRAP_VENEER_SYMBOL = "runtime_call_retail_network_bootstrap"
 RUNTIME_RETAIL_VENEER_SELFTEST_SYMBOL = "runtime_call_retail_veneer_selftest"
 RUNTIME_RETAIL_VENEER_SELFTEST_TARGET_SYMBOL = "runtime_local_veneer_selftest_target"
 RUNTIME_RETAIL_VENEER_SELFTEST_CALLER_SYMBOL = "runtime_run_retail_veneer_selftest"
@@ -1017,6 +1024,8 @@ def build_prime3_runtime_payload(  # noqa: C901
     enable_ios_udp_diagnostic: bool = False,
     ios_udp_mode: str = "normal",
     ios_udp_loop_count: int = 3,
+    native_beacon_ipv4: int = DEFAULT_NATIVE_BEACON_IPV4,
+    native_beacon_port: int = DEFAULT_NATIVE_BEACON_PORT,
     reserved_high: int | None = None,
     diagnostic_address: int | None = None,
     runtime_destination: int | None = None,
@@ -1048,6 +1057,7 @@ def build_prime3_runtime_payload(  # noqa: C901
         "cp3w_game_identity",
         "cp3w_inventory",
         "cp3w_inventory_service",
+        "native_wc24_bootstrap_beacon_once",
         "retail_wrapper_ioctl_async_abi_probe",
     }:
         raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
@@ -1056,6 +1066,10 @@ def build_prime3_runtime_payload(  # noqa: C901
             raise RuntimeError("cp3w_inventory_service requires ios_udp_loop_count=0 (unbounded).")
     elif ios_udp_loop_count < 1 or ios_udp_loop_count > 100:
         raise RuntimeError("ios_udp_loop_count must be between 1 and 100.")
+    if not 0 < native_beacon_ipv4 <= 0xFFFFFFFF:
+        raise RuntimeError("native_beacon_ipv4 must be a nonzero IPv4 address encoded as a 32-bit integer.")
+    if not 0 < native_beacon_port <= 0xFFFF:
+        raise RuntimeError("native_beacon_port must be between 1 and 65535.")
     if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
         raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
     if ios_udp_mode != "normal" and not enable_ios_udp_diagnostic:
@@ -1092,6 +1106,8 @@ def build_prime3_runtime_payload(  # noqa: C901
             enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
             ios_udp_mode=ios_udp_mode,
             ios_udp_loop_count=ios_udp_loop_count,
+            native_beacon_ipv4=native_beacon_ipv4,
+            native_beacon_port=native_beacon_port,
         )
         _write_runtime_blob_object(
             toolchain=toolchain,
@@ -1443,6 +1459,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             cp3w_game_identity = ios_udp_mode == "cp3w_game_identity"
             cp3w_inventory_service = ios_udp_mode == "cp3w_inventory_service"
             cp3w_inventory = ios_udp_mode in {"cp3w_inventory", "cp3w_inventory_service"}
+            native_wc24_bootstrap = ios_udp_mode == "native_wc24_bootstrap_beacon_once"
             transport_metadata = Prime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 udp_port=43674,
@@ -1465,9 +1482,10 @@ def build_prime3_runtime_payload(  # noqa: C901
                     or cp3w_hello_session
                     or cp3w_game_identity
                     or cp3w_inventory
+                    or native_wc24_bootstrap
                 ),
                 nwc24_startup_enabled=True,
-                kd_close_enabled=not nwc24_ioctl_once,
+                kd_close_enabled=not (nwc24_ioctl_once or native_wc24_bootstrap),
                 ip_close_on_success=False,
                 socket_close_on_success=False,
                 network_diagnostics_address=relocated_runtime.network_diagnostics_address,
@@ -1477,7 +1495,7 @@ def build_prime3_runtime_payload(  # noqa: C901
                     26
                     if cp3w_inventory_service
                     else 0xFE
-                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once or startup_once
+                    if nwc24_ioctl_once or nwc24_close_once or open_ip_once or startup_once or native_wc24_bootstrap
                     else 18
                     if so_startup_once
                     else 19
@@ -1506,7 +1524,7 @@ def build_prime3_runtime_payload(  # noqa: C901
                     "WAIT_RECEIVE"
                     if cp3w_inventory_service
                     else "DIAGNOSTIC_COMPLETE"
-                    if startup_once
+                    if startup_once or native_wc24_bootstrap
                     else "NWC24_COMPLETE"
                     if nwc24_ioctl_once
                     else "KD_CLOSED"
@@ -2348,6 +2366,8 @@ def _build_relocated_runtime(
     enable_ios_udp_diagnostic: bool,
     ios_udp_mode: str,
     ios_udp_loop_count: int,
+    native_beacon_ipv4: int,
+    native_beacon_port: int,
 ) -> RelocatedRuntimeBuildResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     asm_object_path = output_dir.joinpath("relocated_runtime_asm.o")
@@ -2377,6 +2397,11 @@ def _build_relocated_runtime(
         f"-DPRIME3_RETAIL_IOS_WRITE_ASYNC_ADDRESS=0x{PRIME3_NTSC_IOS_WRITE_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_IOS_IOCTL_ASYNC_ADDRESS=0x{PRIME3_NTSC_CONFIRMED_IOS_IOCTL_ASYNC_ADDRESS:08X}",
         f"-DPRIME3_RETAIL_IOS_IOCTLV_ASYNC_ADDRESS=0x{PRIME3_NTSC_CONFIRMED_IOS_IOCTLV_ASYNC_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_NWC24_OPEN_LIB_ADDRESS=0x{PRIME3_NTSC_NWC24_OPEN_LIB_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_NETWORK_BOOTSTRAP_ADDRESS=0x{PRIME3_NTSC_NETWORK_BOOTSTRAP_ADDRESS:08X}",
+        f"-DPRIME3_RETAIL_SO_FD_SDA_OFFSET={PRIME3_NTSC_SO_FD_SDA_OFFSET}",
+        f"-DPRIME3_NATIVE_BEACON_IPV4=0x{native_beacon_ipv4:08X}",
+        f"-DPRIME3_NATIVE_BEACON_PORT={native_beacon_port}",
         f"-DPRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS={1 if enable_recurring_hook_diagnostics else 0}",
         f"-DPRIME3_ENABLE_IOS_UDP_DIAGNOSTIC={1 if enable_ios_udp_diagnostic else 0}",
         (
@@ -2405,6 +2430,7 @@ def _build_relocated_runtime(
                 "cp3w_game_identity": "20",
                 "cp3w_inventory": "21",
                 "cp3w_inventory_service": "22",
+                "native_wc24_bootstrap_beacon_once": "23",
             }[ios_udp_mode]
         ),
         f"-DPRIME3_IOS_UDP_DIAGNOSTIC_LOOP_COUNT={ios_udp_loop_count}",
@@ -4008,6 +4034,8 @@ def _validate_retail_call_veneer_disassembly(
         RUNTIME_RETAIL_WRITE_ASYNC_VENEER_SYMBOL: wrapper_metadata.write_async_address,
         RUNTIME_RETAIL_IOS_IOCTL_ASYNC_VENEER_SYMBOL: wrapper_metadata.confirmed_ioctl_async_address,
         RUNTIME_RETAIL_IOS_IOCTLV_ASYNC_VENEER_SYMBOL: wrapper_metadata.confirmed_ioctlv_async_address,
+        RUNTIME_RETAIL_NWC24_OPEN_LIB_VENEER_SYMBOL: PRIME3_NTSC_NWC24_OPEN_LIB_ADDRESS,
+        RUNTIME_RETAIL_NETWORK_BOOTSTRAP_VENEER_SYMBOL: PRIME3_NTSC_NETWORK_BOOTSTRAP_ADDRESS,
         RUNTIME_RETAIL_VENEER_SELFTEST_SYMBOL: selftest_target_address,
     }
     for veneer_name, expected_target in veneer_targets.items():

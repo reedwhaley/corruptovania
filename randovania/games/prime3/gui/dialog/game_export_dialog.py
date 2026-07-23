@@ -33,6 +33,7 @@ RUNTIME_MODE_CHOICES = (
     ("Stop after socket creation", Prime3HardwareRuntimeMode.CREATE_SOCKET_ONCE),
     ("Stop after bind", Prime3HardwareRuntimeMode.BIND_ONCE),
     ("Wait for one UDP datagram", Prime3HardwareRuntimeMode.RECVFROM_ONCE),
+    ("Native WiiConnect24 bootstrap beacon", Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE),
 )
 
 

@@ -8,10 +8,16 @@
 #define PRIME3_IOS_UDP_DIAGNOSTIC_MODE 0
 #endif
 
+#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 22 || PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+#define PRIME3_ENABLE_NATIVE_NETWORK_READINESS 1
+#else
+#define PRIME3_ENABLE_NATIVE_NETWORK_READINESS 0
+#endif
+
 .global runtime_entry
 .global runtime_poll_entry
 .global runtime_poll_hook_wrapper
-#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+#if PRIME3_ENABLE_NATIVE_NETWORK_READINESS
 .global runtime_native_post_copy_wrapper
 #endif
 .global runtime_call_retail_ios_open_async
@@ -30,7 +36,7 @@
 .type runtime_entry, @function
 .type runtime_poll_entry, @function
 .type runtime_poll_hook_wrapper, @function
-#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+#if PRIME3_ENABLE_NATIVE_NETWORK_READINESS
 .type runtime_native_post_copy_wrapper, @function
 #endif
 .type runtime_call_retail_ios_open_async, @function
@@ -196,19 +202,23 @@ runtime_poll_hook_wrapper:
 
 .size runtime_poll_hook_wrapper, . - runtime_poll_hook_wrapper
 
-#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
+#if PRIME3_ENABLE_NATIVE_NETWORK_READINESS
 runtime_native_post_copy_wrapper:
     stwu    1, -0x20(1)
     mflr    0
     stw     0, 0x1C(1)
     stw     2, 0x18(1)
     stw     13, 0x14(1)
+    bl      runtime_native_overlay_post_copy_should_draw
+    cmpwi   3, 0
+    beq     .Lruntime_native_post_copy_continue
     lis     12, 0x804D
     ori     12, 12, 0x2644
     mtctr   12
     bctrl
     mr      3, 30
     bl      runtime_native_overlay_draw_destination
+.Lruntime_native_post_copy_continue:
     lwz     13, 0x14(1)
     lwz     2, 0x18(1)
     lwz     0, 0x1C(1)

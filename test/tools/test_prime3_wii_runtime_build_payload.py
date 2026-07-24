@@ -1682,18 +1682,27 @@ def test_native_wc24_overlay_reports_live_and_terminal_values() -> None:
     )[0]
 
     expected_labels = (
-        "WC24 OPEN: ",
-        "NATIVE BOOTSTRAP: ",
-        "SO DESCRIPTOR: ",
-        "HOST ATTEMPTS: ",
-        "HOST RESULT: ",
-        "SOCKET RESULT: ",
-        "BEACON ATTEMPTS: ",
-        "SUBMIT RESULT: ",
-        "SEND RESULT: ",
-        "PHASE: ",
-        "ERROR PHASE: ",
-        "LAST ERROR: ",
+        "MODE ",
+        " NAT1 ",
+        " STG ",
+        "OV ",
+        " TOGGLE ",
+        " FAST ",
+        " DRAW ",
+        "GEN ",
+        " REPL ",
+        " SO ",
+        " SOCK ",
+        "HOST ",
+        " PH ",
+        "ERRPH ",
+        " HIST ",
+        "BEACON ",
+        " OK ",
+        "SUBFAIL ",
+        " COMFAIL ",
+        "SUBMIT ",
+        " SEND ",
     )
     for label in expected_labels:
         assert f'"{label}"' in overlay
@@ -1703,10 +1712,10 @@ def test_native_wc24_overlay_reports_live_and_terminal_values() -> None:
     assert "runtime_transport_last_error_phase" in overlay
     assert "runtime_transport_last_error" in overlay
     assert "runtime_transport_host_id_ready != 0" in overlay
-    assert '"STAGE "' in overlay
-    assert '" POLL "' in overlay
+    assert '" P "' in overlay
     poll_exit = source.split("runtime_poll_exit:", 1)[1]
-    assert poll_exit.index("runtime_sync_network_diagnostics();") < poll_exit.index("runtime_native_overlay_draw();")
+    assert "runtime_native_overlay_draw();" not in poll_exit
+    assert "runtime_native_overlay_post_copy_should_draw" in overlay
 
 
 def test_native_wc24_immediate_canary_and_stage_transitions_are_persistent() -> None:
@@ -1771,14 +1780,150 @@ def test_native_wc24_installs_guarded_post_copy_overlay_hook() -> None:
     assert "runtime_native_post_copy_hook_result = -1;" in installer
     assert "runtime_instruction_cache_sync(hook, sizeof(*hook));" in installer
     assert "runtime_native_post_copy_hook_result = 1;" in installer
-    assert "#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23" in assembly
+    assert "#if PRIME3_ENABLE_NATIVE_NETWORK_READINESS" in assembly
     assert "runtime_native_post_copy_wrapper:" in assembly
+    assert "bl      runtime_native_overlay_post_copy_should_draw" in assembly
+    assert "beq     .Lruntime_native_post_copy_continue" in assembly
     assert "lis     12, 0x804D" in assembly
     assert "ori     12, 12, 0x2644" in assembly
     assert assembly.index("ori     12, 12, 0x2644") < assembly.index("bl      runtime_native_overlay_draw_destination")
     assert "bl      runtime_native_overlay_draw_destination" in assembly
     assert "lwz     0, 0x14(1)" in assembly
     assert "ori     12, 12, 0x2464" in assembly
+
+
+def test_production_uses_native_readiness_and_generation_owned_recovery() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+
+    shared_mode = source.split("static u32 runtime_transport_uses_native_network_readiness(void)", 1)[1].split(
+        "static u32 runtime_transport_is_cp3w_mode(void)", 1
+    )[0]
+    recovery = source.split("static void runtime_begin_native_network_generation_recovery(void)", 1)[1].split(
+        "#if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23", 1
+    )[0]
+    close_completion = source.split(
+        "} else if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_CLOSE_SOCKET_FOR_RECOVERY)", 1
+    )[1].split("if (runtime_transport_phase == RUNTIME_TRANSPORT_PHASE_WAIT_NETWORK_READY)", 1)[0]
+
+    assert "runtime_transport_is_unbounded_cp3w_inventory_service()" in shared_mode
+    assert "runtime_transport_is_native_wc24_bootstrap_mode()" in shared_mode
+    assert "runtime_network_startup_generation += 1;" in recovery
+    assert "runtime_transport_pending_generation += 1;" in recovery
+    assert "runtime_transport_pending_callback_token = 0;" in recovery
+    assert "runtime_reset_cp3w_session_for_transport_generation();" in recovery
+    assert "runtime_transport_cp3w_game_identity_requests = 0" not in recovery
+    assert "runtime_transport_cp3w_inventory_requests = 0" not in recovery
+    assert "runtime_transport_kd_fd = runtime_transport_ip_fd;" in recovery
+    assert "runtime_transport_ip_fd = -1;" in recovery
+    assert "runtime_begin_native_network_generation_recovery();" in close_completion
+    callback = source.split("static s32 runtime_ios_callback(s32 result, void* usrdata)", 2)[2].split(
+        "static s32 runtime_submit_open", 1
+    )[0]
+    assert "expected_usrdata = (void*)runtime_transport_pending_callback_token;" in callback
+    assert "if (usrdata != expected_usrdata)" in callback
+    assert source.count("(void*)runtime_transport_pending_callback_token") >= 3
+
+
+def test_production_descriptor_replacement_can_open_ip_after_retained_descriptor_close() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    submit_open = source.split("static s32 runtime_submit_open(const char* path, u32 operation, u32 next_phase)\n{", 1)[
+        1
+    ]
+    open_ip_guard = submit_open.split("if (operation == RUNTIME_TRANSPORT_OP_OPEN_IP) {", 1)[1].split(
+        "runtime_memzero(&runtime_transport_open_ip_context", 1
+    )[0]
+
+    native_guard = open_ip_guard.split("runtime_transport_uses_native_network_readiness()", 1)[1].split(
+        "runtime_transport_uses_receive_mode()", 1
+    )[0]
+    assert "runtime_transport_kd_closed == 0" in native_guard
+    assert "runtime_transport_kd_closed != 0" not in native_guard
+    assert "runtime_transport_uses_receive_mode()" in open_ip_guard
+    assert "runtime_transport_kd_closed != 0" in open_ip_guard
+
+
+def test_overlay_toggle_uses_non_consuming_kpad_hold_state_and_hidden_path_is_non_rendering() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    assembly = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.S").read_text()
+    guard = source.split("u32 runtime_native_overlay_post_copy_should_draw(void)", 1)[1].split(
+        "static void runtime_native_overlay_poll_input(void)", 1
+    )[0]
+    poll_input = source.split("static void runtime_native_overlay_poll_input(void)", 1)[1].split(
+        "#undef RUNTIME_GLYPH5", 1
+    )[0]
+
+    assert "runtime_network_diagnostics_block.overlay_enabled = 0;" in source
+    assert "runtime_native_overlay_input_available == 0" in guard
+    assert "runtime_native_overlay_hidden_fast_path_count += 1;" in guard
+    assert guard.index("return 0;") < guard.index("return 1;")
+    assert assembly.index("beq     .Lruntime_native_post_copy_continue") < assembly.index("ori     12, 12, 0x2644")
+    assert "RUNTIME_PRIME3_NTSC_KPAD_CHANNEL_0_STATUS_ADDRESS = 0x805F5088" in source
+    assert "RUNTIME_NATIVE_OVERLAY_TOGGLE_BUTTON_MASK = 0x1300" in source
+    assert "RUNTIME_NATIVE_OVERLAY_TOGGLE_HOLD_POLLS = 30" in source
+    assert "RUNTIME_NATIVE_OVERLAY_DRAW_INTERVAL_POLLS = 30" in source
+    assert "runtime_native_overlay_input_available = 1;" in source
+    assert "runtime_poll_counter < runtime_native_overlay_next_draw_poll" in guard
+    assert "runtime_poll_counter + RUNTIME_NATIVE_OVERLAY_DRAW_INTERVAL_POLLS" in guard
+    assert "held_buttons = *kpad_hold;" in poll_input
+    assert "runtime_native_overlay_toggle_hold_count += 1;" in poll_input
+    assert "runtime_native_overlay_toggle_latched = 1;" in poll_input
+    assert "runtime_network_diagnostics_block.overlay_enabled ==" in poll_input
+    assert "runtime_native_overlay_next_draw_poll = runtime_poll_counter;" in poll_input
+    assert "KPADRead" not in poll_input
+    assert source.index("runtime_native_overlay_poll_input();") < source.index(
+        "runtime_last_transport_phase_before_step = runtime_transport_phase;"
+    )
+
+
+def test_overlay_displays_mode_specific_production_and_native_diagnostics() -> None:
+    source = (REPO_ROOT / "tools" / "prime3_wii_runtime" / "relocated_runtime.c").read_text()
+    overlay = source.split("static void runtime_native_overlay_draw_xfb(const runtime_native_xfb* xfb)", 1)[1].split(
+        "static void runtime_native_overlay_draw(void)", 1
+    )[0]
+
+    common_fields = (
+        "PRIME3_IOS_UDP_DIAGNOSTIC_MODE",
+        "RUNTIME_NATIVE_EXECUTION_CANARY",
+        "runtime_network_diagnostics_block.ios_revision",
+        "runtime_network_diagnostics_block.shutdown_call_count",
+        "runtime_network_diagnostics_block.overlay_enabled",
+        "runtime_native_overlay_toggle_count",
+        "runtime_native_overlay_hidden_fast_path_count",
+        "runtime_native_overlay_post_copy_draw_count",
+        "runtime_network_startup_generation",
+        "runtime_network_descriptor_replacement_count",
+        "runtime_transport_ip_fd",
+        "runtime_transport_host_id",
+        "runtime_transport_phase",
+        "runtime_transport_last_error_phase",
+        "runtime_transport_last_error",
+        "runtime_transport_socket_fd",
+    )
+    production_fields = (
+        "runtime_transport_bind_callback_result",
+        "runtime_transport_bound_flag",
+        "runtime_network_diagnostics_block.listening",
+        "runtime_transport_callback_pending",
+        "runtime_transport_receive_count",
+        "runtime_transport_send_count",
+        "runtime_transport_cp3w_session_id",
+        "runtime_transport_cp3w_last_command",
+        "runtime_transport_cp3w_last_request_id",
+        "runtime_transport_cp3w_game_identity_requests",
+        "runtime_transport_cp3w_inventory_requests",
+        "runtime_transport_cp3w_inventory_snapshot_sequence",
+        "runtime_transport_socket_recovery_count",
+        "runtime_transport_rejected_callback_count",
+    )
+    native_fields = (
+        "runtime_native_beacon_attempt_count",
+        "runtime_native_beacon_success_count",
+        "runtime_native_beacon_submission_failure_count",
+        "runtime_native_beacon_completion_failure_count",
+    )
+
+    for field in common_fields + production_fields + native_fields:
+        assert field in overlay
 
 
 def test_native_wc24_diagnostics_reuse_fixed_cp3d_abi() -> None:

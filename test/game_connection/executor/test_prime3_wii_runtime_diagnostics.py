@@ -50,6 +50,10 @@ def test_native_execution_aliases_reuse_unused_v1_fields() -> None:
         ios_revision=7,
         shutdown_call_count=1234,
         overlay_page=-1,
+        initialization_attempt_count=2,
+        successful_initialization_count=1,
+        last_shutdown_descriptor=6,
+        last_heartbeat_result=-101,
     )
 
     result = parse_diagnostics(raw)
@@ -59,6 +63,10 @@ def test_native_execution_aliases_reuse_unused_v1_fields() -> None:
     assert result.native_execution_stage == 7
     assert result.native_recurring_hook_count == 1234
     assert result.native_post_copy_hook_result == -1
+    assert result.native_startup_generation == 2
+    assert result.native_descriptor_replacement_count == 1
+    assert result.native_initial_descriptor == 6
+    assert result.native_initial_descriptor_error == -101
 
 
 def test_diagnostics_preserve_advisory_verification_failure_without_claiming_endpoint() -> None:

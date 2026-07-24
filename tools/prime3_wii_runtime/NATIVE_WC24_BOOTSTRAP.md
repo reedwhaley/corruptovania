@@ -40,6 +40,21 @@ offsets `0x40` and `0x60`. Initialization and reference state also use SDA offse
 2 (initialized). Failure cleanup inside the retail bootstrap closes SO through the native
 close path; successful diagnostic ownership is retained instead.
 
+## Shared production readiness
+
+`cp3w_inventory_service` and `native_wc24_bootstrap_beacon_once` use the same
+native readiness gate through the first valid host ID. Production then enters
+the existing socket, `INADDR_ANY:43674` bind, receive, CP3W session, identity,
+and inventory path; it does not prepare or submit the diagnostic beacon.
+
+After a later production socket failure, the runtime closes the UDP socket,
+increments its startup generation, ages the pending callback generation and
+receive/send callback token, resets only the CP3W session negotiation fields,
+closes the SO descriptor owned by the old generation, and reruns native
+readiness. Identity and inventory counters remain intact. Each generation
+starts with a fresh one-replacement allowance. The initial descriptor and its
+historical readiness error remain in diagnostics across later recoveries.
+
 ## Diagnostic mode
 
 `native_wc24_bootstrap_beacon_once` waits for the recurring hook's normal initial delay and
@@ -61,14 +76,21 @@ Packaged assets contain `192.168.50.248` as a guarded placeholder. The export di
 an IPv4 destination and patches only that copied four-byte field. UDP port `43674` is fixed and
 cannot be overridden.
 
-An allocation-free 3x5 debug font is drawn after every recurring-hook poll. The renderer reads
+An allocation-free 3x5 debug font is available in native diagnostic and production modes. The renderer reads
 the VI top/bottom XFB registers, honors the register's page-offset bit, derives width and stride
 from VI picture configuration, derives field height from VI vertical timing, accepts validated
 MEM1 and MEM2 ranges, and draws every distinct active field (plus right-eye fields when 3D mode
 is active). It changes only the Y bytes in Wii YCbCr 4:2:2 pairs, clips every write, and flushes
 the complete modified row range. A bordered upper-left marker reports the execution stage and
-poll count before the full diagnostic text. This renderer is compiled only for mode 23;
-production and the other diagnostic modes contain no overlay code.
+poll count before the full diagnostic text. The overlay defaults off. Its post-copy wrapper
+checks the guarded enable state before `GXDrawDone`; while hidden it does not resolve XFBs,
+write framebuffer memory, or flush framebuffer ranges. Hold Minus+1+2 for 30 consecutive
+recurring-hook polls to toggle it. The runtime reads the current channel-0 `KPADStatus.hold`
+word directly at `0x805F5088`; it does not call `KPADRead` or alter KPAD's buffered-input
+counters. One toggle is allowed per hold, and releasing any button rearms the chord.
+While enabled, the guarded post-copy renderer runs at most once per 30 recurring-hook polls;
+intervening post-copy calls use the same immediate continuation as the disabled path. This
+prevents repeated `GXDrawDone` and full-XFB cache work from starving the game or CP3W service.
 
 The recurring hook at `0x800BB71C` is a high-frequency game accessor and runs before Prime 3's
 frame copy, so its direct XFB writes can be replaced by the later EFB-to-XFB operation. The
@@ -81,7 +103,7 @@ instruction, and resumes at `0x80372464`. Waiting for draw completion is require
 `GXCopyDisp` only submits the GPU copy; drawing immediately after submission races and can be
 overwritten by the later copy-to-RAM operation. Installation flushes the changed data-cache
 line and invalidates the corresponding instruction-cache line. A mismatch fails closed without
-patching retail code. No post-copy wrapper is compiled or installed for any other mode.
+patching retail code. The wrapper is compiled and installed only for mode 22 and mode 23.
 
 The relocated runtime's manifest-declared `CP3D` block remains version 1 and size `0x100`.
 `0x817E0100` is the separate entry-bootstrap canary block; it is not the network diagnostics
@@ -92,7 +114,10 @@ block. Fields unused by this non-listening mode have the following mode-specific
 - shutdown call count: recurring-hook execution count
 - overlay page: signed post-copy hook result (`1` installed, `-1` instruction mismatch,
   `-2` unreachable or unaligned wrapper)
-- initialization attempt count: native bootstrap calls
+- initialization attempt count: startup generation
+- successful initialization count: descriptor replacement count
+- last shutdown descriptor: initial retained SO descriptor
+- last heartbeat result: historical initial-descriptor readiness error
 - NWC24 result: native library-open result
 - network initialization result: retail network-bootstrap result
 - IP and socket descriptors: retained retail SO descriptor and beacon socket
@@ -107,7 +132,6 @@ block. Fields unused by this non-listening mode have the following mode-specific
 - getsockname result: last asynchronous beacon completion result
 - last successful bind poll and last packet send poll: first and most recent successful beacon polls
 - receive loop iteration count: fixed beacon limit (`10`)
-- last heartbeat result: last asynchronous beacon completion result
 - cleanup call count: successful cleanup suppressions or deferrals
 - current phase and error fields: exact terminal or failed operation state
 

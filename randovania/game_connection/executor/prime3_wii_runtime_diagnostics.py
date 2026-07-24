@@ -143,6 +143,22 @@ class Prime3WiiRuntimeDiagnostics:
     def native_post_copy_hook_result(self) -> int:
         return _as_signed(self.values["overlay_page"])
 
+    @property
+    def native_startup_generation(self) -> int:
+        return self.values["initialization_attempt_count"]
+
+    @property
+    def native_descriptor_replacement_count(self) -> int:
+        return self.values["successful_initialization_count"]
+
+    @property
+    def native_initial_descriptor(self) -> int:
+        return self.values["last_shutdown_descriptor"]
+
+    @property
+    def native_initial_descriptor_error(self) -> int:
+        return self.values["last_heartbeat_result"]
+
 
 def _as_signed(value: int) -> int:
     return value - 0x1_0000_0000 if value & 0x8000_0000 else value

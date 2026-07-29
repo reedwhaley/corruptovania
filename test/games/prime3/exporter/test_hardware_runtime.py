@@ -54,6 +54,14 @@ def production_runtime(tmp_path_factory: pytest.TempPathFactory):
     output_dir.joinpath("payload.elf").write_bytes(b"\x7fELF\x01\x02synthetic CP3W test fixture")
 
     assets = hardware_runtime.load_validated_production_runtime_assets(output_dir, require_elf=True)
+    assert assets.manifest.relocated_runtime is not None
+    transport = assets.manifest.relocated_runtime.transport
+    assert isinstance(transport, Prime3RuntimeTransportMetadata)
+    assert transport.transport_kind == "tcp"
+    assert transport.server_ipv4_size == 4
+    assert transport.server_port_size == 2
+    assert transport.server_ipv4_byte_order == "big"
+    assert transport.server_port_byte_order == "big"
     return assets.payload, assets.manifest, output_dir
 
 

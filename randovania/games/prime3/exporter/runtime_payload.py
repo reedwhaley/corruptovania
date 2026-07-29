@@ -317,7 +317,7 @@ class Prime3RuntimeInventoryMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
-class Prime3RuntimeTransportMetadata:
+class LegacyPrime3RuntimeTransportMetadata:
     mode: str
     udp_port: int
     initialization_enabled: bool
@@ -955,7 +955,12 @@ class Prime3RuntimeTransportMetadata:
             or is_native_wc24_bootstrap
         ) and not self.send_enabled:
             raise Prime3DolPatchError("Recv-send metadata must enable send.")
-        if not self.nwc24_startup_enabled:
+        if is_cp3w_inventory_service:
+            if not self.nwc24_startup_enabled or not self.kd_close_enabled:
+                raise Prime3DolPatchError(
+                    "CP3W inventory service metadata must include passive NWC24 startup and owned KD cleanup."
+                )
+        elif not self.nwc24_startup_enabled:
             raise Prime3DolPatchError("Initialization-only transport metadata must enable NWC24 startup.")
         is_nwc24_ioctl_once = self.mode == "retail_wrapper_nwc24_startup_once"
         is_nwc24_close_once = self.mode == "retail_wrapper_nwc24_close_kd_once"
@@ -1942,7 +1947,7 @@ class Prime3RuntimeTransportMetadata:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeTransportMetadata:
+    def from_json_dict(cls, data: dict[str, object]) -> LegacyPrime3RuntimeTransportMetadata:
         return cls(
             mode=_json_string(data, "mode"),
             udp_port=_json_int(data, "udp_port") if "udp_port" in data else 43674,
@@ -2803,6 +2808,90 @@ class Prime3RetailIosWrapperMetadata:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3RuntimeTransportMetadata:
+    """Production TCP tracker configuration embedded in the CP3C runtime block."""
+
+    transport_kind: str
+    protocol_magic_hex: str
+    protocol_version: int
+    frame_size: int
+    diagnostics_enabled: bool
+    inbound_queue_depth: int
+    outbound_queue_depth: int
+    cp3c_config_offset: int
+    cp3c_config_size: int
+    server_ipv4_offset: int
+    server_ipv4_size: int
+    server_ipv4_byte_order: str
+    server_port_offset: int
+    server_port_size: int
+    server_port_byte_order: str
+    inventory_tracker_capability: bool
+    tracker_snapshot_capability: bool
+    tracker_delta_capability: bool
+    resync_capability: bool
+
+    def validate(self, *, runtime_blob_size: int) -> tuple[tuple[str, int, int], ...]:
+        if self.transport_kind != "tcp" or self.protocol_magic_hex != "43503357" or self.protocol_version != 1:
+            raise Prime3DolPatchError("Runtime transport metadata is not the CP3W TCP tracker schema.")
+        if self.frame_size != 64 or self.diagnostics_enabled:
+            raise Prime3DolPatchError("TCP tracker metadata has invalid production protocol defaults.")
+        if self.inbound_queue_depth <= 0 or self.outbound_queue_depth <= 0:
+            raise Prime3DolPatchError("TCP tracker queue depths must be positive.")
+        ranges = (
+            ("cp3c_config", self.cp3c_config_offset, self.cp3c_config_size),
+            ("server_ipv4", self.server_ipv4_offset, self.server_ipv4_size),
+            ("server_port", self.server_port_offset, self.server_port_size),
+        )
+        if self.server_ipv4_size != 4 or self.server_port_size != 2:
+            raise Prime3DolPatchError("CP3C endpoint fields have invalid widths.")
+        if self.server_ipv4_byte_order != "big" or self.server_port_byte_order != "big":
+            raise Prime3DolPatchError("CP3C endpoint fields must use network byte order.")
+        for _name, offset, size in ranges:
+            if offset < 0 or size <= 0 or offset + size > runtime_blob_size:
+                raise Prime3DolPatchError("CP3C metadata range is outside the runtime blob.")
+        if not (
+            self.cp3c_config_offset <= self.server_ipv4_offset
+            and self.server_ipv4_offset + 4 <= self.cp3c_config_offset + self.cp3c_config_size
+            and self.cp3c_config_offset <= self.server_port_offset
+            and self.server_port_offset + 2 <= self.cp3c_config_offset + self.cp3c_config_size
+        ):
+            raise Prime3DolPatchError("CP3C endpoint fields are outside the configuration block.")
+        return (("cp3c_config", self.cp3c_config_offset, self.cp3c_config_size),)
+
+    def to_json_dict(self) -> dict[str, object]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, object]) -> Prime3RuntimeTransportMetadata:
+        if "udp_port" in data or "mode" in data:
+            raise Prime3DolPatchError("Legacy UDP transport metadata is not accepted as TCP tracker metadata.")
+        metadata = cls(
+            transport_kind=_json_string(data, "transport_kind"),
+            protocol_magic_hex=_json_string(data, "protocol_magic_hex"),
+            protocol_version=_json_int(data, "protocol_version"),
+            frame_size=_json_int(data, "frame_size"),
+            diagnostics_enabled=_json_bool(data, "diagnostics_enabled"),
+            inbound_queue_depth=_json_int(data, "inbound_queue_depth"),
+            outbound_queue_depth=_json_int(data, "outbound_queue_depth"),
+            cp3c_config_offset=_json_int(data, "cp3c_config_offset"),
+            cp3c_config_size=_json_int(data, "cp3c_config_size"),
+            server_ipv4_offset=_json_int(data, "server_ipv4_offset"),
+            server_ipv4_size=_json_int(data, "server_ipv4_size"),
+            server_ipv4_byte_order=_json_string(data, "server_ipv4_byte_order"),
+            server_port_offset=_json_int(data, "server_port_offset"),
+            server_port_size=_json_int(data, "server_port_size"),
+            server_port_byte_order=_json_string(data, "server_port_byte_order"),
+            inventory_tracker_capability=_json_bool(data, "inventory_tracker_capability"),
+            tracker_snapshot_capability=_json_bool(data, "tracker_snapshot_capability"),
+            tracker_delta_capability=_json_bool(data, "tracker_delta_capability"),
+            resync_capability=_json_bool(data, "resync_capability"),
+        )
+        metadata.validate(runtime_blob_size=metadata.cp3c_config_offset + metadata.cp3c_config_size)
+        return metadata
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3RuntimeAbiProbeMetadata:
     mode: str
     supplied_args_address: int
@@ -3130,7 +3219,7 @@ class Prime3RelocatedRuntimeMetadata:
     runtime_poll_last_sequence_size: int
     diagnostics: Prime3RuntimeDiagnosticMetadata | None = None
     ios_udp_diagnostic_enabled: bool = False
-    transport: Prime3RuntimeTransportMetadata | None = None
+    transport: Prime3RuntimeTransportMetadata | LegacyPrime3RuntimeTransportMetadata | None = None
     abi_probe: Prime3RuntimeAbiProbeMetadata | None = None
     retail_ios_wrapper: Prime3RetailIosWrapperMetadata | None = None
 
@@ -3143,20 +3232,19 @@ class Prime3RelocatedRuntimeMetadata:
         )
 
     def _validate_transport_configuration(self) -> tuple[tuple[str, int, int], ...]:
-        if self.ios_udp_diagnostic_enabled:
-            if self.mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
-                raise Prime3DolPatchError("IOS UDP diagnostic transport requires relocated_continue mode.")
-            if self.transport is None:
-                raise Prime3DolPatchError("IOS UDP diagnostic transport metadata is missing.")
-        elif self.transport is not None:
-            raise Prime3DolPatchError("Relocated runtime transport metadata requires ios_udp_diagnostic_enabled.")
-
         if self.transport is None:
             return ()
-        return self.transport.validate(
-            runtime_state_start=self.runtime_state_start,
-            runtime_state_end=self.runtime_state_end,
-        )
+        if isinstance(self.transport, LegacyPrime3RuntimeTransportMetadata):
+            if self.ios_udp_diagnostic_enabled:
+                if self.mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
+                    raise Prime3DolPatchError("IOS UDP diagnostic transport requires relocated_continue mode.")
+            else:
+                raise Prime3DolPatchError("Legacy UDP transport metadata requires ios_udp_diagnostic_enabled.")
+            return self.transport.validate(
+                runtime_state_start=self.runtime_state_start,
+                runtime_state_end=self.runtime_state_end,
+            )
+        return self.transport.validate(runtime_blob_size=self.embedded_runtime_blob_size)
 
     def _validate_abi_probe_configuration(self) -> tuple[tuple[str, int, int], ...]:
         if self.abi_probe is None:
@@ -3751,12 +3839,14 @@ def _json_optional_payload_patch_field(
 def _json_optional_runtime_transport(
     data: dict[str, object],
     key: str,
-) -> Prime3RuntimeTransportMetadata | None:
+) -> Prime3RuntimeTransportMetadata | LegacyPrime3RuntimeTransportMetadata | None:
     value = data.get(key)
     if value is None:
         return None
     if not isinstance(value, dict):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be an object when present.")
+    if "udp_port" in value or "mode" in value:
+        return LegacyPrime3RuntimeTransportMetadata.from_json_dict(value)
     return Prime3RuntimeTransportMetadata.from_json_dict(value)
 
 

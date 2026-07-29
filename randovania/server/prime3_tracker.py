@@ -9,7 +9,7 @@ import socketserver
 import struct
 import threading
 import time
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 if TYPE_CHECKING:
     import socket
@@ -101,8 +101,13 @@ class Prime3TrackerSession:
 class Prime3TrackerAdapter:
     """Owns tracker sessions and only publishes complete, validated state."""
 
-    def __init__(self, publisher: Callable[[dict[str, object]], None] | None = None):
+    def __init__(
+        self,
+        publisher: Callable[[dict[str, object]], None] | None = None,
+        session_binder: Callable[[Prime3TrackerSession], bool] | None = None,
+    ):
         self._publisher = publisher or (lambda _event: None)
+        self._session_binder = session_binder
         self._sessions: dict[int, Prime3TrackerSession] = {}
         self._lock = threading.Lock()
 
@@ -124,6 +129,8 @@ class Prime3TrackerAdapter:
                 raise Prime3TrackerProtocolError("duplicate active tracker session")
             session = Prime3TrackerSession(nonce, build_id, capabilities)
             session.last_client_sequence = frame.sequence
+            if self._session_binder is not None and not self._session_binder(session):
+                raise Prime3TrackerProtocolError("no unambiguous Prime 3 tracker connection")
             self._sessions[nonce] = session
         self._publish(session)
         return session, self._response(
@@ -236,7 +243,7 @@ class Prime3TrackerAdapter:
 class _Prime3TrackerRequestHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
         service: Prime3TrackerService = self.server.service  # type: ignore[attr-defined]
-        service.handle_socket(self.request)
+        service.handle_socket(self.request, self.client_address)
 
 
 class _Prime3TrackerTCPServer(socketserver.ThreadingTCPServer):
@@ -250,18 +257,24 @@ class Prime3TrackerService:
         self._adapter = adapter
         self._server: _Prime3TrackerTCPServer | None = None
         self._thread: threading.Thread | None = None
+        self._bind_host: str | None = None
+        self._bind_port: int | None = None
+        self._active_connections = 0
+        self._connection_lock = threading.Lock()
         self._logger = logging.getLogger(type(self).__name__)
 
     def start(self) -> None:
-        if not self._configuration.get("enabled", False) or self._server is not None:
+        if not self._configuration.get("enabled", True) or self._server is not None:
             return
         host = str(self._configuration.get("bind_host", "0.0.0.0"))
-        port = int(self._configuration.get("bind_port", 43674))
+        port = int(cast("int | str", self._configuration.get("bind_port", 43674)))
         self._server = _Prime3TrackerTCPServer((host, port), _Prime3TrackerRequestHandler)
         self._server.service = self  # type: ignore[attr-defined]
+        self._bind_host, self._bind_port = self._server.server_address
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True, name="prime3-tracker")
         self._thread.start()
-        self._logger.info("Prime 3 tracker TCP service listening on %s:%s", host, port)
+        self._logger.info("Prime 3 TCP tracker listening on %s:%s", self._bind_host, self._bind_port)
+        self._logger.info("Waiting for inbound Prime 3 Wii connection")
 
     def stop(self) -> None:
         if self._server is None:
@@ -270,22 +283,47 @@ class Prime3TrackerService:
         self._server.server_close()
         self._server = None
         self._thread = None
+        self._bind_host = None
+        self._bind_port = None
 
-    def handle_socket(self, connection: socket.socket) -> None:
-        connection.settimeout(float(self._configuration.get("idle_timeout_seconds", 30)))
+    def status(self) -> dict[str, object]:
+        with self._connection_lock:
+            active_connections = self._active_connections
+        return {
+            "listening": self._server is not None,
+            "status": "connected" if active_connections else "waiting",
+            "status_message": "Prime 3 Wii connected" if active_connections else "Waiting for Wii connection",
+            "active_connections": active_connections,
+            "bind_host": self._bind_host,
+            "bind_port": self._bind_port,
+        }
+
+    def handle_socket(self, connection: socket.socket, address: tuple[str, int] | None = None) -> None:
+        maximum_clients = int(cast("int | str", self._configuration.get("maximum_clients", 8)))
+        with self._connection_lock:
+            if self._active_connections >= maximum_clients:
+                self._logger.warning("Rejecting Prime 3 Wii connection: client limit reached")
+                return
+            self._active_connections += 1
+        connection.settimeout(float(cast("float | int | str", self._configuration.get("idle_timeout_seconds", 30))))
         session: Prime3TrackerSession | None = None
         try:
+            self._logger.info("Prime 3 Wii connected from %s", address[0] if address else "unknown address")
             while True:
                 raw = self._receive_exact(connection)
                 if raw is None:
                     return
                 frame = Prime3TrackerFrame.decode(raw)
+                response: Prime3TrackerFrame | None
                 if session is None:
                     session, response = self._adapter.handle_hello(frame)
+                    self._logger.info("CLIENT_HELLO accepted")
                 elif frame.sequence != session.last_client_sequence + 1:
                     response = self._adapter._resync(session, frame.sequence, "out of order sequence")
                 elif frame.message_type == TRACKER_SNAPSHOT:
                     response = self._adapter.apply_snapshot(session, frame)
+                    if response is not None and response.message_type == TRACKER_ACK:
+                        self._logger.info("Tracker snapshot accepted")
                 elif frame.message_type == TRACKER_DELTA:
                     response = self._adapter.apply_delta(session, frame)
                 else:
@@ -299,6 +337,9 @@ class Prime3TrackerService:
         finally:
             if session is not None:
                 self._adapter.disconnect(session)
+            with self._connection_lock:
+                self._active_connections -= 1
+            self._logger.info("Waiting for inbound Prime 3 Wii connection")
 
     @staticmethod
     def _receive_exact(connection: socket.socket) -> bytes | None:

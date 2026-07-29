@@ -139,6 +139,13 @@
             </widget>
            </item>
            <item>
+            <widget class="QCheckBox" name="enable_prime3_wii_networking_check">
+             <property name="text">
+              <string>Enable CP3W networking</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QLabel" name="deflicker_label">
              <property name="text">
               <string>If checked, will make the image of the game sharper. Only advised if you intend to play on console with a Monitor/HDTV.</string>

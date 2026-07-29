@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import randovania
 from randovania.exporter.game_exporter import GameExporter, GameExportParams
+from randovania.games.prime3.exporter.cp3w_endpoint import CP3W_SERVER_ADDRESS_ERROR
 from randovania.games.prime3.exporter.hardware_runtime import (
     Prime3HardwareRuntimeMode,
     patch_prime3_hardware_dol_file_atomic,
@@ -36,6 +37,8 @@ class CorruptionGameExportParams(GameExportParams):
     mp3_update: bool
     runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION
     beacon_ipv4: IPv4Address | None = None
+    enable_cp3w_networking: bool = False
+    cp3w_server_ipv4: IPv4Address | None = None
 
     def __post_init__(self) -> None:
         native_mode = self.runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
@@ -43,6 +46,8 @@ class CorruptionGameExportParams(GameExportParams):
             raise ValueError("Native WiiConnect24 bootstrap beacon mode requires a destination IPv4 address.")
         if not native_mode and self.beacon_ipv4 is not None:
             raise ValueError("Beacon destination IPv4 is only valid for native WiiConnect24 bootstrap mode.")
+        if self.enable_cp3w_networking and self.cp3w_server_ipv4 is None:
+            raise ValueError(CP3W_SERVER_ADDRESS_ERROR)
 
 
 class CorruptionOutputFormats(Enum):
@@ -109,31 +114,21 @@ class CorruptionGameExporter(GameExporter):
                     ),
                 )
 
-            progress_update("Installing and validating Prime 3 Wii / Wii U networking...", 0.35)
-            main_dol_path = extract_path.joinpath("DATA", "sys", "main.dol")
-            hardware_result = patch_prime3_hardware_dol_file_atomic(
-                main_dol_path,
-                uuid.UUID(patch_data["layout_uuid"]),
-                runtime_build_dir=extract_path.joinpath(".prime3_wii_runtime"),
-                runtime_mode=export_params.runtime_mode,
-                beacon_ipv4=export_params.beacon_ipv4,
-            )
-            validation = hardware_result.validation
-            self.logger.info(
-                "Installed CP3W runtime mode=%s payload=%s for %s at 0x%08x; entry=0x%08x recurring=0x%08x UDP=%d",
-                export_params.runtime_mode.value,
-                validation.payload_sha256,
-                validation.version_description,
-                validation.runtime_section_address,
-                validation.entry_hook_target,
-                validation.recurring_hook_target,
-                validation.udp_port,
-            )
-            if export_params.beacon_ipv4 is not None:
+            if export_params.enable_cp3w_networking:
+                progress_update("Installing Prime 3 TCP tracker networking...", 0.35)
+                main_dol_path = extract_path.joinpath("DATA", "sys", "main.dol")
+                assert export_params.cp3w_server_ipv4 is not None
+                patch_data["enable_cp3w_networking"] = True
+                patch_data["cp3w_server_ipv4"] = str(export_params.cp3w_server_ipv4)
+                hardware_result = patch_prime3_hardware_dol_file_atomic(
+                    main_dol_path,
+                    uuid.UUID(patch_data["layout_uuid"]),
+                    runtime_build_dir=extract_path.joinpath(".prime3_wii_runtime"),
+                    runtime_mode=Prime3HardwareRuntimeMode.PRODUCTION,
+                    cp3w_server_ipv4=export_params.cp3w_server_ipv4,
+                )
                 self.logger.info(
-                    "Prime 3 native beacon destination=%s UDP=%d",
-                    export_params.beacon_ipv4,
-                    validation.udp_port,
+                    "Installed Prime 3 TCP tracker runtime for %s.", hardware_result.validation.version_description
                 )
 
             if patch_data["mp3_update"]:

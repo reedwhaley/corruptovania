@@ -20,10 +20,14 @@ SECTIONS
     runtime_state_start = .;
     .runtime_state : ALIGN(32)
     {
+        __cp3c_config_start = runtime_cp3c_config_block;
+        __cp3c_server_ipv4 = runtime_cp3c_config_block + 12;
+        __cp3c_server_port = runtime_cp3c_config_block + 16;
         KEEP(*(.runtime_state.canary))
         *(.runtime_state .runtime_state.*)
         *(.data .data.*)
         *(.bss .bss.* COMMON)
+        __cp3c_config_end = runtime_cp3c_config_block + 32;
     }
     runtime_state_end = .;
 

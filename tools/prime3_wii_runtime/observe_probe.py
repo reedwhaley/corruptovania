@@ -1320,7 +1320,6 @@ def _read_probe_state(  # noqa: C901
                             "native_execution_canary": network_diagnostics.native_execution_canary,
                             "native_execution_stage": network_diagnostics.native_execution_stage,
                             "native_recurring_hook_count": network_diagnostics.native_recurring_hook_count,
-                            "native_post_copy_hook_result": network_diagnostics.native_post_copy_hook_result,
                             "native_startup_generation": network_diagnostics.native_startup_generation,
                             "native_descriptor_replacement_count": (
                                 network_diagnostics.native_descriptor_replacement_count

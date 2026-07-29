@@ -105,9 +105,7 @@ def _make_relocated_manifest(
         "replacement_value": 0x817E0000,
         "status_address": 0x817E0128,
         "status_value": (
-            0xB0071001
-            if mode == runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT
-            else 0xB0071002
+            0xB0071001 if mode == runtime_payload.PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_COPY_HALT else 0xB0071002
         ),
         "original_entry_instruction": probe_delivery.EXPECTED_ENTRY_WORD,
         "original_branch_target": 0x8000648C,
@@ -274,7 +272,9 @@ def _make_relocated_manifest(
             "last_receive_preview_size": 16,
             "last_send_preview_address": 0x817E1160,
             "last_send_preview_size": 16,
-        } if enable_ios_udp_diagnostic else None,
+        }
+        if enable_ios_udp_diagnostic
+        else None,
     }
     return runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
 
@@ -327,9 +327,7 @@ def _recurring_hook_original() -> bytes:
         + b"\x00" * 0x20
     )
     hook_contents = (
-        probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD.to_bytes(4, "big")
-        + b"\x4E\x80\x00\x20"
-        + b"\x00" * 0x18
+        probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD.to_bytes(4, "big") + b"\x4e\x80\x00\x20" + b"\x00" * 0x18
     )
     return _build_synthetic_dol(
         version,
@@ -839,6 +837,87 @@ def test_verify_probe_delivery_accepts_identical_probe_chain(tmp_path: Path) -> 
     assert report.original_contains_probe_section is False
     assert report.manifest_offsets_valid is True
     assert report.comparisons[1].classification == "byte-identical"
+
+
+def test_retail_renderer_sites_remain_unmodified() -> None:
+    version = _entry_gate_version()
+    original = _build_synthetic_dol(
+        version,
+        include_build_string=False,
+        text_sections=[
+            (
+                0x100,
+                probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+                probe_delivery.POST_GX_COPY_DISP_RETAIL_WORD.to_bytes(4, "big"),
+            ),
+            (0x200, probe_delivery.END_SCENE_ADDRESS, (0x9421FED0).to_bytes(4, "big")),
+        ],
+        entry_point=probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+    )
+    header = parse_dol_header(original)
+
+    probe_delivery._verify_retail_site_preserved(
+        original,
+        header,
+        original,
+        header,
+        original,
+        header,
+        address=probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+        description="post-GXCopyDisp instruction",
+        required_retail_word=probe_delivery.POST_GX_COPY_DISP_RETAIL_WORD,
+    )
+    probe_delivery._verify_retail_site_preserved(
+        original,
+        header,
+        original,
+        header,
+        original,
+        header,
+        address=probe_delivery.END_SCENE_ADDRESS,
+        description="CGraphics::EndScene entry",
+    )
+    assert (
+        probe_delivery.decode_ppc_unconditional_branch(
+            probe_delivery.POST_GX_COPY_DISP_RETAIL_WORD,
+            probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+        )
+        is None
+    )
+
+
+def test_retail_renderer_site_verification_rejects_changes() -> None:
+    version = _entry_gate_version()
+    original = _build_synthetic_dol(
+        version,
+        include_build_string=False,
+        text_sections=[
+            (
+                0x100,
+                probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+                probe_delivery.POST_GX_COPY_DISP_RETAIL_WORD.to_bytes(4, "big"),
+            ),
+        ],
+        entry_point=probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+    )
+    changed = bytearray(original)
+    header = parse_dol_header(original)
+    file_offset = header.offset_for_address(probe_delivery.POST_GX_COPY_DISP_ADDRESS)
+    assert file_offset is not None
+    changed[file_offset : file_offset + 4] = (0x48000004).to_bytes(4, "big")
+
+    with pytest.raises(Prime3DolPatchError, match="changed post-GXCopyDisp instruction"):
+        probe_delivery._verify_retail_site_preserved(
+            original,
+            header,
+            bytes(changed),
+            parse_dol_header(changed),
+            original,
+            header,
+            address=probe_delivery.POST_GX_COPY_DISP_ADDRESS,
+            description="post-GXCopyDisp instruction",
+            required_retail_word=probe_delivery.POST_GX_COPY_DISP_RETAIL_WORD,
+        )
 
 
 def test_verify_probe_delivery_accepts_gated_probe_chain(tmp_path: Path) -> None:

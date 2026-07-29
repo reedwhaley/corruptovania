@@ -101,6 +101,9 @@ def _export_params(
     tmp_path: Path,
     runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
     beacon_ipv4: IPv4Address | None = None,
+    *,
+    enable_networking: bool = True,
+    cp3w_server_ipv4: IPv4Address = IPv4Address("192.168.50.248"),
 ) -> CorruptionGameExportParams:
     return CorruptionGameExportParams(
         spoiler_output=None,
@@ -110,6 +113,8 @@ def _export_params(
         mp3_update=False,
         runtime_mode=runtime_mode,
         beacon_ipv4=beacon_ipv4,
+        enable_cp3w_networking=enable_networking,
+        cp3w_server_ipv4=cp3w_server_ipv4 if enable_networking else None,
     )
 
 
@@ -124,7 +129,9 @@ def _configure_export_environment(
     paks_path.mkdir()
     toolchain = _toolchain()
     calls: list[tuple[str, ...]] = []
-    hardware_calls: list[tuple[Path, uuid.UUID, Path, Prime3HardwareRuntimeMode, IPv4Address | None]] = []
+    hardware_calls: list[
+        tuple[Path, uuid.UUID, Path, Prime3HardwareRuntimeMode, IPv4Address | None, IPv4Address | None]
+    ] = []
 
     def fake_extract_prime3_disc_image(_toolchain_arg, _input_path, destination: Path, _progress_update) -> None:
         _write_prime3_extract_tree(destination, main_dol_bytes)
@@ -139,9 +146,10 @@ def _configure_export_environment(
         *,
         runtime_build_dir: Path,
         runtime_mode: Prime3HardwareRuntimeMode,
-        beacon_ipv4: IPv4Address | None,
+        beacon_ipv4: IPv4Address | None = None,
+        cp3w_server_ipv4: IPv4Address | None = None,
     ):
-        hardware_calls.append((path, layout_uuid, runtime_build_dir, runtime_mode, beacon_ipv4))
+        hardware_calls.append((path, layout_uuid, runtime_build_dir, runtime_mode, beacon_ipv4, cp3w_server_ipv4))
         patched, _ = dol_patcher.patch_prime3_corruption_dol(path.read_bytes(), layout_uuid)
         path.write_bytes(patched)
         validation = SimpleNamespace(
@@ -166,9 +174,7 @@ def _configure_export_environment(
     return extract_path, paks_path, patcher_root, calls, hardware_calls
 
 
-def test_export_networking_legacy_disabled_flag_still_installs_runtime(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_export_networking_disabled_skips_runtime_installation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     version = corruption_dol_versions.ALL_VERSIONS[0]
     original_main_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
     extract_path, _paks_path, _patcher_root, calls, hardware_calls = _configure_export_environment(
@@ -178,12 +184,12 @@ def test_export_networking_legacy_disabled_flag_still_installs_runtime(
     exporter = CorruptionGameExporter()
     exporter._do_export_game(
         _patch_data(enable_networking=False, layout_uuid="12345678-1234-5678-1234-567812345678"),
-        _export_params(tmp_path),
+        _export_params(tmp_path, enable_networking=False),
         lambda _message, _progress: None,
     )
 
-    assert extract_path.joinpath("DATA", "sys", "main.dol").read_bytes() != original_main_dol
-    assert len(hardware_calls) == 1
+    assert extract_path.joinpath("DATA", "sys", "main.dol").read_bytes() == original_main_dol
+    assert not hardware_calls
     assert any(command[0] == "randomizer" for command in calls)
     assert any(command[0] == "wit" for command in calls)
 
@@ -197,8 +203,9 @@ def test_export_networking_enabled_patches_working_copy_only(tmp_path: Path, mon
     layout_uuid = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
     exporter = CorruptionGameExporter()
+    patch_data = _patch_data(enable_networking=True, layout_uuid=str(layout_uuid))
     exporter._do_export_game(
-        _patch_data(enable_networking=True, layout_uuid=str(layout_uuid)),
+        patch_data,
         _export_params(tmp_path),
         lambda _message, _progress: None,
     )
@@ -214,9 +221,11 @@ def test_export_networking_enabled_patches_working_copy_only(tmp_path: Path, mon
     assert source_main_dol == _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
     assert hardware_calls[0][1] == layout_uuid
     assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.PRODUCTION
+    assert hardware_calls[0][5] == IPv4Address("192.168.50.248")
+    assert patch_data["cp3w_server_ipv4"] == "192.168.50.248"
 
 
-def test_export_propagates_selected_runtime_mode(
+def test_export_propagates_cp3w_server_ipv4(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -231,15 +240,15 @@ def test_export_propagates_selected_runtime_mode(
     caplog.set_level(logging.INFO)
     exporter._do_export_game(
         _patch_data(enable_networking=True, layout_uuid="12345678-1234-5678-1234-567812345678"),
-        _export_params(tmp_path, Prime3HardwareRuntimeMode.BIND_ONCE),
+        _export_params(tmp_path, cp3w_server_ipv4=IPv4Address("10.20.30.40")),
         lambda _message, _progress: None,
     )
 
-    assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.BIND_ONCE
-    assert "mode=retail_wrapper_bind_once payload=" + "a" * 64 in caplog.text
+    assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.PRODUCTION
+    assert hardware_calls[0][5] == IPv4Address("10.20.30.40")
 
 
-def test_export_propagates_and_logs_native_beacon_ipv4(
+def test_export_does_not_use_legacy_beacon_runtime_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -249,24 +258,15 @@ def test_export_propagates_and_logs_native_beacon_ipv4(
     _extract_path, _paks_path, _patcher_root, _calls, hardware_calls = _configure_export_environment(
         tmp_path, monkeypatch, main_dol
     )
-    beacon_ipv4 = IPv4Address("192.0.2.44")
-
-    caplog.set_level(logging.INFO)
+    del caplog
     CorruptionGameExporter()._do_export_game(
         _patch_data(enable_networking=True, layout_uuid="12345678-1234-5678-1234-567812345678"),
-        _export_params(
-            tmp_path,
-            Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
-            beacon_ipv4,
-        ),
+        _export_params(tmp_path),
         lambda _message, _progress: None,
     )
 
-    assert hardware_calls[0][3:] == (
-        Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
-        beacon_ipv4,
-    )
-    assert "native beacon destination=192.0.2.44 UDP=43674" in caplog.text
+    assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.PRODUCTION
+    assert hardware_calls[0][4] is None
 
 
 def test_export_networking_enabled_rejects_unsupported_dol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

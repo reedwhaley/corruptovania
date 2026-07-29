@@ -60,6 +60,7 @@ from randovania.games.prime3.exporter.runtime_payload import (
     PRIME3_RUNTIME_TARGET_ABI,
     PRIME3_RUNTIME_TARGET_ARCHITECTURE,
     PRIME3_RUNTIME_TARGET_ENDIANNESS,
+    LegacyPrime3RuntimeTransportMetadata,
     Prime3EntryBootstrapMetadata,
     Prime3RelocatedRuntimeMetadata,
     Prime3RetailIosWrapperMetadata,
@@ -81,9 +82,9 @@ DEFAULT_OUTPUT_DIR = ROOT.joinpath("build", "prime3_wii_runtime")
 SOURCE_FILES = (
     Path("payload.S"),
     Path("payload.ld"),
-    Path("relocated_runtime.c"),
-    Path("relocated_runtime.S"),
-    Path("relocated_runtime.ld"),
+    Path("../prime3_tcp_runtime_clean/runtime.c"),
+    Path("../prime3_tcp_runtime_clean/runtime.S"),
+    Path("../prime3_tcp_runtime_clean/runtime.ld"),
     Path("build_payload.py"),
 )
 PROBE_CANARY_START_SYMBOL = "payload_canary_start"
@@ -151,6 +152,23 @@ PRIME3_NTSC_IOS_OPEN_ASYNC_GUARD_WORDS = (
 RUNTIME_ENTRY_SYMBOL = "runtime_entry"
 RUNTIME_POLL_ENTRY_SYMBOL = "runtime_poll_entry"
 RUNTIME_POLL_HOOK_WRAPPER_SYMBOL = "runtime_poll_hook_wrapper"
+CP3C_CONFIG_START_SYMBOL = "__cp3c_config_start"
+CP3C_CONFIG_END_SYMBOL = "__cp3c_config_end"
+CP3C_SERVER_IPV4_SYMBOL = "__cp3c_server_ipv4"
+CP3C_SERVER_PORT_SYMBOL = "__cp3c_server_port"
+FORBIDDEN_RENDERER_SYMBOL_FRAGMENTS = (
+    "overlay",
+    "post_copy",
+    "xfb",
+    "kpad",
+    "end_scene",
+    "endscene",
+    "imgui",
+    "gsn1",
+    "stt1",
+    "rcv1",
+    "receive_submission_diagnostics",
+)
 RUNTIME_RETAIL_IOS_OPEN_VENEER_SYMBOL = "runtime_call_retail_ios_open_async"
 RUNTIME_RETAIL_IOS_CLOSE_VENEER_SYMBOL = "runtime_call_retail_ios_close_async"
 RUNTIME_RETAIL_READ_ASYNC_VENEER_SYMBOL = "runtime_call_retail_read_async"
@@ -564,6 +582,10 @@ class RelocatedRuntimeBuildResult:
     code_end: int
     state_start: int
     state_end: int
+    cp3c_config_start_address: int
+    cp3c_config_end_address: int
+    cp3c_server_ipv4_address: int
+    cp3c_server_port_address: int
     network_diagnostics_address: int
     native_beacon_ipv4_address: int | None
     canary_address: int
@@ -1027,59 +1049,37 @@ def build_prime3_runtime_payload(  # noqa: C901
     enable_ios_udp_diagnostic: bool = False,
     ios_udp_mode: str = "normal",
     ios_udp_loop_count: int = 3,
+    production_guard_bypass: str = "none",
+    production_lifecycle_trace: bool = False,
+    production_skyward_parity_owned_ip_top: bool = False,
+    production_preserve_ping_layout: bool | None = None,
+    production_size_optimize: bool = False,
+    production_force_isolated_layout: bool = False,
+    production_skyward_socket_bind_graft: bool = False,
+    production_owned_ip_top_no_restart: bool = False,
+    early_sda_capture: bool = False,
     native_beacon_ipv4: int = DEFAULT_NATIVE_BEACON_IPV4,
     reserved_high: int | None = None,
     diagnostic_address: int | None = None,
     runtime_destination: int | None = None,
+    devkitppc_path: Path | None = None,
 ) -> Prime3RuntimePayloadManifest:
     if probe:
         if payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_NORMAL:
             raise RuntimeError("Use either probe=True or an explicit payload_mode, not both.")
         payload_mode = PRIME3_RUNTIME_PAYLOAD_MODE_PROBE
-    if ios_udp_mode not in {
-        "normal",
-        "dry_run",
-        "retail_wrapper_open_kd_once",
-        "retail_wrapper_nwc24_startup_once",
-        "retail_wrapper_nwc24_close_kd_once",
-        "retail_wrapper_nwc24_close_open_ip_once",
-        "retail_wrapper_nwc24_close_open_ip_startup_once",
-        "retail_wrapper_close_kd_once",
-        "retail_wrapper_open_ip_once",
-        "retail_wrapper_startup_once",
-        "retail_wrapper_get_host_id_once",
-        "retail_wrapper_create_socket_once",
-        "retail_wrapper_bind_once",
-        "retail_wrapper_recvfrom_once",
-        "retail_wrapper_recv_send_once",
-        "retail_wrapper_recv_send_loop",
-        "cp3w_frame_validation",
-        "cp3w_ping_pong",
-        "cp3w_hello_session",
-        "cp3w_game_identity",
-        "cp3w_inventory",
-        "cp3w_inventory_service",
-        "native_wc24_bootstrap_beacon_once",
-        "retail_wrapper_ioctl_async_abi_probe",
-    }:
-        raise RuntimeError(f"Unsupported ios_udp_mode {ios_udp_mode!r}.")
-    if ios_udp_mode == "cp3w_inventory_service":
-        if ios_udp_loop_count != 0:
-            raise RuntimeError("cp3w_inventory_service requires ios_udp_loop_count=0 (unbounded).")
-    elif ios_udp_loop_count < 1 or ios_udp_loop_count > 100:
-        raise RuntimeError("ios_udp_loop_count must be between 1 and 100.")
-    if not 0 < native_beacon_ipv4 <= 0xFFFFFFFF:
-        raise RuntimeError("native_beacon_ipv4 must be a nonzero IPv4 address encoded as a 32-bit integer.")
-    if enable_ios_udp_diagnostic and payload_mode != PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE:
-        raise RuntimeError("IOS UDP diagnostic transport requires relocated_continue mode.")
-    if ios_udp_mode != "normal" and not enable_ios_udp_diagnostic:
-        raise RuntimeError("IOS UDP diagnostic developer modes require enable_ios_udp_diagnostic.")
     if payload_mode in PRIME3_RUNTIME_RELOCATED_MODES and (reserved_high is None or diagnostic_address is None):
         raise RuntimeError("Relocated runtime modes require reserved_high and diagnostic_address.")
     if payload_mode in PRIME3_RUNTIME_ENTRY_BOOTSTRAP_MODES and (reserved_high is None or diagnostic_address is None):
         raise RuntimeError("Entry bootstrap payload mode requires reserved_high and diagnostic_address.")
 
-    toolchain = resolve_prime3_runtime_toolchain()
+    if devkitppc_path is None:
+        toolchain = resolve_prime3_runtime_toolchain()
+    else:
+        toolchain_env = dict(os.environ)
+        toolchain_env["DEVKITPPC"] = os.fspath(devkitppc_path)
+        toolchain_env["DEVKITPRO"] = os.fspath(devkitppc_path.parent)
+        toolchain = resolve_prime3_runtime_toolchain(toolchain_env)
     output_dir.mkdir(parents=True, exist_ok=True)
     object_path = output_dir.joinpath("payload.o")
     elf_path = output_dir.joinpath("payload.elf")
@@ -1106,6 +1106,15 @@ def build_prime3_runtime_payload(  # noqa: C901
             enable_ios_udp_diagnostic=enable_ios_udp_diagnostic,
             ios_udp_mode=ios_udp_mode,
             ios_udp_loop_count=ios_udp_loop_count,
+            production_guard_bypass=production_guard_bypass,
+            production_lifecycle_trace=production_lifecycle_trace,
+            production_skyward_parity_owned_ip_top=production_skyward_parity_owned_ip_top,
+            production_preserve_ping_layout=production_preserve_ping_layout,
+            production_size_optimize=production_size_optimize,
+            production_force_isolated_layout=production_force_isolated_layout,
+            production_skyward_socket_bind_graft=production_skyward_socket_bind_graft,
+            production_owned_ip_top_no_restart=production_owned_ip_top_no_restart,
+            early_sda_capture=early_sda_capture,
             native_beacon_ipv4=native_beacon_ipv4,
         )
         _write_runtime_blob_object(
@@ -1440,8 +1449,10 @@ def build_prime3_runtime_payload(  # noqa: C901
                 callback_result_address=relocated_runtime.diagnostic_callback_result_address,
                 callback_result_size=4,
             )
+        # The legacy UDP metadata is retained below only while old assets remain
+        # readable. It is not part of the TCP production manifest.
         transport_metadata = None
-        if enable_ios_udp_diagnostic:
+        if False:
             nwc24_ioctl_once = ios_udp_mode == "retail_wrapper_nwc24_startup_once"
             nwc24_close_once = ios_udp_mode == "retail_wrapper_nwc24_close_kd_once"
             open_ip_once = ios_udp_mode == "retail_wrapper_nwc24_close_open_ip_once"
@@ -1459,7 +1470,7 @@ def build_prime3_runtime_payload(  # noqa: C901
             cp3w_inventory_service = ios_udp_mode == "cp3w_inventory_service"
             cp3w_inventory = ios_udp_mode in {"cp3w_inventory", "cp3w_inventory_service"}
             native_wc24_bootstrap = ios_udp_mode == "native_wc24_bootstrap_beacon_once"
-            transport_metadata = Prime3RuntimeTransportMetadata(
+            transport_metadata = LegacyPrime3RuntimeTransportMetadata(
                 mode=ios_udp_mode,
                 udp_port=43674,
                 initialization_enabled=True,
@@ -2280,6 +2291,33 @@ def build_prime3_runtime_payload(  # noqa: C901
                     else None
                 ),
             )
+        cp3c_config_offset = relocated_runtime.cp3c_config_start_address - runtime_destination
+        cp3c_config_size = relocated_runtime.cp3c_config_end_address - relocated_runtime.cp3c_config_start_address
+        server_ipv4_offset = relocated_runtime.cp3c_server_ipv4_address - runtime_destination
+        server_port_offset = relocated_runtime.cp3c_server_port_address - runtime_destination
+        transport_metadata = Prime3RuntimeTransportMetadata(
+            transport_kind="tcp",
+            protocol_magic_hex=PROTOCOL_MAGIC.hex(),
+            protocol_version=PROTOCOL_VERSION,
+            frame_size=64,
+            diagnostics_enabled=False,
+            inbound_queue_depth=4,
+            outbound_queue_depth=4,
+            cp3c_config_offset=cp3c_config_offset,
+            cp3c_config_size=cp3c_config_size,
+            server_ipv4_offset=server_ipv4_offset,
+            server_ipv4_size=4,
+            server_ipv4_byte_order="big",
+            server_port_offset=server_port_offset,
+            server_port_size=2,
+            server_port_byte_order="big",
+            inventory_tracker_capability=True,
+            tracker_snapshot_capability=True,
+            tracker_delta_capability=True,
+            resync_capability=True,
+        )
+        transport_metadata.validate(runtime_blob_size=len(embedded_runtime_bytes))
+
         relocated_runtime_metadata = Prime3RelocatedRuntimeMetadata(
             mode=payload_mode,
             low_bootstrap_address=BOOTSTRAP_STAGING_ADDRESS,
@@ -2389,6 +2427,15 @@ def _build_relocated_runtime(
     enable_ios_udp_diagnostic: bool,
     ios_udp_mode: str,
     ios_udp_loop_count: int,
+    production_guard_bypass: str,
+    production_lifecycle_trace: bool,
+    production_skyward_parity_owned_ip_top: bool,
+    production_preserve_ping_layout: bool | None,
+    production_size_optimize: bool,
+    production_force_isolated_layout: bool,
+    production_skyward_socket_bind_graft: bool,
+    production_owned_ip_top_no_restart: bool,
+    early_sda_capture: bool,
     native_beacon_ipv4: int,
 ) -> RelocatedRuntimeBuildResult:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2397,6 +2444,12 @@ def _build_relocated_runtime(
     elf_path = output_dir.joinpath("relocated_runtime.elf")
     binary_path = output_dir.joinpath("runtime_blob.bin")
     map_path = output_dir.joinpath("relocated_runtime.map")
+    production_guard_bypass_value = {"none": 0, "socket": 1, "socket_bind": 2}[production_guard_bypass]
+    preserve_ping_layout = (
+        ios_udp_mode == "cp3w_inventory_service" and not production_skyward_parity_owned_ip_top
+        if production_preserve_ping_layout is None
+        else production_preserve_ping_layout
+    )
     common_compiler_defines = [
         f"-DPRIME3_RUNTIME_EXECUTED_MARKER_VALUE=0x{RELOCATED_EXECUTED_MARKER_VALUE:08X}",
         f"-DPRIME3_CP3W_GAME_IDENTITY_COMMAND={int(Prime3WiiCommand.GET_GAME_IDENTITY)}",
@@ -2426,6 +2479,12 @@ def _build_relocated_runtime(
         f"-DPRIME3_NATIVE_BEACON_PORT={DEFAULT_NATIVE_BEACON_PORT}",
         f"-DPRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS={1 if enable_recurring_hook_diagnostics else 0}",
         f"-DPRIME3_ENABLE_IOS_UDP_DIAGNOSTIC={1 if enable_ios_udp_diagnostic else 0}",
+        f"-DPRIME3_PRODUCTION_GUARD_BYPASS={production_guard_bypass_value}",
+        f"-DPRIME3_PRODUCTION_LIFECYCLE_TRACE={1 if production_lifecycle_trace else 0}",
+        (f"-DPRIME3_PRODUCTION_SKYWARD_PARITY_OWNED_IP_TOP={1 if production_skyward_parity_owned_ip_top else 0}"),
+        f"-DPRIME3_PRODUCTION_SKYWARD_SOCKET_BIND_GRAFT={1 if production_skyward_socket_bind_graft else 0}",
+        f"-DPRIME3_PRODUCTION_OWNED_IP_TOP_NO_RESTART={1 if production_owned_ip_top_no_restart else 0}",
+        f"-DPRIME3_EARLY_SDA_CAPTURE={1 if early_sda_capture else 0}",
         (
             "-DPRIME3_IOS_UDP_DIAGNOSTIC_MODE="
             + {
@@ -2465,7 +2524,7 @@ def _build_relocated_runtime(
             "-x",
             "assembler-with-cpp",
             "-c",
-            os.fspath(SCRIPT_ROOT.joinpath("relocated_runtime.S")),
+            os.fspath(SCRIPT_ROOT.parent.joinpath("prime3_tcp_runtime_clean", "runtime.S")),
             "-o",
             os.fspath(asm_object_path),
         ]
@@ -2475,7 +2534,7 @@ def _build_relocated_runtime(
             os.fspath(toolchain.compiler_path),
             *toolchain.required_machine_flags,
             *common_compiler_defines,
-            "-O2",
+            "-Os" if production_size_optimize else "-O2",
             "-ffreestanding",
             "-fno-builtin",
             "-fno-common",
@@ -2488,7 +2547,7 @@ def _build_relocated_runtime(
             "-fno-pic",
             "-msdata=none",
             "-c",
-            os.fspath(SCRIPT_ROOT.joinpath("relocated_runtime.c")),
+            os.fspath(SCRIPT_ROOT.parent.joinpath("prime3_tcp_runtime_clean", "runtime.c")),
             "-o",
             os.fspath(c_object_path),
         ]
@@ -2500,8 +2559,10 @@ def _build_relocated_runtime(
             "--build-id=none",
             "--gc-sections",
             f"--defsym=__runtime_link_address=0x{runtime_destination:08X}",
+            (f"--defsym=__runtime_preserve_ping_layout={int(preserve_ping_layout)}"),
+            f"--defsym=__runtime_force_isolated_layout={int(production_force_isolated_layout)}",
             "-T",
-            os.fspath(SCRIPT_ROOT.joinpath("relocated_runtime.ld")),
+            os.fspath(SCRIPT_ROOT.parent.joinpath("prime3_tcp_runtime_clean", "runtime.ld")),
             "-Map",
             os.fspath(map_path),
             "-o",
@@ -2531,6 +2592,7 @@ def _build_relocated_runtime(
         raise RuntimeError("Relocated runtime ELF has unresolved relocations.")
     if _count_dynamic_sections(readelf_dynamic) != 0:
         raise RuntimeError("Relocated runtime ELF has dynamic sections.")
+    _validate_forbidden_renderer_references(readelf_symbols, readelf_relocations)
     _validate_retail_call_veneer_disassembly(
         objdump_output=objdump_disassembly,
         symbol_output=readelf_symbols,
@@ -3431,6 +3493,20 @@ def _build_relocated_runtime(
         size=len(payload_bytes),
         cache_line_size=RELOCATED_RUNTIME_CACHE_LINE_SIZE,
     )
+    cp3c_config_start_address = _extract_symbol_address(readelf_symbols, CP3C_CONFIG_START_SYMBOL)
+    cp3c_config_end_address = _extract_symbol_address(readelf_symbols, CP3C_CONFIG_END_SYMBOL)
+    cp3c_server_ipv4_address = _extract_symbol_address(readelf_symbols, CP3C_SERVER_IPV4_SYMBOL)
+    cp3c_server_port_address = _extract_symbol_address(readelf_symbols, CP3C_SERVER_PORT_SYMBOL)
+    if not (
+        cp3c_config_start_address < cp3c_config_end_address
+        and cp3c_config_start_address <= cp3c_server_ipv4_address < cp3c_config_end_address
+        and cp3c_config_start_address <= cp3c_server_port_address < cp3c_config_end_address
+        and cp3c_server_ipv4_address + 4 <= cp3c_config_end_address
+        and cp3c_server_port_address + 2 <= cp3c_config_end_address
+        and runtime_destination <= cp3c_config_start_address
+        and cp3c_config_end_address <= runtime_destination + len(payload_bytes)
+    ):
+        raise RuntimeError("Invalid CP3C configuration symbol bounds.")
     return RelocatedRuntimeBuildResult(
         payload_bytes=payload_bytes,
         payload_sha256=payload_sha256,
@@ -3442,6 +3518,10 @@ def _build_relocated_runtime(
         code_end=code_end,
         state_start=state_start,
         state_end=state_end,
+        cp3c_config_start_address=cp3c_config_start_address,
+        cp3c_config_end_address=cp3c_config_end_address,
+        cp3c_server_ipv4_address=cp3c_server_ipv4_address,
+        cp3c_server_port_address=cp3c_server_port_address,
         network_diagnostics_address=network_diagnostics_address,
         native_beacon_ipv4_address=native_beacon_ipv4_address,
         canary_address=canary_start,
@@ -3888,6 +3968,13 @@ def _count_relocations(relocation_output: str) -> int:
         if stripped and stripped[0] in "0123456789abcdefABCDEF":
             count += 1
     return count
+
+
+def _validate_forbidden_renderer_references(symbol_output: str, relocation_output: str) -> None:
+    combined_output = f"{symbol_output}\n{relocation_output}".lower()
+    present = tuple(fragment for fragment in FORBIDDEN_RENDERER_SYMBOL_FRAGMENTS if fragment in combined_output)
+    if present:
+        raise RuntimeError(f"Relocated runtime contains forbidden renderer references: {', '.join(present)}.")
 
 
 def _count_dynamic_sections(dynamic_output: str) -> int:

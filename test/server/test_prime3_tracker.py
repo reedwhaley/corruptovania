@@ -1,4 +1,6 @@
+import socket
 import struct
+import threading
 
 import pytest
 
@@ -13,6 +15,7 @@ from randovania.server.prime3_tracker import (
     Prime3TrackerAdapter,
     Prime3TrackerFrame,
     Prime3TrackerProtocolError,
+    Prime3TrackerService,
 )
 
 
@@ -66,3 +69,50 @@ def test_out_of_order_delta_requests_resync():
     adapter.apply_snapshot(session, _frame(TRACKER_SNAPSHOT, 2, [1, 0, 1, 0, 1, 4, 10]))
     response = adapter.apply_delta(session, _frame(TRACKER_DELTA, 3, [1, 2, 0, 20, 0]))
     assert response.message_type == TRACKER_RESYNC_REQUEST
+
+
+def test_tcp_listener_starts_without_a_wii_ip_or_legacy_udp_connector():
+    service = Prime3TrackerService(
+        {"enabled": True, "bind_host": "127.0.0.1", "bind_port": 0, "wii_ip": "192.168.50.19", "udp_port": 43674},
+        Prime3TrackerAdapter(),
+    )
+    try:
+        assert service.status() == {
+            "listening": False,
+            "status": "waiting",
+            "status_message": "Waiting for Wii connection",
+            "active_connections": 0,
+            "bind_host": None,
+            "bind_port": None,
+        }
+        service.start()
+        assert service.status()["listening"] is True
+        assert service.status()["status_message"] == "Waiting for Wii connection"
+        assert service.status()["bind_host"] == "127.0.0.1"
+        assert service.status()["bind_port"] != 43674
+    finally:
+        service.stop()
+
+
+def test_inbound_tcp_hello_attaches_tracker_session_and_accepts_snapshot():
+    adapter = Prime3TrackerAdapter()
+    service = Prime3TrackerService({"idle_timeout_seconds": 1}, adapter)
+    server_socket, wii_socket = socket.socketpair()
+    thread = threading.Thread(target=service.handle_socket, args=(server_socket, ("192.168.50.19", 43674)))
+    thread.start()
+    try:
+        wii_socket.sendall(_hello().encode())
+        assert Prime3TrackerFrame.decode(wii_socket.recv(64)).message_type == SERVER_HELLO_ACK
+        assert service.status()["status"] == "connected"
+
+        wii_socket.sendall(_frame(TRACKER_SNAPSHOT, 2, [7, 0, 1, 99, 1, 8, 10, 20]).encode())
+        assert Prime3TrackerFrame.decode(wii_socket.recv(64)).message_type == TRACKER_ACK
+        status = adapter.session_status(0x43503357)
+        assert status is not None
+        assert status["last_snapshot_id"] == 7
+        assert status["tracker_words"] == (10, 20)
+    finally:
+        wii_socket.close()
+        thread.join(timeout=1)
+        server_socket.close()
+    assert service.status()["status"] == "waiting"

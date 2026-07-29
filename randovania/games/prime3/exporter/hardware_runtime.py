@@ -11,6 +11,7 @@ from randovania.game_connection.executor.prime3_wii_protocol import (
     Prime3WiiCapability,
     Prime3WiiCommand,
 )
+from randovania.games.prime3.exporter.cp3w_endpoint import CP3W_SERVER_PORT
 from randovania.games.prime3.exporter.dol_patcher import (
     DecodedBranchInstruction,
     Prime3DolPatchError,
@@ -30,6 +31,7 @@ from randovania.games.prime3.exporter.probe_delivery import (
 from randovania.games.prime3.exporter.runtime_payload import (
     PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
     Prime3RuntimePayloadManifest,
+    Prime3RuntimeTransportMetadata,
 )
 from tools.prime3_wii_runtime.build_payload import (
     DEFAULT_NATIVE_BEACON_IPV4,
@@ -214,8 +216,13 @@ def load_or_build_hardware_runtime(
 
 def load_or_build_production_runtime(
     output_dir: Path,
+    *,
+    cp3w_server_ipv4: IPv4Address | None = None,
 ) -> tuple[bytes, Prime3RuntimePayloadManifest]:
-    return load_or_build_hardware_runtime(output_dir, Prime3HardwareRuntimeMode.PRODUCTION)
+    payload, manifest = load_or_build_hardware_runtime(output_dir, Prime3HardwareRuntimeMode.PRODUCTION)
+    if cp3w_server_ipv4 is None:
+        return payload, manifest
+    return patch_cp3w_tcp_endpoint(payload, manifest, cp3w_server_ipv4)
 
 
 def patch_prime3_hardware_dol(
@@ -256,12 +263,21 @@ def patch_prime3_hardware_dol_file_atomic(
     runtime_build_dir: Path,
     runtime_mode: Prime3HardwareRuntimeMode = Prime3HardwareRuntimeMode.PRODUCTION,
     beacon_ipv4: IPv4Address | None = None,
+    cp3w_server_ipv4: IPv4Address | None = None,
 ) -> Prime3HardwarePatchResult:
-    payload, manifest = load_or_build_hardware_runtime(
-        runtime_build_dir,
-        runtime_mode,
-        beacon_ipv4=beacon_ipv4,
-    )
+    if runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION:
+        if beacon_ipv4 is not None:
+            raise Prime3DolPatchError("Beacon destination IPv4 is not valid for the canonical TCP runtime.")
+        payload, manifest = load_or_build_production_runtime(
+            runtime_build_dir,
+            cp3w_server_ipv4=cp3w_server_ipv4,
+        )
+    else:
+        payload, manifest = load_or_build_hardware_runtime(
+            runtime_build_dir,
+            runtime_mode,
+            beacon_ipv4=beacon_ipv4,
+        )
     patched_dol, result = patch_prime3_hardware_dol(
         path.read_bytes(),
         layout_uuid,
@@ -314,8 +330,26 @@ def validate_prime3_hardware_artifact(
 
     transport = relocated.transport
     assert transport is not None
-    identity = transport.cp3w_game_identity
-    inventory = transport.cp3w_inventory
+    if isinstance(transport, Prime3RuntimeTransportMetadata):
+        artifact_runtime_mode = PRODUCTION_RUNTIME_MODE
+        udp_port = CP3W_SERVER_PORT
+        game_identity_supported = transport.inventory_tracker_capability
+        inventory_supported = transport.tracker_snapshot_capability
+    else:
+        identity = transport.cp3w_game_identity
+        inventory = transport.cp3w_inventory
+        artifact_runtime_mode = transport.mode
+        udp_port = transport.udp_port
+        game_identity_supported = (
+            identity is not None
+            and identity.command_value == int(Prime3WiiCommand.GET_GAME_IDENTITY)
+            and identity.capability_value == int(Prime3WiiCapability.GAME_IDENTITY)
+        )
+        inventory_supported = (
+            inventory is not None
+            and inventory.command_value == int(Prime3WiiCommand.GET_INVENTORY)
+            and inventory.capability_value == int(Prime3WiiCapability.INVENTORY_STATE)
+        )
     return Prime3HardwareArtifactValidation(
         version_description=version.description,
         payload_sha256=manifest.payload_sha256,
@@ -324,18 +358,10 @@ def validate_prime3_hardware_artifact(
         runtime_section_size=section.size,
         entry_hook_target=entry_branch.target_address,
         recurring_hook_target=recurring_branch.target_address,
-        udp_port=transport.udp_port,
-        runtime_mode=transport.mode,
-        game_identity_supported=(
-            identity is not None
-            and identity.command_value == int(Prime3WiiCommand.GET_GAME_IDENTITY)
-            and identity.capability_value == int(Prime3WiiCapability.GAME_IDENTITY)
-        ),
-        inventory_supported=(
-            inventory is not None
-            and inventory.command_value == int(Prime3WiiCommand.GET_INVENTORY)
-            and inventory.capability_value == int(Prime3WiiCapability.INVENTORY_STATE)
-        ),
+        udp_port=udp_port,
+        runtime_mode=artifact_runtime_mode,
+        game_identity_supported=game_identity_supported,
+        inventory_supported=inventory_supported,
         runtime_occurrence_count=occurrences,
     )
 
@@ -354,6 +380,19 @@ def _validate_hardware_manifest(
     if relocated is None or relocated.transport is None:
         raise Prime3DolPatchError("Hardware CP3W payload is missing relocated transport metadata.")
     transport = relocated.transport
+    if isinstance(transport, Prime3RuntimeTransportMetadata):
+        if runtime_mode is not Prime3HardwareRuntimeMode.PRODUCTION:
+            raise Prime3DolPatchError("The canonical TCP runtime only provides the production tracker asset.")
+        if not (
+            transport.transport_kind == "tcp"
+            and transport.inventory_tracker_capability
+            and transport.tracker_snapshot_capability
+            and transport.resync_capability
+        ):
+            raise Prime3DolPatchError("Canonical TCP runtime is missing required tracker capabilities.")
+        if manifest.beacon_ipv4_patch is not None:
+            raise Prime3DolPatchError("Canonical TCP runtime must not include native beacon patch metadata.")
+        return
     if transport.mode != runtime_mode.value:
         raise Prime3DolPatchError(
             f"Hardware CP3W payload mode {transport.mode!r} does not match selected mode {runtime_mode.value!r}."
@@ -378,6 +417,57 @@ def _validate_hardware_manifest(
 
 def _validate_production_manifest(payload: bytes, manifest: Prime3RuntimePayloadManifest) -> None:
     _validate_hardware_manifest(payload, manifest, Prime3HardwareRuntimeMode.PRODUCTION)
+
+
+def patch_cp3w_tcp_endpoint(
+    payload: bytes,
+    manifest: Prime3RuntimePayloadManifest,
+    server_ipv4: IPv4Address,
+) -> tuple[bytes, Prime3RuntimePayloadManifest]:
+    _validate_production_manifest(payload, manifest)
+    relocated = manifest.relocated_runtime
+    assert relocated is not None
+    transport = relocated.transport
+    if not isinstance(transport, Prime3RuntimeTransportMetadata):
+        raise Prime3DolPatchError("Canonical TCP runtime is missing CP3C endpoint metadata.")
+    if (
+        transport.server_ipv4_size != 4
+        or transport.server_port_size != 2
+        or transport.server_ipv4_byte_order != "big"
+        or transport.server_port_byte_order != "big"
+    ):
+        raise Prime3DolPatchError("Canonical TCP runtime has invalid CP3C endpoint field metadata.")
+
+    blob_offset = relocated.embedded_runtime_blob_offset
+    ipv4_offset = blob_offset + transport.server_ipv4_offset
+    port_offset = blob_offset + transport.server_port_offset
+    expected_port = CP3W_SERVER_PORT.to_bytes(2, "big")
+    if payload[port_offset : port_offset + 2] != expected_port:
+        raise Prime3DolPatchError("Canonical TCP runtime CP3C port does not match the fixed tracker port.")
+    if payload[ipv4_offset : ipv4_offset + 4] != b"\0\0\0\0":
+        raise Prime3DolPatchError("Canonical TCP runtime CP3C IPv4 field does not contain its expected original bytes.")
+
+    patched_payload = bytearray(payload)
+    patched_payload[ipv4_offset : ipv4_offset + 4] = server_ipv4.packed
+    patched_payload[port_offset : port_offset + 2] = expected_port
+    patched_bytes = bytes(patched_payload)
+    if patched_bytes[ipv4_offset : ipv4_offset + 4] != server_ipv4.packed:
+        raise Prime3DolPatchError("Failed to patch the canonical TCP runtime CP3C IPv4 field.")
+    if patched_bytes[port_offset : port_offset + 2] != expected_port:
+        raise Prime3DolPatchError("Failed to patch the canonical TCP runtime CP3C port field.")
+
+    blob_end = blob_offset + relocated.embedded_runtime_blob_size
+    patched_relocated = dataclasses.replace(
+        relocated,
+        embedded_runtime_blob_sha256=hashlib.sha256(patched_bytes[blob_offset:blob_end]).hexdigest(),
+    )
+    patched_manifest = dataclasses.replace(
+        manifest,
+        payload_sha256=hashlib.sha256(patched_bytes).hexdigest(),
+        relocated_runtime=patched_relocated,
+    )
+    _validate_production_manifest(patched_bytes, patched_manifest)
+    return patched_bytes, patched_manifest
 
 
 def patch_native_beacon_ipv4(

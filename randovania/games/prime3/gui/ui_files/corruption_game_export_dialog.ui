@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>508</width>
-    <height>320</height>
+    <height>370</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -139,47 +139,33 @@
     </widget>
    </item>
    <item row="6" column="0">
-    <widget class="QLabel" name="runtime_mode_label">
+    <widget class="QLabel" name="cp3w_server_address_label">
      <property name="text">
-      <string>Wii Hardware Runtime</string>
+      <string>CP3W server address</string>
      </property>
     </widget>
    </item>
    <item row="6" column="1" colspan="2">
-    <widget class="QComboBox" name="runtime_mode_combo"/>
-   </item>
-   <item row="7" column="0">
-    <widget class="QLabel" name="beacon_ip_label">
-     <property name="text">
-      <string>Beacon destination IP</string>
+    <widget class="QLineEdit" name="cp3w_server_address_edit">
+     <property name="toolTip">
+      <string>IPv4 address of the computer running the Randovania/CDV Prime 3 tracker server.</string>
      </property>
-    </widget>
-   </item>
-   <item row="7" column="1" colspan="2">
-    <widget class="QLineEdit" name="beacon_ip_edit">
      <property name="placeholderText">
       <string>IPv4 address</string>
      </property>
     </widget>
    </item>
-   <item row="8" column="1" colspan="2">
-    <widget class="QLabel" name="beacon_port_label">
+   <item row="7" column="0" colspan="3">
+    <widget class="QLabel" name="cp3w_server_address_help_label">
      <property name="text">
-      <string>UDP port: 43674</string>
+      <string>IPv4 address of the computer running the Randovania/CDV Prime 3 tracker server.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
-   <item row="9" column="1" colspan="2">
-    <widget class="QLabel" name="beacon_validation_label">
-     <property name="text">
-      <string>Enter a valid IPv4 address.</string>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">color: #b00020;</string>
-     </property>
-    </widget>
-   </item>
-   <item row="10" column="0">
+   <item row="8" column="0">
     <widget class="QCheckBox" name="auto_save_spoiler_check">
      <property name="text">
       <string>Include a spoiler log on same directory</string>

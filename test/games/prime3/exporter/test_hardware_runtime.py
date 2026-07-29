@@ -21,6 +21,7 @@ from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, pa
 from randovania.games.prime3.exporter.runtime_payload import (
     Prime3RuntimePayloadManifest,
     Prime3RuntimePayloadPatchField,
+    Prime3RuntimeTransportMetadata,
 )
 from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
 
@@ -64,6 +65,7 @@ def _native_runtime_fixture(production_runtime) -> tuple[bytes, Prime3RuntimePay
         mode=hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE.value,
         receive_enabled=False,
         send_enabled=True,
+        nwc24_startup_enabled=True,
         kd_close_enabled=False,
         terminal_phase_value=115,
         terminal_phase_name="NATIVE_BEACON_COMPLETE",
@@ -114,6 +116,78 @@ def test_production_runtime_installs_and_validates(production_runtime) -> None:
     assert validation.game_identity_supported
     assert validation.inventory_supported
     assert validation.runtime_occurrence_count == 1
+
+
+def test_patch_cp3w_tcp_endpoint_writes_manifest_defined_fields(production_runtime) -> None:
+    payload, manifest, _ = production_runtime
+    assert manifest.relocated_runtime is not None
+    relocated = manifest.relocated_runtime
+    blob_offset = relocated.embedded_runtime_blob_offset
+    tcp_transport = Prime3RuntimeTransportMetadata(
+        transport_kind="tcp",
+        protocol_magic_hex="43503357",
+        protocol_version=1,
+        frame_size=64,
+        diagnostics_enabled=False,
+        inbound_queue_depth=4,
+        outbound_queue_depth=4,
+        cp3c_config_offset=0x20,
+        cp3c_config_size=0x20,
+        server_ipv4_offset=0x2C,
+        server_ipv4_size=4,
+        server_ipv4_byte_order="big",
+        server_port_offset=0x30,
+        server_port_size=2,
+        server_port_byte_order="big",
+        inventory_tracker_capability=True,
+        tracker_snapshot_capability=True,
+        tracker_delta_capability=True,
+        resync_capability=True,
+    )
+    source = bytearray(payload)
+    source[blob_offset + 0x2C : blob_offset + 0x30] = b"\0\0\0\0"
+    source[blob_offset + 0x30 : blob_offset + 0x32] = b"\xaa\x9a"
+    source_payload = bytes(source)
+    tcp_relocated = dataclasses.replace(
+        relocated,
+        transport=tcp_transport,
+        embedded_runtime_blob_sha256=hashlib.sha256(
+            source_payload[blob_offset : blob_offset + relocated.embedded_runtime_blob_size]
+        ).hexdigest(),
+    )
+    tcp_manifest = dataclasses.replace(
+        manifest,
+        payload_sha256=hashlib.sha256(source_payload).hexdigest(),
+        relocated_runtime=tcp_relocated,
+        beacon_ipv4_patch=None,
+    )
+
+    first_payload, first_manifest = hardware_runtime.patch_cp3w_tcp_endpoint(
+        source_payload, tcp_manifest, IPv4Address("192.168.50.248")
+    )
+    second_payload, _ = hardware_runtime.patch_cp3w_tcp_endpoint(
+        source_payload, tcp_manifest, IPv4Address("10.20.30.40")
+    )
+
+    assert first_payload[blob_offset + 0x2C : blob_offset + 0x30] == b"\xc0\xa8\x32\xf8"
+    assert first_payload[blob_offset + 0x30 : blob_offset + 0x32] == b"\xaa\x9a"
+    assert second_payload[blob_offset + 0x2C : blob_offset + 0x30] == b"\x0a\x14\x1e\x28"
+    assert second_payload[blob_offset + 0x30 : blob_offset + 0x32] == b"\xaa\x9a"
+    assert first_manifest.payload_sha256 == hashlib.sha256(first_payload).hexdigest()
+    changed_offsets = [
+        offset
+        for offset, (before, after) in enumerate(zip(first_payload, second_payload, strict=True))
+        if before != after
+    ]
+    assert changed_offsets == list(range(blob_offset + 0x2C, blob_offset + 0x30))
+
+    invalid_transport = dataclasses.replace(tcp_transport, server_port_size=4)
+    invalid_manifest = dataclasses.replace(
+        tcp_manifest,
+        relocated_runtime=dataclasses.replace(tcp_relocated, transport=invalid_transport),
+    )
+    with pytest.raises(Prime3DolPatchError, match="invalid CP3C endpoint field metadata|invalid widths"):
+        hardware_runtime.patch_cp3w_tcp_endpoint(source_payload, invalid_manifest, IPv4Address("192.168.50.248"))
 
 
 def test_production_runtime_rejects_duplicate_installation(production_runtime) -> None:
@@ -240,7 +314,7 @@ def test_pyinstaller_spec_only_consumes_prebuilt_runtime_assets() -> None:
     assert "build_hardware_runtime_payload" not in spec_text
     assert "assets.payload_path" in spec_text
     assert "assets.manifest_path" in spec_text
-    assert "for runtime_mode in HARDWARE_RUNTIME_MODES" in spec_text
+    assert "for runtime_mode in (Prime3HardwareRuntimeMode.PRODUCTION,)" in spec_text
     assert "runtime_asset_directory(base_dir, runtime_mode)" in spec_text
     assert "path: build/prime3_wii_runtime/production" in workflow_text
     assert "build/prime3_wii_runtime/production/payload.elf" not in workflow_text
@@ -304,6 +378,8 @@ def test_diagnostic_manifest_does_not_require_production_protocol_metadata(produ
         mode=hardware_runtime.Prime3HardwareRuntimeMode.BIND_ONCE.value,
         receive_enabled=False,
         send_enabled=False,
+        nwc24_startup_enabled=True,
+        kd_close_enabled=True,
         terminal_phase_value=0x11,
         terminal_phase_name="BOUND_NO_RECV",
         cp3w_game_identity=None,

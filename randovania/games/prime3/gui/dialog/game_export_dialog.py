@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
-import ipaddress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from randovania.game.game_enum import RandovaniaGame
+from randovania.games.prime3.exporter.cp3w_endpoint import (
+    discover_cp3w_server_ipv4,
+    parse_cp3w_server_ipv4,
+)
 from randovania.games.prime3.exporter.game_exporter import CorruptionGameExportParams, CorruptionOutputFormats
 from randovania.games.prime3.exporter.hardware_runtime import Prime3HardwareRuntimeMode
 from randovania.games.prime3.exporter.options import CorruptionPerGameOptions
@@ -19,24 +22,14 @@ from randovania.gui.dialog.game_export_dialog import (
     prompt_for_input_file,
     prompt_for_output_file,
     spoiler_path_for,
-    update_validation,
 )
 from randovania.gui.lib.multi_format_output_mixin import MultiFormatOutputMixin
 
 if TYPE_CHECKING:
+    from ipaddress import IPv4Address
+
     from randovania.exporter.game_exporter import GameExportParams
     from randovania.interface_common.options import Options, PerGameOptions
-
-
-RUNTIME_MODE_CHOICES = (
-    ("Production CP3W service", Prime3HardwareRuntimeMode.PRODUCTION),
-    ("Stop after SOStartup", Prime3HardwareRuntimeMode.STARTUP_ONCE),
-    ("Stop after SOGetHostID", Prime3HardwareRuntimeMode.GET_HOST_ID_ONCE),
-    ("Stop after socket creation", Prime3HardwareRuntimeMode.CREATE_SOCKET_ONCE),
-    ("Stop after bind", Prime3HardwareRuntimeMode.BIND_ONCE),
-    ("Wait for one UDP datagram", Prime3HardwareRuntimeMode.RECVFROM_ONCE),
-    ("Native WiiConnect24 bootstrap beacon", Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE),
-)
 
 
 class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog, MultiFormatOutputMixin):
@@ -55,6 +48,7 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
         self._base_output_name = f"Corruption Randomizer - {word_hash}"
 
         assert isinstance(per_game, CorruptionPerGameOptions)
+        self._cp3w_networking_enabled = bool(patch_data.get("enable_prime3_wii_networking", False))
 
         # commands = patch_data["commands"]
         # common_qt_lib.set_clipboard(commands)
@@ -74,11 +68,6 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
 
         self._selected_output_format = self.output_format
 
-        for label, runtime_mode in RUNTIME_MODE_CHOICES:
-            self.runtime_mode_combo.addItem(label, runtime_mode.value)
-        self.runtime_mode_combo.currentIndexChanged.connect(self._on_runtime_mode_changed)
-        self.beacon_ip_edit.textChanged.connect(self._on_beacon_ip_changed)
-
         if per_game.input_path is not None:
             self.input_file_edit.setText(str(per_game.input_path))
         if per_game.output_path is not None:
@@ -89,15 +78,24 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
         self.wbfs_radio.toggled.connect(self._on_update_output_format)
         self._on_update_output_format()
 
+        self.cp3w_server_address_label.setVisible(self._cp3w_networking_enabled)
+        self.cp3w_server_address_edit.setVisible(self._cp3w_networking_enabled)
+        self.cp3w_server_address_help_label.setVisible(self._cp3w_networking_enabled)
+        if self._cp3w_networking_enabled:
+            server_address = per_game.cp3w_server_ipv4
+            if server_address is None:
+                discovered_address = discover_cp3w_server_ipv4()
+                server_address = None if discovered_address is None else str(discovered_address)
+            self.cp3w_server_address_edit.setText(server_address or "")
+
         add_field_validation(
             accept_button=self.accept_button,
             fields={
                 self.input_file_edit: lambda: is_file_validator(self.input_file),
                 self.output_file_edit: lambda: output_file_validator(self.output_file),
-                self.beacon_ip_edit: self._beacon_ipv4_has_error,
+                self.cp3w_server_address_edit: self._cp3w_server_address_invalid,
             },
         )
-        self._on_runtime_mode_changed()
 
     def update_per_game_options(self, per_game: PerGameOptions) -> PerGameOptions:
         assert isinstance(per_game, CorruptionPerGameOptions)
@@ -106,6 +104,9 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             input_path=Path(self.input_file),
             output_format=CorruptionOutputFormats(self.output_format),
             output_path=Path(self.output_file).parent,
+            cp3w_server_ipv4=(self.cp3w_server_address_edit.text().strip() or None)
+            if self._cp3w_networking_enabled
+            else per_game.cp3w_server_ipv4,
         )
 
     @property
@@ -126,6 +127,12 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
         return Path(self.output_file_edit.text())
 
     @property
+    def cp3w_server_ipv4(self) -> IPv4Address | None:
+        if not self._cp3w_networking_enabled:
+            return None
+        return parse_cp3w_server_ipv4(self.cp3w_server_address_edit.text())
+
+    @property
     def available_output_file_types(self) -> list[str]:
         return self.valid_output_file_types
 
@@ -139,40 +146,6 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             return CorruptionOutputFormats.WBFS.value
         else:
             return CorruptionOutputFormats.ISO.value
-
-    @property
-    def runtime_mode(self) -> Prime3HardwareRuntimeMode:
-        return Prime3HardwareRuntimeMode(self.runtime_mode_combo.currentData())
-
-    @property
-    def beacon_ipv4(self) -> ipaddress.IPv4Address | None:
-        if self.runtime_mode is not Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
-            return None
-        return ipaddress.IPv4Address(self.beacon_ip_edit.text())
-
-    def _beacon_ipv4_has_error(self) -> bool:
-        if self.runtime_mode is not Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
-            return False
-        try:
-            ipaddress.IPv4Address(self.beacon_ip_edit.text())
-        except ipaddress.AddressValueError:
-            return True
-        return False
-
-    def _on_runtime_mode_changed(self) -> None:
-        native_mode = self.runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
-        invalid = native_mode and self._beacon_ipv4_has_error()
-        self.beacon_ip_label.setVisible(native_mode)
-        self.beacon_ip_edit.setVisible(native_mode)
-        self.beacon_port_label.setVisible(native_mode)
-        self.beacon_validation_label.setVisible(invalid)
-        update_validation(self.beacon_ip_edit)
-
-    def _on_beacon_ip_changed(self) -> None:
-        self.beacon_validation_label.setVisible(
-            self.runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE
-            and self._beacon_ipv4_has_error()
-        )
 
     # Input file
     def _on_input_file_button(self) -> None:
@@ -195,6 +168,15 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
         if str(output_path) != ".":
             self.output_file_edit.setText(str(output_path.with_suffix(f".{self._selected_output_format}")))
 
+    def _cp3w_server_address_invalid(self) -> bool:
+        if not self._cp3w_networking_enabled:
+            return False
+        try:
+            self.cp3w_server_ipv4
+        except ValueError:
+            return True
+        return False
+
     def get_game_export_params(self) -> GameExportParams:
         spoiler_output = spoiler_path_for(self.auto_save_spoiler, self.output_file)
 
@@ -204,6 +186,7 @@ class CorruptionGameExportDialog(GameExportDialog, Ui_CorruptionGameExportDialog
             output_path=Path(self.output_file),
             output_format=CorruptionOutputFormats(self.output_format),
             mp3_update=CorruptionConfiguration.MP3Update,
-            runtime_mode=self.runtime_mode,
-            beacon_ipv4=self.beacon_ipv4,
+            runtime_mode=Prime3HardwareRuntimeMode.PRODUCTION,
+            enable_cp3w_networking=self._cp3w_networking_enabled,
+            cp3w_server_ipv4=self.cp3w_server_ipv4,
         )

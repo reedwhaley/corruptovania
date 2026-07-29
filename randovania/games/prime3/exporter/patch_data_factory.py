@@ -117,6 +117,7 @@ class CorruptionPatchDataFactory(PatchDataFactory):
             "phaaze_skip": phaaze_skip,
             "mp3_update": mp3_update,
             "disable_deflicker": disable_deflicker,
-            "enable_prime3_wii_networking": True,
+            "enable_prime3_wii_networking": configuration.enable_prime3_wii_networking,
+            "cp3w_server_ipv4": None,
             "layout_uuid": str(self.players_config.get_own_uuid()),
         }

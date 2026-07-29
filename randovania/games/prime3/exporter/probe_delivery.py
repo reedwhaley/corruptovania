@@ -37,6 +37,9 @@ RECURRING_POLL_HOOK_ADDRESS = 0x800BB71C
 RECURRING_POLL_HOOK_EXPECTED_WORD = 0x80630024
 RECURRING_POLL_HOOK_CONTINUATION_ADDRESS = 0x800BB720
 RECURRING_POLL_HOOK_VERSION_DESCRIPTION = "Wii NTSC"
+POST_GX_COPY_DISP_ADDRESS = 0x80372460
+POST_GX_COPY_DISP_RETAIL_WORD = 0x80010014
+END_SCENE_ADDRESS = 0x803E9F78
 
 
 @dataclasses.dataclass(frozen=True)
@@ -846,6 +849,27 @@ def verify_probe_delivery(
     original_header = parse_dol_header(original_dol_bytes)
     probe_header = parse_dol_header(probe_dol_bytes)
     extracted_header = parse_dol_header(extracted_dol_bytes)
+    _verify_retail_site_preserved(
+        original_dol_bytes,
+        original_header,
+        probe_dol_bytes,
+        probe_header,
+        extracted_dol_bytes,
+        extracted_header,
+        address=POST_GX_COPY_DISP_ADDRESS,
+        description="post-GXCopyDisp instruction",
+        required_retail_word=POST_GX_COPY_DISP_RETAIL_WORD,
+    )
+    _verify_retail_site_preserved(
+        original_dol_bytes,
+        original_header,
+        probe_dol_bytes,
+        probe_header,
+        extracted_dol_bytes,
+        extracted_header,
+        address=END_SCENE_ADDRESS,
+        description="CGraphics::EndScene entry",
+    )
 
     original_slot = original_header.sections[probe_section.text_slot_index]
     if not original_slot.is_empty:
@@ -979,6 +1003,44 @@ def _verify_checkpoint_gate_word(dol_bytes: bytes, header: DolHeader, checkpoint
             f"DOL checkpoint gate word at 0x{checkpoint_gate.gate_address:08x} was 0x{observed:08x}, "
             f"expected 0x{checkpoint_gate.replacement_instruction:08x}."
         )
+
+
+def _verify_retail_site_preserved(
+    original_dol_bytes: bytes,
+    original_header: DolHeader,
+    probe_dol_bytes: bytes,
+    probe_header: DolHeader,
+    extracted_dol_bytes: bytes,
+    extracted_header: DolHeader,
+    *,
+    address: int,
+    description: str,
+    required_retail_word: int | None = None,
+) -> None:
+    original_offset = original_header.offset_for_address(address)
+    if original_offset is None:
+        return
+
+    original_word = int.from_bytes(original_dol_bytes[original_offset : original_offset + 4], "big")
+    if required_retail_word is not None and original_word != required_retail_word:
+        raise Prime3DolPatchError(
+            f"Original {description} at 0x{address:08x} is 0x{original_word:08x}; "
+            f"expected retail 0x{required_retail_word:08x}."
+        )
+
+    for image_name, dol_bytes, header in (
+        ("probe", probe_dol_bytes, probe_header),
+        ("extracted final", extracted_dol_bytes, extracted_header),
+    ):
+        file_offset = header.offset_for_address(address)
+        if file_offset is None:
+            raise Prime3DolPatchError(f"{image_name.title()} DOL does not map {description} at 0x{address:08x}.")
+        observed_word = int.from_bytes(dol_bytes[file_offset : file_offset + 4], "big")
+        if observed_word != original_word:
+            raise Prime3DolPatchError(
+                f"{image_name.title()} DOL changed {description} at 0x{address:08x}: "
+                f"observed 0x{observed_word:08x}, expected baseline 0x{original_word:08x}."
+            )
 
 
 def _verify_entry_bootstrap_word(

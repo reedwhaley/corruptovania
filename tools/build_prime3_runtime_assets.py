@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import ipaddress
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -13,61 +13,61 @@ if __package__ in {None, ""}:
         sys.path.insert(0, _repository_root_str)
 
 from randovania.games.prime3.exporter.hardware_runtime import (
-    HARDWARE_RUNTIME_MODES,
     PRODUCTION_RUNTIME_ASSET_DIR,
-    Prime3HardwareRuntimeMode,
-    build_hardware_runtime_payload,
-    load_validated_hardware_runtime_assets,
-    runtime_asset_directory,
 )
-from tools.prime3_wii_runtime.build_payload import DEFAULT_NATIVE_BEACON_IPV4
-
-
-def _parse_ipv4(value: str) -> int:
-    return int(ipaddress.IPv4Address(value))
+from randovania.games.prime3.exporter.runtime_payload import PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE
+from randovania.games.prime3.exporter.runtime_toolchain import resolve_prime3_runtime_toolchain
+from tools.prime3_wii_runtime.build_payload import build_prime3_runtime_payload
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build and validate selectable Prime 3 CP3W hardware runtime assets.")
+    parser = argparse.ArgumentParser(description="Build and validate the canonical Prime 3 TCP runtime asset.")
     parser.add_argument("--output-dir", type=Path, default=Path(PRODUCTION_RUNTIME_ASSET_DIR))
     parser.add_argument(
-        "--mode",
-        type=Prime3HardwareRuntimeMode,
-        choices=HARDWARE_RUNTIME_MODES,
-        action="append",
-        help="Build only this mode; repeat for multiple modes. The default builds all hardware modes.",
-    )
-    parser.add_argument(
-        "--native-beacon-ipv4",
-        type=_parse_ipv4,
-        default=DEFAULT_NATIVE_BEACON_IPV4,
-        metavar="ADDRESS",
-        help="Development IPv4 destination for the native bootstrap beacon.",
+        "--devkitppc",
+        type=Path,
+        help="Path to the devkitPPC root. DEVKITPRO is derived from its parent.",
     )
     return parser.parse_args()
 
 
+def _toolchain_environment(devkitppc: Path | None) -> dict[str, str]:
+    environment = dict(os.environ)
+    if devkitppc is not None:
+        environment["DEVKITPPC"] = os.fspath(devkitppc)
+        environment["DEVKITPRO"] = os.fspath(devkitppc.parent)
+    return environment
+
+
+def build_canonical_tcp_assets(output_dir: Path, *, devkitppc: Path | None = None) -> None:
+    toolchain = resolve_prime3_runtime_toolchain(_toolchain_environment(devkitppc))
+    print(f"compiler={toolchain.compiler_path}")
+    print(f"assembler={toolchain.compiler_path}")
+    print(f"linker={toolchain.linker_path}")
+    print(f"objcopy={toolchain.objcopy_path}")
+    manifest = build_prime3_runtime_payload(
+        output_dir,
+        payload_mode=PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+        reserved_high=0x817E0000,
+        diagnostic_address=0x817E0100,
+        devkitppc_path=devkitppc,
+    )
+    transport = manifest.relocated_runtime.transport if manifest.relocated_runtime is not None else None
+    if transport is None or transport.transport_kind != "tcp":
+        raise RuntimeError("Canonical Prime 3 runtime build did not produce TCP transport metadata.")
+    print(f"output_dir={output_dir}")
+    print(f"payload.elf sha256={_sha256(output_dir.joinpath('payload.elf'))}")
+    print(f"payload.bin sha256={manifest.payload_sha256}")
+    print(f"payload.json sha256={_sha256(output_dir.joinpath('payload.json'))}")
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def main() -> None:
     args = parse_args()
-    print(f"DEVKITPRO={os.environ.get('DEVKITPRO', '')}")
-    print(f"DEVKITPPC={os.environ.get('DEVKITPPC', '')}")
-    modes = tuple(args.mode) if args.mode else HARDWARE_RUNTIME_MODES
-    for runtime_mode in modes:
-        asset_dir = runtime_asset_directory(args.output_dir, runtime_mode)
-        build_hardware_runtime_payload(
-            asset_dir,
-            runtime_mode,
-            native_beacon_ipv4=args.native_beacon_ipv4,
-        )
-        assets = load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=True)
-        assert assets.manifest.relocated_runtime is not None
-        transport = assets.manifest.relocated_runtime.transport
-        assert transport is not None
-        print(f"[{runtime_mode.value}] output_dir={asset_dir}")
-        print(f"[{runtime_mode.value}] payload.elf sha256={assets.elf_sha256}")
-        print(f"[{runtime_mode.value}] payload.bin sha256={assets.payload_sha256}")
-        print(f"[{runtime_mode.value}] payload.json sha256={assets.manifest_sha256}")
-        print(f"[{runtime_mode.value}] udp_port={transport.udp_port}")
+    build_canonical_tcp_assets(args.output_dir, devkitppc=args.devkitppc)
     print("validation=passed")
 
 

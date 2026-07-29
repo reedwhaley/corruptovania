@@ -37,12 +37,6 @@
 #ifndef PRIME3_CP3W_RUNTIME_BUILD_ID
 #define PRIME3_CP3W_RUNTIME_BUILD_ID 0x50335731
 #endif
-#ifndef PRIME3_TCP_SERVER_IPV4
-#define PRIME3_TCP_SERVER_IPV4 0xC0A832F8
-#endif
-#ifndef PRIME3_TCP_SERVER_PORT
-#define PRIME3_TCP_SERVER_PORT 43674
-#endif
 #ifndef ENABLE_TCP_DIAGNOSTICS
 #define ENABLE_TCP_DIAGNOSTICS 0
 #endif
@@ -51,6 +45,17 @@ typedef signed int s32;
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
+
+typedef struct runtime_cp3c_config {
+    u32 magic;
+    u16 version;
+    u16 size;
+    u32 flags;
+    u32 server_ipv4;
+    u16 server_port;
+    u16 reserved;
+    u32 reserved_words[3];
+} runtime_cp3c_config;
 
 typedef struct runtime_ioctlv {
     void* data;
@@ -432,8 +437,6 @@ enum {
     SOCK_STREAM = 1,
     IPPROTO_IP = 0,
     INADDR_ANY = 0,
-    RUNTIME_TCP_PORT = PRIME3_TCP_SERVER_PORT,
-    RUNTIME_TCP_SERVER_IPV4 = PRIME3_TCP_SERVER_IPV4,
     RUNTIME_UDP_RECEIVE_CAPACITY = 512,
     RUNTIME_UDP_SEND_CAPACITY = 512,
     RUNTIME_PREVIEW_SIZE = 16,
@@ -551,6 +554,11 @@ enum {
     RUNTIME_PRIME3_NTSC_CPLAYER_VTABLE = 0x80592C78,
     RUNTIME_CP3W_ERROR_HEADER_SIZE = 6,
     RUNTIME_CP3W_MAX_PING_PAYLOAD_LENGTH = 44,
+};
+
+/* CP3C fields are patched by the production asset manifest in network byte order. */
+volatile runtime_cp3c_config runtime_cp3c_config_block __attribute_section_state_aligned_32__ __attribute_used__ = {
+    0x43503343, 1, sizeof(runtime_cp3c_config), 0, 0, 43674, 0, {0, 0, 0}
 };
 
 
@@ -933,7 +941,7 @@ volatile u32 runtime_transport_host_id __attribute_section_state__ __attribute_u
 volatile u32 runtime_transport_host_id_available __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_host_id_ready __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_service_started __attribute_section_state__ __attribute_used__ = 0;
-volatile u32 runtime_transport_bound_port __attribute_section_state__ __attribute_used__ = RUNTIME_TCP_PORT;
+volatile u32 runtime_transport_bound_port __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_submit_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_arm_count __attribute_section_state__ __attribute_used__ = 0;
 volatile u32 runtime_transport_receive_rearm_count __attribute_section_state__ __attribute_used__ = 0;
@@ -1734,7 +1742,7 @@ static void runtime_enter_listening_after_bind(u32 endpoint_verified)
     } else {
         runtime_transport_actual_bound_port = 0;
         runtime_transport_actual_bound_address = 0;
-        runtime_transport_bound_port = RUNTIME_TCP_PORT;
+        runtime_transport_bound_port = runtime_cp3c_config_block.server_port;
         runtime_transport_bound_address = INADDR_ANY;
     }
     runtime_transport_bound_flag = 1;
@@ -5421,7 +5429,7 @@ void runtime_entry_impl(void)
     runtime_transport_host_id_available = 0;
     runtime_transport_host_id_ready = 0;
     runtime_transport_service_started = 0;
-    runtime_transport_bound_port = RUNTIME_TCP_PORT;
+    runtime_transport_bound_port = runtime_cp3c_config_block.server_port;
     runtime_transport_receive_arm_count = 0;
     runtime_transport_receive_rearm_count = 0;
     runtime_transport_receive_submit_count = 0;
@@ -5716,7 +5724,7 @@ void runtime_entry_impl(void)
     runtime_network_diagnostics_block.initial_delay_polls = RUNTIME_INITIAL_DELAY_POLL_INTERVAL;
     runtime_network_diagnostics_block.retry_delay_polls = RUNTIME_RETRY_DELAY_POLL_INTERVAL;
     runtime_network_diagnostics_block.requested_bind_address = INADDR_ANY;
-    runtime_network_diagnostics_block.requested_bind_port = RUNTIME_TCP_PORT;
+    runtime_network_diagnostics_block.requested_bind_port = runtime_cp3c_config_block.server_port;
     runtime_network_diagnostics_block.byte_order_applied = 1;
     runtime_network_diagnostics_block.auto_retry_enabled = 1;
 #if PRIME3_IOS_UDP_DIAGNOSTIC_MODE == 23
@@ -6936,7 +6944,7 @@ void runtime_poll_entry_impl(void)
                 if (actual_port != 0) {
                     runtime_transport_actual_bound_port = actual_port;
                     runtime_transport_actual_bound_address = runtime_read_be32(runtime_transport_getsockname_address + 4);
-                    if (actual_port != RUNTIME_TCP_PORT) {
+                    if (actual_port != runtime_cp3c_config_block.server_port) {
                         runtime_schedule_retry(RUNTIME_TRANSPORT_PHASE_WAIT_VERIFY_BOUND_ENDPOINT, -1, 0);
                         goto runtime_poll_exit;
                     }
@@ -7200,8 +7208,8 @@ void runtime_poll_entry_impl(void)
         runtime_transport_bind_params.has_addr = 1;
         runtime_copy_sockaddr_in(
             runtime_transport_bind_params.address,
-            RUNTIME_TCP_SERVER_IPV4,
-            (u16)RUNTIME_TCP_PORT
+            runtime_cp3c_config_block.server_ipv4,
+            runtime_cp3c_config_block.server_port
         );
         runtime_transport_bind_submit_count += 1;
         if (

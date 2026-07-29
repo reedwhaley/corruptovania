@@ -36,6 +36,46 @@ def _make_manifest(payload_bytes: bytes) -> runtime_payload.Prime3RuntimePayload
     )
 
 
+def test_tcp_transport_metadata_round_trip_rejects_legacy_udp_fields() -> None:
+    transport = runtime_payload.Prime3RuntimeTransportMetadata(
+        transport_kind="tcp",
+        protocol_magic_hex="43503357",
+        protocol_version=1,
+        frame_size=64,
+        diagnostics_enabled=False,
+        inbound_queue_depth=4,
+        outbound_queue_depth=4,
+        cp3c_config_offset=0x200,
+        cp3c_config_size=0x20,
+        server_ipv4_offset=0x20C,
+        server_ipv4_size=4,
+        server_ipv4_byte_order="big",
+        server_port_offset=0x210,
+        server_port_size=2,
+        server_port_byte_order="big",
+        inventory_tracker_capability=True,
+        tracker_snapshot_capability=True,
+        tracker_delta_capability=True,
+        resync_capability=True,
+    )
+
+    data = transport.to_json_dict()
+
+    assert "udp_port" not in data
+    assert "mode" not in data
+    assert data["server_ipv4_size"] == 4
+    assert data["server_ipv4_byte_order"] == "big"
+    assert data["server_port_size"] == 2
+    assert data["server_port_byte_order"] == "big"
+    assert data["inventory_tracker_capability"] is True
+    assert data["tracker_snapshot_capability"] is True
+    assert data["diagnostics_enabled"] is False
+    assert runtime_payload.Prime3RuntimeTransportMetadata.from_json_dict(data) == transport
+
+    with pytest.raises(runtime_payload.Prime3DolPatchError, match="Legacy UDP"):
+        runtime_payload.Prime3RuntimeTransportMetadata.from_json_dict({**data, "udp_port": 43674})
+
+
 def _make_bootstrap_manifest(payload_bytes: bytes) -> runtime_payload.Prime3RuntimePayloadManifest:
     manifest = _make_manifest(payload_bytes)
     raw = manifest.to_json_dict()
@@ -1437,6 +1477,8 @@ def test_runtime_payload_manifest_rejects_cp3w_hello_session_wrong_terminal_phas
 
     with pytest.raises(Prime3DolPatchError, match="CP3W_HELLO_SESSION_LOOP_COMPLETE"):
         runtime_payload.Prime3RuntimePayloadManifest.from_json_dict(raw)
+
+
 def test_runtime_payload_manifest_rejects_relocated_runtime_overlap_with_bootstrap_diagnostic() -> None:
     manifest = _make_relocated_manifest(b"\x4e\x80\x00\x20" * 320)
     raw = manifest.to_json_dict()

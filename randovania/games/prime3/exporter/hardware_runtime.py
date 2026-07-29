@@ -239,13 +239,14 @@ def patch_prime3_hardware_dol(
 
     identity_dol, identity_patch = patch_prime3_corruption_dol(original_dol, layout_uuid)
     assert manifest.entry_bootstrap is not None
+    assert manifest.relocated_runtime is not None
     delivery = build_unhooked_probe_dol(
         identity_dol,
         payload,
         manifest,
         payload_virtual_address=manifest.entry_bootstrap.staging_address,
         install_recurring_poll_hook=True,
-        enable_ios_udp_diagnostic=True,
+        enable_ios_udp_diagnostic=not isinstance(manifest.relocated_runtime.transport, Prime3RuntimeTransportMetadata),
     )
     validation = validate_prime3_hardware_artifact(
         delivery.probe_dol_bytes,

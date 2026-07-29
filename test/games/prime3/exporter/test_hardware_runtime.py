@@ -10,7 +10,6 @@ import uuid
 import zipfile
 from ipaddress import IPv4Address
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from open_prime_rando.dol_patching.corruption import dol_versions as corruption_dol_versions
@@ -225,15 +224,15 @@ def test_production_runtime_validator_rejects_partial_hook(production_runtime) -
         hardware_runtime.validate_prime3_hardware_artifact(bytes(mutable), payload=payload, manifest=manifest)
 
 
-def test_production_manifest_rejects_configurable_port(production_runtime) -> None:
+def test_production_manifest_rejects_invalid_tcp_endpoint_metadata(production_runtime) -> None:
     payload, manifest, _ = production_runtime
     assert manifest.relocated_runtime is not None
     assert manifest.relocated_runtime.transport is not None
-    transport = dataclasses.replace(manifest.relocated_runtime.transport, udp_port=12345)
+    transport = dataclasses.replace(manifest.relocated_runtime.transport, server_port_size=4)
     relocated = dataclasses.replace(manifest.relocated_runtime, transport=transport)
     invalid = dataclasses.replace(manifest, relocated_runtime=relocated)
 
-    with pytest.raises(Prime3DolPatchError, match="43674"):
+    with pytest.raises(Prime3DolPatchError, match="CP3C endpoint fields have invalid widths"):
         hardware_runtime.validate_prime3_hardware_artifact(_supported_dol(), payload=payload, manifest=invalid)
 
 
@@ -253,9 +252,10 @@ def test_packaged_runtime_asset_lookup_accepts_valid_assets(production_runtime, 
     assert assets.payload_sha256 == assets.manifest.payload_sha256
     assert assets.elf_sha256 is not None
     assert assets.manifest.relocated_runtime is not None
-    assert assets.manifest.relocated_runtime.transport is not None
-    assert assets.manifest.relocated_runtime.transport.mode == hardware_runtime.PRODUCTION_RUNTIME_MODE
-    assert assets.manifest.relocated_runtime.transport.udp_port == 43674
+    transport = assets.manifest.relocated_runtime.transport
+    assert isinstance(transport, Prime3RuntimeTransportMetadata)
+    assert transport.transport_kind == "tcp"
+    assert transport.diagnostics_enabled is False
 
 
 def test_packaged_runtime_asset_lookup_reports_missing_prebuild(tmp_path: Path) -> None:
@@ -268,10 +268,10 @@ def test_packaged_runtime_asset_lookup_rejects_invalid_metadata(production_runti
     _copy_production_assets(production_runtime, asset_dir)
     manifest_path = asset_dir.joinpath("payload.json")
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    data["relocated_runtime"]["transport"]["udp_port"] = 12345
+    data["relocated_runtime"]["transport"]["server_port_size"] = 4
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(Prime3DolPatchError, match="43674"):
+    with pytest.raises((Prime3DolPatchError, ValueError), match="port|CP3C|width"):
         hardware_runtime.load_validated_production_runtime_assets(asset_dir, require_elf=True)
 
 
@@ -285,21 +285,20 @@ def test_packaged_runtime_asset_lookup_rejects_invalid_payload_hash(production_r
         hardware_runtime.load_validated_production_runtime_assets(asset_dir, require_elf=True)
 
 
-@pytest.mark.parametrize("runtime_mode", hardware_runtime.HARDWARE_RUNTIME_MODES)
-def test_frozen_package_contains_selected_runtime_assets(
-    runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode,
-) -> None:
+def test_frozen_package_contains_canonical_tcp_runtime_assets() -> None:
     if not randovania.is_frozen():
         pytest.skip("Runtime asset packaging is validated through the frozen executable.")
 
-    asset_dir = hardware_runtime.runtime_asset_directory(
-        randovania.get_data_path().joinpath("prime3_wii_runtime"), runtime_mode
+    assets = hardware_runtime.load_validated_production_runtime_assets(
+        randovania.get_data_path().joinpath("prime3_wii_runtime"),
+        require_elf=True,
     )
-    assets = hardware_runtime.load_validated_hardware_runtime_assets(asset_dir, runtime_mode, require_elf=False)
 
     assert assets.manifest.relocated_runtime is not None
-    assert assets.manifest.relocated_runtime.transport is not None
-    assert assets.manifest.relocated_runtime.transport.mode == runtime_mode.value
+    transport = assets.manifest.relocated_runtime.transport
+    assert isinstance(transport, hardware_runtime.Prime3RuntimeTransportMetadata)
+    assert transport.transport_kind == "tcp"
+    assert assets.elf_path is not None
 
 
 def test_pyinstaller_spec_only_consumes_prebuilt_runtime_assets() -> None:
@@ -309,242 +308,14 @@ def test_pyinstaller_spec_only_consumes_prebuilt_runtime_assets() -> None:
         encoding="utf-8"
     )
 
-    assert "load_validated_hardware_runtime_assets" in spec_text
+    assert "load_validated_hardware_runtime_assets" not in spec_text
     assert "build_production_runtime_payload" not in spec_text
     assert "build_hardware_runtime_payload" not in spec_text
     assert "assets.payload_path" in spec_text
     assert "assets.manifest_path" in spec_text
-    assert "for runtime_mode in (Prime3HardwareRuntimeMode.PRODUCTION,)" in spec_text
-    assert "runtime_asset_directory(base_dir, runtime_mode)" in spec_text
+    assert "assets.elf_path" in spec_text
+    assert "load_validated_production_runtime_assets" in spec_text
+    assert "runtime_asset_directory" not in spec_text
+    assert "Prime3HardwareRuntimeMode" not in spec_text
+    assert "retail_wrapper_startup_once" not in spec_text
     assert "path: build/prime3_wii_runtime/production" in workflow_text
-    assert "build/prime3_wii_runtime/production/payload.elf" not in workflow_text
-
-
-@pytest.mark.parametrize("runtime_mode", hardware_runtime.HARDWARE_RUNTIME_MODES)
-def test_hardware_runtime_build_uses_mode_configuration(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode,
-) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_build(output_dir: Path, **kwargs: object) -> SimpleNamespace:
-        captured["output_dir"] = output_dir
-        captured.update(kwargs)
-        return SimpleNamespace()
-
-    monkeypatch.setattr(hardware_runtime, "build_prime3_runtime_payload", fake_build)
-
-    hardware_runtime.build_hardware_runtime_payload(tmp_path, runtime_mode)
-
-    production = runtime_mode is hardware_runtime.Prime3HardwareRuntimeMode.PRODUCTION
-    assert captured == {
-        "output_dir": tmp_path,
-        "payload_mode": "relocated_continue",
-        "enable_recurring_hook_diagnostics": not production,
-        "enable_ios_udp_diagnostic": True,
-        "ios_udp_mode": runtime_mode.value,
-        "ios_udp_loop_count": 0 if production else 1,
-        "native_beacon_ipv4": 0xC0A832F8,
-        "reserved_high": 0x817E0000,
-        "diagnostic_address": 0x817E0100,
-    }
-
-
-def test_native_bootstrap_beacon_endpoint_is_configurable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_build(output_dir: Path, **kwargs: object) -> SimpleNamespace:
-        captured.update(kwargs)
-        return SimpleNamespace()
-
-    monkeypatch.setattr(hardware_runtime, "build_prime3_runtime_payload", fake_build)
-
-    hardware_runtime.build_hardware_runtime_payload(
-        tmp_path,
-        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
-        native_beacon_ipv4=0xC0000201,
-    )
-
-    assert captured["native_beacon_ipv4"] == 0xC0000201
-
-
-def test_diagnostic_manifest_does_not_require_production_protocol_metadata(production_runtime) -> None:
-    payload, manifest, _ = production_runtime
-    assert manifest.relocated_runtime is not None
-    assert manifest.relocated_runtime.transport is not None
-    transport = dataclasses.replace(
-        manifest.relocated_runtime.transport,
-        mode=hardware_runtime.Prime3HardwareRuntimeMode.BIND_ONCE.value,
-        receive_enabled=False,
-        send_enabled=False,
-        nwc24_startup_enabled=True,
-        kd_close_enabled=True,
-        terminal_phase_value=0x11,
-        terminal_phase_name="BOUND_NO_RECV",
-        cp3w_game_identity=None,
-        cp3w_inventory=None,
-    )
-    relocated = dataclasses.replace(manifest.relocated_runtime, transport=transport)
-    diagnostic = dataclasses.replace(manifest, relocated_runtime=relocated)
-
-    hardware_runtime._validate_hardware_manifest(
-        payload,
-        diagnostic,
-        hardware_runtime.Prime3HardwareRuntimeMode.BIND_ONCE,
-    )
-
-
-def test_selected_runtime_mode_must_match_manifest(production_runtime) -> None:
-    payload, manifest, _ = production_runtime
-
-    with pytest.raises(Prime3DolPatchError, match="does not match selected mode"):
-        hardware_runtime._validate_hardware_manifest(
-            payload,
-            manifest,
-            hardware_runtime.Prime3HardwareRuntimeMode.RECVFROM_ONCE,
-        )
-
-
-def test_production_manifest_still_requires_protocol_metadata(production_runtime) -> None:
-    payload, manifest, _ = production_runtime
-    assert manifest.relocated_runtime is not None
-    assert manifest.relocated_runtime.transport is not None
-    transport = dataclasses.replace(
-        manifest.relocated_runtime.transport,
-        cp3w_game_identity=None,
-        cp3w_inventory=None,
-    )
-    relocated = dataclasses.replace(manifest.relocated_runtime, transport=transport)
-    invalid = dataclasses.replace(manifest, relocated_runtime=relocated)
-
-    with pytest.raises(Prime3DolPatchError, match="identity"):
-        hardware_runtime._validate_hardware_manifest(
-            payload,
-            invalid,
-            hardware_runtime.Prime3HardwareRuntimeMode.PRODUCTION,
-        )
-
-
-def test_atomic_patcher_loads_selected_runtime_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    path = tmp_path.joinpath("main.dol")
-    path.write_bytes(b"original")
-    selected_mode = hardware_runtime.Prime3HardwareRuntimeMode.GET_HOST_ID_ONCE
-    manifest = SimpleNamespace()
-    expected_result = SimpleNamespace()
-    calls: list[tuple[Path, hardware_runtime.Prime3HardwareRuntimeMode]] = []
-
-    def fake_load(
-        output_dir: Path,
-        runtime_mode: hardware_runtime.Prime3HardwareRuntimeMode,
-        *,
-        beacon_ipv4: IPv4Address | None,
-    ) -> tuple[bytes, SimpleNamespace]:
-        assert beacon_ipv4 is None
-        calls.append((output_dir, runtime_mode))
-        return b"payload", manifest
-
-    def fake_patch(original_dol: bytes, layout_uuid: uuid.UUID, **kwargs: object) -> tuple[bytes, SimpleNamespace]:
-        assert original_dol == b"original"
-        assert kwargs == {"payload": b"payload", "manifest": manifest, "runtime_mode": selected_mode}
-        return b"patched", expected_result
-
-    monkeypatch.setattr(hardware_runtime, "load_or_build_hardware_runtime", fake_load)
-    monkeypatch.setattr(hardware_runtime, "patch_prime3_hardware_dol", fake_patch)
-    monkeypatch.setattr(hardware_runtime, "atomic_replace_file", lambda target, data: target.write_bytes(data))
-
-    result = hardware_runtime.patch_prime3_hardware_dol_file_atomic(
-        path,
-        uuid.UUID(int=0),
-        runtime_build_dir=tmp_path.joinpath("runtime"),
-        runtime_mode=selected_mode,
-    )
-
-    assert calls == [(tmp_path.joinpath("runtime"), selected_mode)]
-    assert result is expected_result
-    assert path.read_bytes() == b"patched"
-
-
-def test_native_beacon_payload_patch_changes_only_ipv4_field(production_runtime) -> None:
-    payload, manifest = _native_runtime_fixture(production_runtime)
-    address = IPv4Address("203.0.113.27")
-
-    patched, patched_manifest = hardware_runtime.patch_native_beacon_ipv4(payload, manifest, address)
-
-    assert manifest.beacon_ipv4_patch is not None
-    offset = manifest.beacon_ipv4_patch.payload_offset
-    assert payload[offset : offset + 4] != address.packed
-    assert patched[offset : offset + 4] == address.packed
-    assert payload[:offset] == patched[:offset]
-    assert payload[offset + 4 :] == patched[offset + 4 :]
-    assert patched_manifest.payload_sha256 == hashlib.sha256(patched).hexdigest()
-    assert manifest.payload_sha256 == hashlib.sha256(payload).hexdigest()
-
-
-def test_native_beacon_payload_patch_rejects_expected_byte_mismatch(production_runtime) -> None:
-    payload, manifest = _native_runtime_fixture(production_runtime)
-    assert manifest.beacon_ipv4_patch is not None
-    invalid = dataclasses.replace(
-        manifest,
-        beacon_ipv4_patch=dataclasses.replace(
-            manifest.beacon_ipv4_patch,
-            expected_original_bytes="00000000",
-        ),
-    )
-
-    with pytest.raises(Prime3DolPatchError, match="expected bytes"):
-        hardware_runtime.patch_native_beacon_ipv4(payload, invalid, IPv4Address("192.0.2.1"))
-
-
-@pytest.mark.parametrize(
-    ("field_size", "byte_order", "message"),
-    [(3, "big", "exactly 4 bytes"), (4, "little", "big-endian")],
-)
-def test_native_beacon_payload_patch_rejects_invalid_metadata(
-    production_runtime, field_size: int, byte_order: str, message: str
-) -> None:
-    payload, manifest = _native_runtime_fixture(production_runtime)
-    assert manifest.beacon_ipv4_patch is not None
-    invalid = dataclasses.replace(
-        manifest,
-        beacon_ipv4_patch=dataclasses.replace(
-            manifest.beacon_ipv4_patch,
-            field_size=field_size,
-            byte_order=byte_order,
-        ),
-    )
-
-    with pytest.raises(Prime3DolPatchError, match=message):
-        hardware_runtime.patch_native_beacon_ipv4(payload, invalid, IPv4Address("192.0.2.1"))
-
-
-def test_packaged_native_beacon_patch_needs_no_toolchain(
-    production_runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    payload, manifest = _native_runtime_fixture(production_runtime)
-    packaged = tmp_path.joinpath(
-        "prime3_wii_runtime",
-        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE.value,
-    )
-    packaged.mkdir(parents=True)
-    packaged.joinpath("payload.bin").write_bytes(payload)
-    packaged.joinpath("payload.json").write_text(manifest.to_json_text(), encoding="utf-8")
-    original_payload = packaged.joinpath("payload.bin").read_bytes()
-    monkeypatch.setattr(hardware_runtime.randovania, "get_data_path", lambda: tmp_path)
-    monkeypatch.setattr(
-        hardware_runtime,
-        "build_hardware_runtime_payload",
-        lambda *_args, **_kwargs: pytest.fail("packaged export must not compile"),
-    )
-
-    patched, patched_manifest = hardware_runtime.load_or_build_hardware_runtime(
-        tmp_path.joinpath("build"),
-        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
-        beacon_ipv4=IPv4Address("198.51.100.9"),
-    )
-
-    assert packaged.joinpath("payload.bin").read_bytes() == original_payload
-    assert patched != original_payload
-    assert patched_manifest.relocated_runtime is not None
-    assert patched_manifest.relocated_runtime.transport is not None
-    assert patched_manifest.relocated_runtime.transport.udp_port == 43674

@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from randovania.game_connection.executor.prime3_wii_protocol import PROTOCOL_VERSION
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, Prime3PayloadArtifact
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 PRIME3_RUNTIME_PAYLOAD_SCHEMA_VERSION = 3
+PROTOCOL_VERSION = 1
 PRIME3_RUNTIME_TARGET_ARCHITECTURE = "powerpc"
 PRIME3_RUNTIME_TARGET_ENDIANNESS = "big"
 PRIME3_RUNTIME_TARGET_ABI = "eabi"
@@ -3748,7 +3748,7 @@ def _json_optional_string(data: dict[str, object], key: str) -> str | None:
 
 def _json_int_list(data: dict[str, object], key: str) -> list[int]:
     value = data.get(key)
-    if not isinstance(value, (list, tuple)) or not all(isinstance(item, int) for item in value):
+    if not isinstance(value, list | tuple) or not all(isinstance(item, int) for item in value):
         raise Prime3DolPatchError(
             f"Prime 3 runtime payload manifest field {key!r} must be a list or tuple of integers."
         )
@@ -3766,7 +3766,7 @@ def _json_int_dict(data: dict[str, object], key: str) -> dict[str, int]:
 
 def _json_string_list(data: dict[str, object], key: str) -> list[str]:
     value = data.get(key)
-    if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
+    if not isinstance(value, list | tuple) or not all(isinstance(item, str) for item in value):
         raise Prime3DolPatchError(f"Prime 3 runtime payload manifest field {key!r} must be a list or tuple of strings.")
     return list(value)
 

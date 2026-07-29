@@ -79,6 +79,8 @@ class GameConnection(QObject):
                 self.connected_states.pop(connector, None)
 
         self._timer.stop()
+        for builder in self.connection_builders:
+            builder.close()
 
     async def _auto_update(self) -> None:
         for builder, connector in list(self.remote_connectors.items()):
@@ -112,6 +114,7 @@ class GameConnection(QObject):
     def remove_connection_builder(self, builder: ConnectorBuilder) -> None:
         assert builder in self.connection_builders
         builder.StatusUpdate.disconnect(self._on_builder_status_update)
+        builder.close()
         self.connection_builders.remove(builder)
         self._on_builders_changed()
 

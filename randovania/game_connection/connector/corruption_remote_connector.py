@@ -7,8 +7,6 @@ from open_prime_rando.dol_patching import all_prime_dol_patches
 
 from randovania.game_connection.connector.prime_remote_connector import DolRemotePatch, PrimeRemoteConnector
 from randovania.game_connection.executor.memory_operation import MemoryOperation, MemoryOperationExecutor
-from randovania.game_connection.executor.prime3_wii_executor import Prime3WiiExecutor
-from randovania.game_connection.executor.prime3_wii_protocol import Prime3WiiAvailability
 from randovania.game_description.resources.inventory import Inventory, InventoryItem
 
 if TYPE_CHECKING:
@@ -59,14 +57,6 @@ class CorruptionRemoteConnector(PrimeRemoteConnector):
         Fetches the region the player's currently at, or None if they're not in-game.
         :return: bool indicating if there's a pending `execute_remote_patches` operation.
         """
-
-        if self._uses_cp3w_inventory:
-            assert isinstance(self.executor, Prime3WiiExecutor)
-            identity = await self.executor.ensure_game_identity()
-            if not identity.availability_flags & Prime3WiiAvailability.EXECUTABLE_RECOGNIZED:
-                return False, None
-            # Location state is intentionally deferred; inventory polling is independent in this transport.
-            return False, None
 
         cstate_manager_global = self.version.cstate_manager_global
 

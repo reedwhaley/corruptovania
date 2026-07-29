@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from randovania.game_connection.executor.prime3_wii_protocol import PROTOCOL_VERSION
 from randovania.games.prime3.exporter import runtime_payload
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError
+from randovania.games.prime3.exporter.runtime_payload import PROTOCOL_VERSION
 
 if TYPE_CHECKING:
     from pathlib import Path

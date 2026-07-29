@@ -7,10 +7,6 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import randovania
-from randovania.game_connection.executor.prime3_wii_protocol import (
-    Prime3WiiCapability,
-    Prime3WiiCommand,
-)
 from randovania.games.prime3.exporter.cp3w_endpoint import CP3W_SERVER_PORT
 from randovania.games.prime3.exporter.dol_patcher import (
     DecodedBranchInstruction,
@@ -335,26 +331,12 @@ def validate_prime3_hardware_artifact(
 
     transport = relocated.transport
     assert transport is not None
-    if isinstance(transport, Prime3RuntimeTransportMetadata):
-        artifact_runtime_mode = PRODUCTION_RUNTIME_MODE
-        udp_port = CP3W_SERVER_PORT
-        game_identity_supported = transport.inventory_tracker_capability
-        inventory_supported = transport.tracker_snapshot_capability
-    else:
-        identity = transport.cp3w_game_identity
-        inventory = transport.cp3w_inventory
-        artifact_runtime_mode = transport.mode
-        udp_port = transport.udp_port
-        game_identity_supported = (
-            identity is not None
-            and identity.command_value == int(Prime3WiiCommand.GET_GAME_IDENTITY)
-            and identity.capability_value == int(Prime3WiiCapability.GAME_IDENTITY)
-        )
-        inventory_supported = (
-            inventory is not None
-            and inventory.command_value == int(Prime3WiiCommand.GET_INVENTORY)
-            and inventory.capability_value == int(Prime3WiiCapability.INVENTORY_STATE)
-        )
+    if not isinstance(transport, Prime3RuntimeTransportMetadata):
+        raise Prime3DolPatchError("Canonical Prime 3 runtime metadata must use TCP/CP3C transport.")
+    artifact_runtime_mode = PRODUCTION_RUNTIME_MODE
+    udp_port = CP3W_SERVER_PORT
+    game_identity_supported = transport.inventory_tracker_capability
+    inventory_supported = transport.tracker_snapshot_capability
     return Prime3HardwareArtifactValidation(
         version_description=version.description,
         payload_sha256=manifest.payload_sha256,
@@ -385,39 +367,19 @@ def _validate_hardware_manifest(
     if relocated is None or relocated.transport is None:
         raise Prime3DolPatchError("Hardware CP3W payload is missing relocated transport metadata.")
     transport = relocated.transport
-    if isinstance(transport, Prime3RuntimeTransportMetadata):
-        if runtime_mode is not Prime3HardwareRuntimeMode.PRODUCTION:
-            raise Prime3DolPatchError("The canonical TCP runtime only provides the production tracker asset.")
-        if not (
-            transport.transport_kind == "tcp"
-            and transport.inventory_tracker_capability
-            and transport.tracker_snapshot_capability
-            and transport.resync_capability
-        ):
-            raise Prime3DolPatchError("Canonical TCP runtime is missing required tracker capabilities.")
-        if manifest.beacon_ipv4_patch is not None:
-            raise Prime3DolPatchError("Canonical TCP runtime must not include native beacon patch metadata.")
-        return
-    if transport.mode != runtime_mode.value:
-        raise Prime3DolPatchError(
-            f"Hardware CP3W payload mode {transport.mode!r} does not match selected mode {runtime_mode.value!r}."
-        )
-    if transport.udp_port != CP3W_UDP_PORT:
-        raise Prime3DolPatchError("Prime 3 hardware runtime must use UDP port 43674.")
-    patch_field = manifest.beacon_ipv4_patch
-    if runtime_mode is Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE:
-        if patch_field is None:
-            raise Prime3DolPatchError("Native beacon runtime manifest is missing IPv4 patch metadata.")
-        expected = bytes.fromhex(patch_field.expected_original_bytes)
-        start = patch_field.payload_offset
-        if payload[start : start + patch_field.field_size] != expected:
-            raise Prime3DolPatchError("Native beacon IPv4 field does not match the manifest expected bytes.")
-    elif patch_field is not None:
-        raise Prime3DolPatchError("Beacon IPv4 patch metadata is only valid for native bootstrap mode.")
-    if runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION and (
-        transport.cp3w_game_identity is None or transport.cp3w_inventory is None
+    if not isinstance(transport, Prime3RuntimeTransportMetadata):
+        raise Prime3DolPatchError("Canonical Prime 3 runtime metadata must use TCP/CP3C transport.")
+    if runtime_mode is not Prime3HardwareRuntimeMode.PRODUCTION:
+        raise Prime3DolPatchError("The canonical TCP runtime only provides the production tracker asset.")
+    if not (
+        transport.transport_kind == "tcp"
+        and transport.inventory_tracker_capability
+        and transport.tracker_snapshot_capability
+        and transport.resync_capability
     ):
-        raise Prime3DolPatchError("Hardware CP3W payload lacks identity or inventory protocol metadata.")
+        raise Prime3DolPatchError("Canonical TCP runtime is missing required tracker capabilities.")
+    if manifest.beacon_ipv4_patch is not None:
+        raise Prime3DolPatchError("Canonical TCP runtime must not include native beacon patch metadata.")
 
 
 def _validate_production_manifest(payload: bytes, manifest: Prime3RuntimePayloadManifest) -> None:

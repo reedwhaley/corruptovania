@@ -73,7 +73,7 @@ def test_out_of_order_delta_requests_resync():
 
 def test_tcp_listener_starts_without_a_wii_ip_or_legacy_udp_connector():
     service = Prime3TrackerService(
-        {"enabled": True, "bind_host": "127.0.0.1", "bind_port": 0, "wii_ip": "192.168.50.19", "udp_port": 43674},
+        {"enabled": True, "bind_host": "127.0.0.1", "bind_port": 0},
         Prime3TrackerAdapter(),
     )
     try:
@@ -92,6 +92,16 @@ def test_tcp_listener_starts_without_a_wii_ip_or_legacy_udp_connector():
         assert service.status()["bind_port"] != 43674
     finally:
         service.stop()
+
+
+def test_disabled_tracker_service_does_not_start_a_listener():
+    service = Prime3TrackerService(
+        {"enabled": False, "bind_host": "127.0.0.1", "bind_port": 43674}, Prime3TrackerAdapter()
+    )
+
+    service.start()
+
+    assert service.status()["listening"] is False
 
 
 def test_inbound_tcp_hello_attaches_tracker_session_and_accepts_snapshot():

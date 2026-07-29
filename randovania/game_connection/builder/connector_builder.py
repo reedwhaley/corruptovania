@@ -31,3 +31,6 @@ class ConnectorBuilder(QtCore.QObject):
 
     def configuration_params(self) -> dict:
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Releases infrastructure owned by this configured connection."""

@@ -14,10 +14,7 @@ from randovania.game.game_enum import RandovaniaGame
 from randovania.game_connection.builder.connector_builder_option import ConnectorBuilderOption
 from randovania.game_connection.builder.debug_connector_builder import DebugConnectorBuilder
 from randovania.game_connection.builder.nintendont_connector_builder import NintendontConnectorBuilder
-from randovania.game_connection.builder.prime3_wii_connector_builder import (
-    Prime3WiiConnectorBuilder,
-    validate_wii_ip_address,
-)
+from randovania.game_connection.builder.prime3_tcp_tracker_connector_builder import Prime3TcpTrackerConnectorBuilder
 from randovania.game_connection.connector.debug_remote_connector import DebugRemoteConnector
 from randovania.game_connection.connector.remote_connector import ImportantStatusMessage, RemoteConnector
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
@@ -248,17 +245,8 @@ class GameConnectionWindow(QtWidgets.QMainWindow, Ui_GameConnectionWindow):
             args["ip"] = new_ip
 
         if choice == ConnectorBuilderChoice.PRIME3_WII:
-            new_ip = await self._prompt_for_text(
-                "Enter Wii / Wii U IP address",
-                "Enter the IPv4 address of the Wii or Wii U in vWii mode. CP3W always uses UDP port 43674.",
-            )
-            if new_ip is None:
-                return
-            try:
-                args["ip"] = validate_wii_ip_address(new_ip)
-            except ValueError as exc:
-                await async_dialog.warning(self, "Invalid Wii IP address", str(exc))
-                return
+            # Prime 3 is an inbound TCP tracker. The Wii connects to this process, never the reverse.
+            args["name"] = "Prime 3 Wii"
 
         if choice == ConnectorBuilderChoice.DREAD:
             new_ip = await DreadConnectorPromptDialog.prompt(
@@ -384,10 +372,10 @@ class GameConnectionWindow(QtWidgets.QMainWindow, Ui_GameConnectionWindow):
             action.triggered.connect(functools.partial(self.on_upload_nintendont_action, builder))
             ui.menu.addAction(action)
 
-        if isinstance(builder, Prime3WiiConnectorBuilder):
+        if isinstance(builder, Prime3TcpTrackerConnectorBuilder):
             ui.menu.addSeparator()
             diagnostic = QtGui.QAction(ui.menu)
-            diagnostic.setText("CP3W UDP port: 43674 (protocol-defined)")
+            diagnostic.setText("Prime 3 TCP tracker: waiting for inbound Wii connection")
             diagnostic.setEnabled(False)
             ui.menu.addAction(diagnostic)
 

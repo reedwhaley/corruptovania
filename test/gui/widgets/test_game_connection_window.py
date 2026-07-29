@@ -13,7 +13,7 @@ from randovania.game_connection.builder.debug_connector_builder import DebugConn
 from randovania.game_connection.builder.dolphin_connector_builder import DolphinConnectorBuilder
 from randovania.game_connection.builder.dread_connector_builder import DreadConnectorBuilder
 from randovania.game_connection.builder.nintendont_connector_builder import NintendontConnectorBuilder
-from randovania.game_connection.builder.prime3_wii_connector_builder import Prime3WiiConnectorBuilder
+from randovania.game_connection.builder.prime3_tcp_tracker_connector_builder import Prime3TcpTrackerConnectorBuilder
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
 from randovania.gui.lib.qt_network_client import QtNetworkClient
 from randovania.gui.lib.window_manager import WindowManager
@@ -103,19 +103,19 @@ async def test_add_connector_builder_nintendont(window: GameConnectionWindow, ab
         assert window.game_connection.add_connection_builder.call_args[0][0].ip == "my_ip"
 
 
-@pytest.mark.parametrize("abort", [False, True])
-async def test_add_connector_builder_prime3_wii(window: GameConnectionWindow, abort):
+async def test_add_connector_builder_prime3_wii_creates_inbound_tcp_tracker_without_an_ip_prompt(
+    window: GameConnectionWindow,
+):
     window.game_connection.add_connection_builder = MagicMock()
-    window._prompt_for_text = AsyncMock(return_value=None if abort else "10.0.0.5")
+    window._prompt_for_text = AsyncMock()
 
     await window._add_connector_builder(ConnectorBuilderChoice.PRIME3_WII)
 
-    if abort:
-        window.game_connection.add_connection_builder.assert_not_called()
-    else:
-        window.game_connection.add_connection_builder.assert_called_once_with(ANY)
-        assert isinstance(window.game_connection.add_connection_builder.call_args[0][0], Prime3WiiConnectorBuilder)
-        assert window.game_connection.add_connection_builder.call_args[0][0].ip == "10.0.0.5"
+    window.game_connection.add_connection_builder.assert_called_once_with(ANY)
+    window._prompt_for_text.assert_not_awaited()
+    builder = window.game_connection.add_connection_builder.call_args[0][0]
+    assert isinstance(builder, Prime3TcpTrackerConnectorBuilder)
+    assert builder.get_status_message() == "Waiting for Wii connection"
 
 
 @pytest.mark.parametrize("abort", [False, True])
@@ -167,7 +167,7 @@ def test_setup_builder_ui_all_builders(skip_qtbot, system, mocker: MockerFixture
     game_connection.connection_builders = [
         DolphinConnectorBuilder(),
         NintendontConnectorBuilder("the_ip"),
-        Prime3WiiConnectorBuilder("10.0.0.5"),
+        Prime3TcpTrackerConnectorBuilder(),
         DebugConnectorBuilder(RandovaniaGame.BLANK.value),
     ]
     window_manager = MagicMock(spec=WindowManager)
@@ -200,7 +200,7 @@ def test_setup_builder_ui_all_builders(skip_qtbot, system, mocker: MockerFixture
 
 def test_read_only_connection_message_actions_disabled(skip_qtbot):
     game_connection = MagicMock()
-    builder = Prime3WiiConnectorBuilder("10.0.0.5")
+    builder = Prime3TcpTrackerConnectorBuilder()
     game_connection.connection_builders = [builder]
     connector = MagicMock()
     connector.description.return_value = "Prime 3 Wii"

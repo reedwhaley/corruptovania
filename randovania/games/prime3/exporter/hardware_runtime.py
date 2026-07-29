@@ -178,11 +178,15 @@ def load_validated_production_runtime_assets(
     *,
     require_elf: bool,
 ) -> Prime3ProductionRuntimeAssets:
-    return load_validated_hardware_runtime_assets(
+    assets = load_validated_hardware_runtime_assets(
         asset_dir,
         Prime3HardwareRuntimeMode.PRODUCTION,
         require_elf=require_elf,
     )
+    relocated = assets.manifest.relocated_runtime
+    if relocated is None or not isinstance(relocated.transport, Prime3RuntimeTransportMetadata):
+        raise Prime3DolPatchError("Canonical production runtime assets must use TCP/CP3C transport metadata.")
+    return assets
 
 
 def load_or_build_hardware_runtime(

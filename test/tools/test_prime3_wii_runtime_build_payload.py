@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import randovania
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError
 from randovania.games.prime3.exporter.runtime_payload import Prime3RuntimeTransportMetadata
 
@@ -56,6 +57,9 @@ def test_tcp_metadata_rejects_legacy_udp_fields() -> None:
 
 
 def test_missing_toolchain_reports_toolchain_error_after_tcp_argument_validation(tmp_path: Path) -> None:
+    if randovania.is_frozen():
+        pytest.skip("Prime 3 runtime builder source script requires a Python interpreter")
+
     module = _load_build_module("prime3_wii_runtime_build_payload_tcp_toolchain")
 
     with pytest.raises(RuntimeError, match="reserved_high and diagnostic_address"):

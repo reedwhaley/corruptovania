@@ -17,11 +17,7 @@ from open_prime_rando.dol_patching.corruption import dol_versions as corruption_
 import randovania
 from randovania.games.prime3.exporter import hardware_runtime, probe_delivery
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, parse_dol_header
-from randovania.games.prime3.exporter.runtime_payload import (
-    Prime3RuntimePayloadManifest,
-    Prime3RuntimePayloadPatchField,
-    Prime3RuntimeTransportMetadata,
-)
+from randovania.games.prime3.exporter.runtime_payload import Prime3RuntimeTransportMetadata
 from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
 
 
@@ -45,44 +41,6 @@ def _supported_dol() -> bytes:
         ],
         entry_point=probe_delivery.EXPECTED_ENTRYPOINT,
     )
-
-
-def _native_runtime_fixture(production_runtime) -> tuple[bytes, Prime3RuntimePayloadManifest]:
-    payload, manifest, _ = production_runtime
-    assert manifest.relocated_runtime is not None
-    assert manifest.relocated_runtime.transport is not None
-    relocated = manifest.relocated_runtime
-    offset = relocated.embedded_runtime_blob_offset + 16
-    patch_field = Prime3RuntimePayloadPatchField(
-        payload_offset=offset,
-        expected_original_bytes=payload[offset : offset + 4].hex(),
-        field_size=4,
-        byte_order="big",
-    )
-    transport = dataclasses.replace(
-        relocated.transport,
-        mode=hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE.value,
-        receive_enabled=False,
-        send_enabled=True,
-        nwc24_startup_enabled=True,
-        kd_close_enabled=False,
-        terminal_phase_value=115,
-        terminal_phase_name="NATIVE_BEACON_COMPLETE",
-        cp3w_game_identity=None,
-        cp3w_inventory=None,
-    )
-    native_relocated = dataclasses.replace(relocated, transport=transport)
-    native_manifest = dataclasses.replace(
-        manifest,
-        relocated_runtime=native_relocated,
-        beacon_ipv4_patch=patch_field,
-    )
-    hardware_runtime._validate_hardware_manifest(
-        payload,
-        native_manifest,
-        hardware_runtime.Prime3HardwareRuntimeMode.NATIVE_WC24_BOOTSTRAP_BEACON_ONCE,
-    )
-    return payload, native_manifest
 
 
 @pytest.fixture(scope="module")
@@ -256,6 +214,11 @@ def test_packaged_runtime_asset_lookup_accepts_valid_assets(production_runtime, 
     assert isinstance(transport, Prime3RuntimeTransportMetadata)
     assert transport.transport_kind == "tcp"
     assert transport.diagnostics_enabled is False
+    assert transport.cp3c_config_size == 32
+    assert transport.server_ipv4_size == 4
+    assert transport.server_port_size == 2
+    assert transport.server_ipv4_byte_order == "big"
+    assert transport.server_port_byte_order == "big"
 
 
 def test_packaged_runtime_asset_lookup_reports_missing_prebuild(tmp_path: Path) -> None:
@@ -272,6 +235,21 @@ def test_packaged_runtime_asset_lookup_rejects_invalid_metadata(production_runti
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises((Prime3DolPatchError, ValueError), match="port|CP3C|width"):
+        hardware_runtime.load_validated_production_runtime_assets(asset_dir, require_elf=True)
+
+
+def test_packaged_runtime_asset_lookup_rejects_legacy_transport_metadata(production_runtime, tmp_path: Path) -> None:
+    asset_dir = tmp_path.joinpath("assets")
+    _copy_production_assets(production_runtime, asset_dir)
+    manifest_path = asset_dir.joinpath("payload.json")
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["relocated_runtime"]["transport"] = {
+        "mode": "cp3w_inventory_service",
+        "udp_port": 43674,
+    }
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(Prime3DolPatchError, match="TCP/CP3C|payload"):
         hardware_runtime.load_validated_production_runtime_assets(asset_dir, require_elf=True)
 
 

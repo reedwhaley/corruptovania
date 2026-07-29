@@ -9,7 +9,7 @@ from flask_socketio import ConnectionRefusedError
 
 import randovania
 import randovania.server.multiplayer.world_api
-from randovania.server import client_check, database, multiplayer, user_session
+from randovania.server import client_check, database, database_migration, multiplayer, prime3_tracker, user_session
 from randovania.server.multiplayer import world_api
 from randovania.server.server_app import ServerApp
 
@@ -92,14 +92,38 @@ def create_app():
         for entry in database.DatabaseMigrations:
             database.PerformedDatabaseMigrations.create(migration=entry)
 
-    from randovania.server import database_migration
-
     database_migration.apply_migrations()
 
     sa = ServerApp(app)
     app.sa = sa
     multiplayer.setup_app(sa)
     user_session.setup_app(sa)
+
+    tracker_configuration = {
+        "enabled": False,
+        "bind_host": "0.0.0.0",
+        "bind_port": 43674,
+        "idle_timeout_seconds": 30,
+        "maximum_clients": 8,
+        "maximum_frame_queue_depth": 4,
+        **configuration["server_config"].get("prime3_tracker", {}),
+    }
+
+    def publish_prime3_tracker_update(event: dict[str, object]) -> None:
+        sa.sio.emit("prime3_tracker_update", event)
+
+    tracker_adapter = prime3_tracker.Prime3TrackerAdapter(publish_prime3_tracker_update)
+    tracker_service = prime3_tracker.Prime3TrackerService(tracker_configuration, tracker_adapter)
+    app.extensions["prime3_tracker_adapter"] = tracker_adapter
+    app.extensions["prime3_tracker_service"] = tracker_service
+    tracker_service.start()
+
+    @app.route("/api/prime3-tracker/<int:client_nonce>")
+    def prime3_tracker_status(client_nonce: int):
+        status = tracker_adapter.session_status(client_nonce)
+        if status is None:
+            return {"error": "unknown Prime 3 tracker session"}, 404
+        return status
 
     connected_clients = sa.metrics.info("connected_clients", "How many clients are connected right now.")
     connected_clients.set(0)

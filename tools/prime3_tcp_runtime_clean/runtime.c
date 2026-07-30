@@ -11,6 +11,15 @@
 #define PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC 0
 #endif
 
+/* The production tracker lifecycle must not be selected through UDP diagnostics. */
+#ifndef PRIME3_ENABLE_TCP_TRACKER
+#define PRIME3_ENABLE_TCP_TRACKER 0
+#endif
+
+#ifndef PRIME3_ENABLE_IOS_NETWORK_LIFECYCLE
+#define PRIME3_ENABLE_IOS_NETWORK_LIFECYCLE 0
+#endif
+
 #ifndef PRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS
 #define PRIME3_ENABLE_RECURRING_HOOK_DIAGNOSTICS 0
 #endif
@@ -2054,8 +2063,9 @@ static u32 runtime_transport_is_cp3w_inventory_mode(void)
 
 static u32 runtime_transport_is_unbounded_cp3w_inventory_service(void)
 {
-    return PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
-        && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY_SERVICE;
+    return PRIME3_ENABLE_TCP_TRACKER
+        || (PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+            && PRIME3_IOS_UDP_DIAGNOSTIC_MODE == RUNTIME_IOS_UDP_DIAGNOSTIC_MODE_CP3W_INVENTORY_SERVICE);
 }
 
 static u32 runtime_transport_is_native_wc24_bootstrap_mode(void)
@@ -2067,7 +2077,7 @@ static u32 runtime_transport_is_native_wc24_bootstrap_mode(void)
 
 static u32 runtime_transport_is_cp3w_mode(void)
 {
-    return runtime_transport_is_cp3w_frame_validation_mode()
+    return PRIME3_ENABLE_TCP_TRACKER || runtime_transport_is_cp3w_frame_validation_mode()
         || runtime_transport_is_cp3w_ping_pong_mode()
         || runtime_transport_is_cp3w_hello_session_mode()
         || runtime_transport_is_cp3w_game_identity_mode()
@@ -3284,7 +3294,7 @@ static void runtime_sync_context_for_operation(u32 operation)
     }
 }
 
-#if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+#if PRIME3_ENABLE_IOS_NETWORK_LIFECYCLE || PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
 static s32 runtime_ios_callback(s32 result, void* usrdata) __attribute_section_code__;
 
 static s32 runtime_ios_callback(s32 result, void* usrdata)
@@ -5777,7 +5787,7 @@ void runtime_entry_impl(void)
     runtime_native_install_post_copy_hook();
 #endif
     runtime_transport_cleanup_close_request = -1;
-#if PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+#if PRIME3_ENABLE_IOS_NETWORK_LIFECYCLE || PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
     runtime_transport_phase = (runtime_transport_uses_receive_mode() || runtime_transport_is_native_wc24_bootstrap_mode())
         ? RUNTIME_TRANSPORT_PHASE_INITIAL_DELAY
         : RUNTIME_TRANSPORT_PHASE_OPEN_KD;
@@ -6255,7 +6265,7 @@ void runtime_poll_entry_impl(void)
     }
 #endif
 
-#if !PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
+#if !PRIME3_ENABLE_IOS_NETWORK_LIFECYCLE && !PRIME3_ENABLE_IOS_UDP_DIAGNOSTIC
     runtime_transport_last_poll_action = RUNTIME_TRANSPORT_POLL_ACTION_IDLE;
     goto runtime_poll_exit;
 #endif

@@ -112,6 +112,12 @@ def test_tcp_payload_is_deterministic_and_has_valid_cp3c_metadata(tmp_path: Path
     assert transport.inventory_tracker_capability
     assert transport.tracker_snapshot_capability
     assert transport.resync_capability
+    assert transport.kd_startup_capability
+    assert transport.ip_startup_capability
+    assert transport.tcp_connect_capability
+    assert transport.tcp_send_capability
+    assert transport.tcp_receive_capability
+    assert transport.wait_connect_tcp_capability
 
 
 def test_direct_invocation_by_absolute_path_works_without_pythonpath(tmp_path: Path) -> None:

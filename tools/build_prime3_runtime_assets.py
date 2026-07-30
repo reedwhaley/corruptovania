@@ -15,7 +15,10 @@ if __package__ in {None, ""}:
 from randovania.games.prime3.exporter.hardware_runtime import (
     PRODUCTION_RUNTIME_ASSET_DIR,
 )
-from randovania.games.prime3.exporter.runtime_payload import PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE
+from randovania.games.prime3.exporter.runtime_payload import (
+    PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+    Prime3RuntimeTransportMetadata,
+)
 from randovania.games.prime3.exporter.runtime_toolchain import resolve_prime3_runtime_toolchain
 from tools.prime3_wii_runtime.build_payload import build_prime3_runtime_payload
 
@@ -48,12 +51,14 @@ def build_canonical_tcp_assets(output_dir: Path, *, devkitppc: Path | None = Non
     manifest = build_prime3_runtime_payload(
         output_dir,
         payload_mode=PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
+        enable_tcp_tracker=True,
+        enable_ios_network_lifecycle=True,
         reserved_high=0x817E0000,
         diagnostic_address=0x817E0100,
         devkitppc_path=devkitppc,
     )
     transport = manifest.relocated_runtime.transport if manifest.relocated_runtime is not None else None
-    if transport is None or transport.transport_kind != "tcp":
+    if not isinstance(transport, Prime3RuntimeTransportMetadata) or transport.transport_kind != "tcp":
         raise RuntimeError("Canonical Prime 3 runtime build did not produce TCP transport metadata.")
     print(f"output_dir={output_dir}")
     print(f"payload.elf sha256={_sha256(output_dir.joinpath('payload.elf'))}")

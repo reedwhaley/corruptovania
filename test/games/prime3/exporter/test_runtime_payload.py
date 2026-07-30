@@ -57,6 +57,12 @@ def test_tcp_transport_metadata_round_trip_rejects_legacy_udp_fields() -> None:
         tracker_snapshot_capability=True,
         tracker_delta_capability=True,
         resync_capability=True,
+        kd_startup_capability=True,
+        ip_startup_capability=True,
+        tcp_connect_capability=True,
+        tcp_send_capability=True,
+        tcp_receive_capability=True,
+        wait_connect_tcp_capability=True,
     )
 
     data = transport.to_json_dict()
@@ -70,7 +76,11 @@ def test_tcp_transport_metadata_round_trip_rejects_legacy_udp_fields() -> None:
     assert data["inventory_tracker_capability"] is True
     assert data["tracker_snapshot_capability"] is True
     assert data["diagnostics_enabled"] is False
+    assert data["wait_connect_tcp_capability"] is True
     assert runtime_payload.Prime3RuntimeTransportMetadata.from_json_dict(data) == transport
+
+    with pytest.raises(runtime_payload.Prime3DolPatchError, match="lifecycle capabilities"):
+        runtime_payload.Prime3RuntimeTransportMetadata.from_json_dict({**data, "wait_connect_tcp_capability": False})
 
     with pytest.raises(runtime_payload.Prime3DolPatchError, match="Legacy UDP"):
         runtime_payload.Prime3RuntimeTransportMetadata.from_json_dict({**data, "udp_port": 43674})

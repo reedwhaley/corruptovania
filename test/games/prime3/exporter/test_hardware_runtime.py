@@ -17,8 +17,12 @@ from open_prime_rando.dol_patching.corruption import dol_versions as corruption_
 import randovania
 from randovania.games.prime3.exporter import hardware_runtime, probe_delivery
 from randovania.games.prime3.exporter.dol_patcher import Prime3DolPatchError, parse_dol_header
-from randovania.games.prime3.exporter.runtime_payload import Prime3RuntimeTransportMetadata
+from randovania.games.prime3.exporter.runtime_payload import (
+    Prime3RuntimePayloadManifest,
+    Prime3RuntimeTransportMetadata,
+)
 from test.games.prime3.exporter.test_dol_patcher import _build_synthetic_dol
+from tools.prime3_wii_runtime.inspect_tcp_runtime import inspect_tcp_runtime
 
 
 def _supported_dol() -> bytes:
@@ -83,6 +87,116 @@ def test_production_runtime_installs_and_validates(production_runtime) -> None:
     assert validation.runtime_occurrence_count == 1
 
 
+def _patched_tcp_runtime_dol(production_runtime) -> tuple[bytes, bytes, Prime3RuntimePayloadManifest]:
+    payload, manifest, _ = production_runtime
+    endpoint_payload, endpoint_manifest = hardware_runtime.patch_cp3w_tcp_endpoint(
+        payload,
+        manifest,
+        IPv4Address("192.168.50.248"),
+    )
+    patched, _ = hardware_runtime.patch_prime3_hardware_dol(
+        _supported_dol(),
+        uuid.UUID("12345678-1234-5678-1234-567812345678"),
+        payload=endpoint_payload,
+        manifest=endpoint_manifest,
+    )
+    return patched, endpoint_payload, endpoint_manifest
+
+
+def test_final_tcp_runtime_verification_reads_manifest_defined_endpoint(production_runtime) -> None:
+    patched, payload, manifest = _patched_tcp_runtime_dol(production_runtime)
+
+    verification = hardware_runtime.verify_prime3_tcp_runtime_dol(
+        patched,
+        payload=payload,
+        manifest=manifest,
+        cp3w_server_ipv4=IPv4Address("192.168.50.248"),
+    )
+
+    assert verification.server_ipv4 == "192.168.50.248"
+    assert verification.server_port == 43674
+    assert verification.server_ipv4_bytes == b"\xc0\xa8\x32\xf8"
+    assert verification.server_port_bytes == b"\xaa\x9a"
+    assert verification.entry_hook_word != probe_delivery.EXPECTED_ENTRY_WORD
+    assert verification.recurring_hook_word != probe_delivery.RECURRING_POLL_HOOK_EXPECTED_WORD
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [("server_ipv4_offset", b"\x7f\x00\x00\x01"), ("server_port_offset", b"\x00\x35")],
+)
+def test_final_tcp_runtime_verification_rejects_wrong_endpoint_bytes(
+    production_runtime,
+    field: str,
+    replacement: bytes,
+) -> None:
+    patched, payload, manifest = _patched_tcp_runtime_dol(production_runtime)
+    assert manifest.relocated_runtime is not None
+    transport = manifest.relocated_runtime.transport
+    assert isinstance(transport, Prime3RuntimeTransportMetadata)
+    payload_offset = patched.index(payload)
+    offset = payload_offset + manifest.relocated_runtime.embedded_runtime_blob_offset + getattr(transport, field)
+    mutated = bytearray(patched)
+    mutated[offset : offset + len(replacement)] = replacement
+
+    with pytest.raises(Prime3DolPatchError, match="payload|signature|endpoint"):
+        hardware_runtime.verify_prime3_tcp_runtime_dol(
+            bytes(mutated),
+            payload=payload,
+            manifest=manifest,
+            cp3w_server_ipv4=IPv4Address("192.168.50.248"),
+        )
+
+
+@pytest.mark.parametrize(
+    "hook_address",
+    [probe_delivery.EXPECTED_ENTRYPOINT, probe_delivery.RECURRING_POLL_HOOK_ADDRESS],
+)
+def test_final_tcp_runtime_verification_rejects_missing_hook(production_runtime, hook_address: int) -> None:
+    patched, payload, manifest = _patched_tcp_runtime_dol(production_runtime)
+    mutated = bytearray(patched)
+    hook_offset = parse_dol_header(mutated).offset_for_address(hook_address)
+    assert hook_offset is not None
+    mutated[hook_offset : hook_offset + 4] = b"\x60\x00\x00\x00"
+
+    with pytest.raises(Prime3DolPatchError, match="hook"):
+        hardware_runtime.verify_prime3_tcp_runtime_dol(
+            bytes(mutated),
+            payload=payload,
+            manifest=manifest,
+            cp3w_server_ipv4=IPv4Address("192.168.50.248"),
+        )
+
+
+def test_final_tcp_runtime_verification_detects_a_later_dol_overwrite(production_runtime) -> None:
+    _patched, payload, manifest = _patched_tcp_runtime_dol(production_runtime)
+
+    with pytest.raises(Prime3DolPatchError, match="payload"):
+        hardware_runtime.verify_prime3_tcp_runtime_dol(
+            _supported_dol(),
+            payload=payload,
+            manifest=manifest,
+            cp3w_server_ipv4=IPv4Address("192.168.50.248"),
+        )
+
+
+def test_tcp_runtime_inspection_reads_the_final_staging_dol(production_runtime, tmp_path: Path) -> None:
+    patched, _payload, _manifest = _patched_tcp_runtime_dol(production_runtime)
+    staging_directory = tmp_path.joinpath("export")
+    dol_path = staging_directory.joinpath("DATA", "sys", "main.dol")
+    dol_path.parent.mkdir(parents=True)
+    dol_path.write_bytes(patched)
+    assets_directory = tmp_path.joinpath("assets")
+    _copy_production_assets(production_runtime, assets_directory)
+
+    report = inspect_tcp_runtime(dol_path, assets_directory)
+
+    assert report["runtime_present"] is True
+    assert report["server"] == "192.168.50.248:43674"
+    assert report["server_ipv4_bytes"] == "c0 a8 32 f8"
+    assert report["server_port_bytes"] == "aa 9a"
+
+
 def test_patch_cp3w_tcp_endpoint_writes_manifest_defined_fields(production_runtime) -> None:
     payload, manifest, _ = production_runtime
     assert manifest.relocated_runtime is not None
@@ -108,6 +222,12 @@ def test_patch_cp3w_tcp_endpoint_writes_manifest_defined_fields(production_runti
         tracker_snapshot_capability=True,
         tracker_delta_capability=True,
         resync_capability=True,
+        kd_startup_capability=True,
+        ip_startup_capability=True,
+        tcp_connect_capability=True,
+        tcp_send_capability=True,
+        tcp_receive_capability=True,
+        wait_connect_tcp_capability=True,
     )
     source = bytearray(payload)
     source[blob_offset + 0x2C : blob_offset + 0x30] = b"\0\0\0\0"

@@ -160,7 +160,28 @@ def _configure_export_environment(
             recurring_hook_target=0x81700000,
             udp_port=43674,
         )
-        return SimpleNamespace(validation=validation)
+        final_verification = SimpleNamespace(
+            server_ipv4=str(cp3w_server_ipv4),
+            server_port=43674,
+            cp3c_config_offset=0x100,
+            payload_sha256="a" * 64,
+        )
+        return SimpleNamespace(validation=validation, final_verification=final_verification)
+
+    def fake_verify_tcp_runtime(
+        path: Path,
+        *,
+        runtime_build_dir: Path,
+        cp3w_server_ipv4: IPv4Address | None,
+    ) -> SimpleNamespace:
+        del runtime_build_dir
+        calls.append(("verify_tcp_runtime", str(path)))
+        return SimpleNamespace(
+            server_ipv4=str(cp3w_server_ipv4),
+            server_port=43674,
+            cp3c_config_offset=0x100,
+            payload_sha256="a" * 64,
+        )
 
     mkdtemp_values = iter([str(extract_path), str(paks_path)])
     monkeypatch.setattr(game_exporter.randovania, "get_data_path", lambda: tmp_path.joinpath("data"))
@@ -168,6 +189,7 @@ def _configure_export_environment(
     monkeypatch.setattr(game_exporter, "extract_prime3_disc_image", fake_extract_prime3_disc_image)
     monkeypatch.setattr(game_exporter, "_run_process", fake_run_process)
     monkeypatch.setattr(game_exporter, "patch_prime3_hardware_dol_file_atomic", fake_patch_hardware)
+    monkeypatch.setattr(game_exporter, "verify_prime3_tcp_runtime_dol_file", fake_verify_tcp_runtime)
     monkeypatch.setattr(game_exporter.tempfile, "mkdtemp", lambda: next(mkdtemp_values))
     monkeypatch.setattr(game_exporter.shutil, "rmtree", lambda path, ignore_errors=True: None)
 
@@ -190,6 +212,7 @@ def test_export_networking_disabled_skips_runtime_installation(tmp_path: Path, m
 
     assert extract_path.joinpath("DATA", "sys", "main.dol").read_bytes() == original_main_dol
     assert not hardware_calls
+    assert not any(command[0] == "verify_tcp_runtime" for command in calls)
     assert any(command[0] == "randomizer" for command in calls)
     assert any(command[0] == "wit" for command in calls)
 
@@ -223,6 +246,25 @@ def test_export_networking_enabled_patches_working_copy_only(tmp_path: Path, mon
     assert hardware_calls[0][3] is Prime3HardwareRuntimeMode.PRODUCTION
     assert hardware_calls[0][5] == IPv4Address("192.168.50.248")
     assert patch_data["cp3w_server_ipv4"] == "192.168.50.248"
+
+
+def test_export_verifies_the_same_main_dol_supplied_to_wit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    version = corruption_dol_versions.ALL_VERSIONS[0]
+    main_dol = _build_synthetic_dol(version, section_address=version.build_string_address - 0x20)
+    extract_path, _paks_path, _patcher_root, calls, _hardware_calls = _configure_export_environment(
+        tmp_path, monkeypatch, main_dol
+    )
+
+    CorruptionGameExporter()._do_export_game(
+        _patch_data(enable_networking=True, layout_uuid="12345678-1234-5678-1234-567812345678"),
+        _export_params(tmp_path),
+        lambda _message, _progress: None,
+    )
+
+    verified_path = Path(next(command[1] for command in calls if command[0] == "verify_tcp_runtime"))
+    wit_command = next(command for command in calls if command[0] == "wit")
+    assert verified_path == extract_path.joinpath("DATA", "sys", "main.dol")
+    assert Path(wit_command[-2]).joinpath("sys", "main.dol") == verified_path
 
 
 def test_export_propagates_cp3w_server_ipv4(

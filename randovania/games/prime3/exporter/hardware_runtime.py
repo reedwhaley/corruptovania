@@ -79,10 +79,28 @@ class Prime3HardwareArtifactValidation:
 
 
 @dataclasses.dataclass(frozen=True)
+class Prime3TcpRuntimeFinalVerification:
+    """Manifest-driven verification of the exact DOL passed to WIT."""
+
+    dol_path: Path | None
+    payload_sha256: str
+    runtime_section_address: int
+    cp3c_config_offset: int
+    cp3c_config_address: int
+    server_ipv4: str
+    server_port: int
+    server_ipv4_bytes: bytes
+    server_port_bytes: bytes
+    entry_hook_word: int
+    recurring_hook_word: int
+
+
+@dataclasses.dataclass(frozen=True)
 class Prime3HardwarePatchResult:
     identity_patch: Prime3DolPatchResult
     delivery: ProbeDolBuildResult
     validation: Prime3HardwareArtifactValidation
+    final_verification: Prime3TcpRuntimeFinalVerification | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -115,7 +133,9 @@ def build_hardware_runtime_payload(
         output_dir,
         payload_mode=PRIME3_RUNTIME_PAYLOAD_MODE_RELOCATED_CONTINUE,
         enable_recurring_hook_diagnostics=not production,
-        enable_ios_udp_diagnostic=True,
+        enable_ios_udp_diagnostic=not production,
+        enable_tcp_tracker=production,
+        enable_ios_network_lifecycle=production,
         ios_udp_mode=runtime_mode.value,
         ios_udp_loop_count=0 if production else 1,
         native_beacon_ipv4=native_beacon_ipv4,
@@ -287,7 +307,92 @@ def patch_prime3_hardware_dol_file_atomic(
         runtime_mode=runtime_mode,
     )
     atomic_replace_file(path, patched_dol)
+    if runtime_mode is Prime3HardwareRuntimeMode.PRODUCTION:
+        final_verification = verify_prime3_tcp_runtime_dol(
+            path.read_bytes(),
+            payload=payload,
+            manifest=manifest,
+            cp3w_server_ipv4=cp3w_server_ipv4,
+            dol_path=path,
+        )
+        return dataclasses.replace(result, final_verification=final_verification)
     return result
+
+
+def verify_prime3_tcp_runtime_dol_file(
+    path: Path,
+    *,
+    runtime_build_dir: Path,
+    cp3w_server_ipv4: IPv4Address | None,
+) -> Prime3TcpRuntimeFinalVerification:
+    """Verify the CP3C endpoint and hooks in the exact DOL supplied to the packer."""
+
+    payload, manifest = load_or_build_production_runtime(
+        runtime_build_dir,
+        cp3w_server_ipv4=cp3w_server_ipv4,
+    )
+    return verify_prime3_tcp_runtime_dol(
+        path.read_bytes(),
+        payload=payload,
+        manifest=manifest,
+        cp3w_server_ipv4=cp3w_server_ipv4,
+        dol_path=path,
+    )
+
+
+def verify_prime3_tcp_runtime_dol(
+    dol: bytes,
+    *,
+    payload: bytes,
+    manifest: Prime3RuntimePayloadManifest,
+    cp3w_server_ipv4: IPv4Address | None,
+    dol_path: Path | None = None,
+) -> Prime3TcpRuntimeFinalVerification:
+    """Fail closed unless a DOL contains the expected canonical TCP runtime and CP3C endpoint."""
+
+    validation = validate_prime3_hardware_artifact(dol, payload=payload, manifest=manifest)
+    relocated = manifest.relocated_runtime
+    assert relocated is not None
+    transport = relocated.transport
+    if not isinstance(transport, Prime3RuntimeTransportMetadata):
+        raise Prime3DolPatchError("Canonical Prime 3 runtime metadata must use TCP/CP3C transport.")
+
+    payload_offset = dol.index(payload)
+    runtime_blob_offset = payload_offset + relocated.embedded_runtime_blob_offset
+    config_offset = runtime_blob_offset + transport.cp3c_config_offset
+    config_end = config_offset + transport.cp3c_config_size
+    config = dol[config_offset:config_end]
+    if len(config) != transport.cp3c_config_size or config[:4] != b"CP3C":
+        raise Prime3DolPatchError("Final DOL is missing the CP3C configuration block.")
+    if int.from_bytes(config[4:6], "big") != 1 or int.from_bytes(config[6:8], "big") != transport.cp3c_config_size:
+        raise Prime3DolPatchError("Final DOL has an invalid CP3C configuration version or size.")
+
+    ipv4_offset = runtime_blob_offset + transport.server_ipv4_offset
+    port_offset = runtime_blob_offset + transport.server_port_offset
+    actual_ipv4 = dol[ipv4_offset : ipv4_offset + transport.server_ipv4_size]
+    actual_port = dol[port_offset : port_offset + transport.server_port_size]
+    expected_port = CP3W_SERVER_PORT.to_bytes(2, "big")
+    if actual_port != expected_port:
+        raise Prime3DolPatchError("Final DOL CP3C port does not match the fixed tracker port.")
+    if cp3w_server_ipv4 is not None and actual_ipv4 != cp3w_server_ipv4.packed:
+        raise Prime3DolPatchError("Final DOL CP3C IPv4 field does not match the selected tracker address.")
+
+    header = parse_dol_header(dol)
+    return Prime3TcpRuntimeFinalVerification(
+        dol_path=dol_path,
+        payload_sha256=manifest.payload_sha256,
+        runtime_section_address=validation.runtime_section_address,
+        cp3c_config_offset=transport.cp3c_config_offset,
+        cp3c_config_address=validation.runtime_section_address
+        + relocated.embedded_runtime_blob_offset
+        + transport.cp3c_config_offset,
+        server_ipv4=".".join(str(value) for value in actual_ipv4),
+        server_port=int.from_bytes(actual_port, "big"),
+        server_ipv4_bytes=actual_ipv4,
+        server_port_bytes=actual_port,
+        entry_hook_word=_word_at(dol, header.entry_point),
+        recurring_hook_word=_word_at(dol, RECURRING_POLL_HOOK_ADDRESS),
+    )
 
 
 def validate_prime3_hardware_artifact(
@@ -375,7 +480,14 @@ def _validate_hardware_manifest(
         transport.transport_kind == "tcp"
         and transport.inventory_tracker_capability
         and transport.tracker_snapshot_capability
+        and transport.tracker_delta_capability
         and transport.resync_capability
+        and transport.kd_startup_capability
+        and transport.ip_startup_capability
+        and transport.tcp_connect_capability
+        and transport.tcp_send_capability
+        and transport.tcp_receive_capability
+        and transport.wait_connect_tcp_capability
     ):
         raise Prime3DolPatchError("Canonical TCP runtime is missing required tracker capabilities.")
     if manifest.beacon_ipv4_patch is not None:
@@ -482,6 +594,14 @@ def _branch_at(dol: bytes, address: int) -> DecodedBranchInstruction:
     if branch is None:
         raise Prime3DolPatchError(f"CP3W hook at 0x{address:08X} is not an unconditional branch.")
     return branch
+
+
+def _word_at(dol: bytes, address: int) -> int:
+    header = parse_dol_header(dol)
+    offset = header.offset_for_address(address)
+    if offset is None or offset + 4 > len(dol):
+        raise Prime3DolPatchError(f"CP3W hook address 0x{address:08X} is not mapped in the DOL.")
+    return int.from_bytes(dol[offset : offset + 4], "big")
 
 
 def _reject_existing_or_partial_installation(dol: bytes, manifest: Prime3RuntimePayloadManifest) -> None:

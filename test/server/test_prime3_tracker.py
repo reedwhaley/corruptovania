@@ -4,6 +4,7 @@ import threading
 
 import pytest
 
+from randovania.game_connection import prime3_tcp_tracker
 from randovania.server.prime3_tracker import (
     CLIENT_HELLO,
     SERVER_HELLO_ACK,
@@ -26,6 +27,11 @@ def _frame(message_type: int, sequence: int, words: list[int]) -> Prime3TrackerF
 
 def _hello(sequence: int = 1) -> Prime3TrackerFrame:
     return _frame(CLIENT_HELLO, sequence, [0x524D3345, 0x1234, 0xF, 0x43503357, 0, 0, 4, 4, 0])
+
+
+def test_server_tracker_imports_the_shared_game_connection_implementation():
+    assert Prime3TrackerAdapter is prime3_tcp_tracker.Prime3TrackerAdapter
+    assert Prime3TrackerService is prime3_tcp_tracker.Prime3TrackerService
 
 
 def test_frame_round_trip_and_crc_validation():

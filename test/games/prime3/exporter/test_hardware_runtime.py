@@ -304,4 +304,6 @@ def test_pyinstaller_spec_only_consumes_prebuilt_runtime_assets() -> None:
     assert "runtime_asset_directory" not in spec_text
     assert "Prime3HardwareRuntimeMode" not in spec_text
     assert "retail_wrapper_startup_once" not in spec_text
+    assert '"randovania.games.prime3.exporter.cp3w_endpoint"' in spec_text
+    assert '"randovania.games.prime3.exporter.runtime_payload"' in spec_text
     assert "path: build/prime3_wii_runtime/production" in workflow_text

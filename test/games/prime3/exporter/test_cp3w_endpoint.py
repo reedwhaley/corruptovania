@@ -6,10 +6,15 @@ import pytest
 
 from randovania.games.prime3.exporter.cp3w_endpoint import (
     CP3W_SERVER_ADDRESS_ERROR,
+    CP3W_SERVER_PORT,
     IPv4InterfaceAddress,
     parse_cp3w_server_ipv4,
     preferred_cp3w_server_ipv4,
 )
+
+
+def test_cp3w_server_port_is_fixed() -> None:
+    assert CP3W_SERVER_PORT == 43674
 
 
 def test_preferred_cp3w_server_ipv4_prefers_default_route() -> None:

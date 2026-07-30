@@ -5,7 +5,12 @@ from typing import TYPE_CHECKING
 
 from randovania.game_connection.builder.connector_builder import ConnectorBuilder
 from randovania.game_connection.connector_builder_choice import ConnectorBuilderChoice
-from randovania.server.prime3_tracker import Prime3TrackerAdapter, Prime3TrackerService, Prime3TrackerSession
+from randovania.game_connection.prime3_tcp_tracker import (
+    CP3W_SERVER_PORT,
+    Prime3TrackerAdapter,
+    Prime3TrackerService,
+    Prime3TrackerSession,
+)
 
 if TYPE_CHECKING:
     from randovania.game_connection.connector.remote_connector import RemoteConnector
@@ -23,7 +28,7 @@ class Prime3TcpTrackerConnectionManager:
             or {
                 "enabled": True,
                 "bind_host": "0.0.0.0",
-                "bind_port": 43674,
+                "bind_port": CP3W_SERVER_PORT,
                 "idle_timeout_seconds": 30,
                 "maximum_clients": 8,
             },

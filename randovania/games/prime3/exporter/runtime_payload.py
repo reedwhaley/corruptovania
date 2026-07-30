@@ -2830,6 +2830,12 @@ class Prime3RuntimeTransportMetadata:
     tracker_snapshot_capability: bool
     tracker_delta_capability: bool
     resync_capability: bool
+    kd_startup_capability: bool
+    ip_startup_capability: bool
+    tcp_connect_capability: bool
+    tcp_send_capability: bool
+    tcp_receive_capability: bool
+    wait_connect_tcp_capability: bool
 
     def validate(self, *, runtime_blob_size: int) -> tuple[tuple[str, int, int], ...]:
         if self.transport_kind != "tcp" or self.protocol_magic_hex != "43503357" or self.protocol_version != 1:
@@ -2838,6 +2844,19 @@ class Prime3RuntimeTransportMetadata:
             raise Prime3DolPatchError("TCP tracker metadata has invalid production protocol defaults.")
         if self.inbound_queue_depth <= 0 or self.outbound_queue_depth <= 0:
             raise Prime3DolPatchError("TCP tracker queue depths must be positive.")
+        if not (
+            self.inventory_tracker_capability
+            and self.tracker_snapshot_capability
+            and self.tracker_delta_capability
+            and self.resync_capability
+            and self.kd_startup_capability
+            and self.ip_startup_capability
+            and self.tcp_connect_capability
+            and self.tcp_send_capability
+            and self.tcp_receive_capability
+            and self.wait_connect_tcp_capability
+        ):
+            raise Prime3DolPatchError("TCP tracker metadata is missing required production lifecycle capabilities.")
         ranges = (
             ("cp3c_config", self.cp3c_config_offset, self.cp3c_config_size),
             ("server_ipv4", self.server_ipv4_offset, self.server_ipv4_size),
@@ -2886,6 +2905,12 @@ class Prime3RuntimeTransportMetadata:
             tracker_snapshot_capability=_json_bool(data, "tracker_snapshot_capability"),
             tracker_delta_capability=_json_bool(data, "tracker_delta_capability"),
             resync_capability=_json_bool(data, "resync_capability"),
+            kd_startup_capability=_json_bool(data, "kd_startup_capability"),
+            ip_startup_capability=_json_bool(data, "ip_startup_capability"),
+            tcp_connect_capability=_json_bool(data, "tcp_connect_capability"),
+            tcp_send_capability=_json_bool(data, "tcp_send_capability"),
+            tcp_receive_capability=_json_bool(data, "tcp_receive_capability"),
+            wait_connect_tcp_capability=_json_bool(data, "wait_connect_tcp_capability"),
         )
         metadata.validate(runtime_blob_size=metadata.cp3c_config_offset + metadata.cp3c_config_size)
         return metadata

@@ -17,7 +17,9 @@ from randovania.exporter.game_exporter import GameExporter, GameExportParams
 from randovania.games.prime3.exporter.cp3w_endpoint import CP3W_SERVER_ADDRESS_ERROR
 from randovania.games.prime3.exporter.hardware_runtime import (
     Prime3HardwareRuntimeMode,
+    Prime3TcpRuntimeFinalVerification,
     patch_prime3_hardware_dol_file_atomic,
+    verify_prime3_tcp_runtime_dol_file,
 )
 from randovania.games.prime3.exporter.toolchain import (
     Prime3Toolchain,
@@ -130,6 +132,8 @@ class CorruptionGameExporter(GameExporter):
                 self.logger.info(
                     "Installed Prime 3 TCP tracker runtime for %s.", hardware_result.validation.version_description
                 )
+                assert hardware_result.final_verification is not None
+                self._log_tcp_runtime_verification(hardware_result.final_verification)
 
             if patch_data["mp3_update"]:
                 progress_update("Applying Update...", 0.4)
@@ -187,11 +191,29 @@ class CorruptionGameExporter(GameExporter):
                 else "Exporting to WBFS...",
                 0.7,
             )
+            if export_params.enable_cp3w_networking:
+                assert export_params.cp3w_server_ipv4 is not None
+                final_verification = verify_prime3_tcp_runtime_dol_file(
+                    extract_path.joinpath("DATA", "sys", "main.dol"),
+                    runtime_build_dir=extract_path.joinpath(".prime3_wii_runtime"),
+                    cp3w_server_ipv4=export_params.cp3w_server_ipv4,
+                )
+                self._log_tcp_runtime_verification(final_verification)
             _run_process(_build_wit_command(toolchain, extract_path.joinpath("DATA"), export_params))
         finally:
             shutil.rmtree(extract_path, ignore_errors=True)
             if paks_path is not None:
                 shutil.rmtree(paks_path, ignore_errors=True)
+
+    def _log_tcp_runtime_verification(self, verification: Prime3TcpRuntimeFinalVerification) -> None:
+        self.logger.info(
+            "Prime 3 TCP runtime verified: server=%s:%s; CP3C offset=0x%X; "
+            "entry hook verified; recurring hook verified; payload SHA-256=%s",
+            verification.server_ipv4,
+            verification.server_port,
+            verification.cp3c_config_offset,
+            verification.payload_sha256,
+        )
 
 
 def _optional_flag(flag: str, enabled: bool) -> tuple[str, ...]:
